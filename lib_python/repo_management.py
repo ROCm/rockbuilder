@@ -362,7 +362,13 @@ class RockProjectRepo:
             return
         patch_files.sort(key=lambda p: p.name)
         self.exec(
-            ["git", "am", "--ignore-whitespace", "--committer-date-is-author-date"]
+            [
+                "git",
+                "am",
+                "--ignore-whitespace",
+                "--committer-date-is-author-date",
+                "--no-gpg-sign",
+            ]
             + patch_files,
             cwd=repo_path,
         )
@@ -517,7 +523,10 @@ class RockProjectRepo:
             )
             self.exec(["git", "checkout", "FETCH_HEAD"], cwd=self.project_src_dir)
         # add our own git tag to help with the create patches command
-        self.exec(["git", "tag", "-f", TAG_UPSTREAM_DIFFBASE], cwd=self.project_src_dir)
+        self.exec(
+            ["git", "tag", "-f", TAG_UPSTREAM_DIFFBASE, "--no-sign"],
+            cwd=self.project_src_dir,
+        )
         try:
             self.exec(
                 ["git", "submodule", "update", "--init", "--recursive"] + fetch_args,
@@ -532,7 +541,7 @@ class RockProjectRepo:
                 "submodule",
                 "foreach",
                 "--recursive",
-                f"git tag -f {TAG_UPSTREAM_DIFFBASE}",
+                f"git tag -f {TAG_UPSTREAM_DIFFBASE} --no-sign",
             ],
             cwd=self.project_src_dir,
             stdout_devnull=True,
@@ -568,9 +577,13 @@ class RockProjectRepo:
                 print(f"HIPIFY made changes to {module_path}: Committing")
                 self.exec(["git", "add", "-A"], cwd=module_path)
                 self.exec(
-                    ["git", "commit", "-m", HIPIFY_COMMIT_MESSAGE], cwd=module_path
+                    ["git", "commit", "-m", HIPIFY_COMMIT_MESSAGE, "--no-gpg-sign"],
+                    cwd=module_path,
                 )
-                self.exec(["git", "tag", "-f", TAG_HIPIFY_DIFFBASE], cwd=module_path)
+                self.exec(
+                    ["git", "tag", "-f", TAG_HIPIFY_DIFFBASE, "--no-sign"],
+                    cwd=module_path,
+                )
             print("do_hipify, hipified files committed")
         # always apply the patches from hipified directory. (even if hipify_cmd was not specified in config file for project)
         self.apply_all_patches(
