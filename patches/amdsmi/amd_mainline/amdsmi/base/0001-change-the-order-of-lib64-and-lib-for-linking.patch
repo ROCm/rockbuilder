@@ -1,0 +1,40 @@
+From 1a0be1586f5a43c3d78c2c6a5134d5673aaa457f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@pilppa.org>
+Date: Fri, 5 Sep 2025 13:08:20 -0700
+Subject: [PATCH] change the order of lib64 and lib for linking
+
+On systems having 32-bit versions of libraries in /lib
+directory and 64 bit versions on /lib64 directory the
+building of amdsmi can fail for following error because
+32-bit versions are find first and tried to link
+instead of the 64 bit versions of same files.
+
+therock/build/dist/rocm/lib/llvm/bin/clang++ --driver-mode=g++ -O3 --hip-link  -fPIC -Wl,--build-id=sha1 -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o "goamdsmi_shim/libgoamdsmi_shim64.so.1.0" goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o -Wl,-rpath,/therock/builddir/amdsmi/src\: -lpthread -lrt -lm src/libamd_smi.so.0.0 -L/lib -L/lib64 -lpthread -lrt -ldl
+ld.lld: error: /usr/lib/gcc/x86_64-linux-gnu/12/../../../../lib64/crti.o is incompatible with elf32-i386
+
+Fix is is to add lib64 dir before lib-dir so that lib64 versions
+of libraries will be tried to be linked first before the 32 bit versions
+of libraries if both versions if libraries are available on linux distribution.
+
+Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+---
+ goamdsmi_shim/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/goamdsmi_shim/CMakeLists.txt b/goamdsmi_shim/CMakeLists.txt
+index c0c8640..20fdf94 100644
+--- a/goamdsmi_shim/CMakeLists.txt
++++ b/goamdsmi_shim/CMakeLists.txt
+@@ -90,8 +90,8 @@ add_library(${GOAMDSMI_SHIM_TARGET} SHARED ${go_amd_smi_sources} ${go_amd_smi_he
+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} pthread rt m)
+ 
+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} amd_smi)
+-target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib64)
++target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
+ 
+ ## Set the VERSION and SOVERSION values
+ set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
+-- 
+2.41.3
+
