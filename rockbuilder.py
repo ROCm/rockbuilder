@@ -539,7 +539,8 @@ def do_therock(prj_builder):
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled
             prj_builder.undo_env_setup()
-            prj_builder.printout("done")
+            #prj_builder.printout("done")
+            print("Operations finished ok: " +prj_builder.project_cfg_base_name)
             ret = True
         else:
             print("skip_windows or skip_linux enabled for project")

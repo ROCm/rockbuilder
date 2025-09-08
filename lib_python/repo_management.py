@@ -63,8 +63,11 @@ class RockProjectRepo:
                     print(result.stdout)
             else:
                 ret = False
-                print(result.stdout)
-                print(f"Error: {result.stderr}")
+                print("Operation failed")
+                if result.stdout:
+                    print(result.stdout)
+                if result.stderr:
+                    print(f"Error1: {result.stderr}")
         return ret
 
     def _exec_subprocess_batch_file(self, batch_file):
@@ -78,11 +81,12 @@ class RockProjectRepo:
                 [batch_file], shell=True, capture_output=False, text=True
             )
             if result.returncode == 0:
-                print(result.stdout)
-                ret = False
+                if result.stdout:
+                    print(result.stdout)
             else:
-                print(result.stdout)
-                print(f"Error: {result.stderr}")
+                print("Operation failed")
+                if result.stderr:
+                    print(f"Error2: {result.stderr}")
         return ret
 
     def _replace_env_variables(self, cmd_str):
@@ -459,7 +463,7 @@ class RockProjectRepo:
 
     def undo_env_setup(self, env_setup_cmd_list):
         ret = True
-        print("undo_env_setup")
+        #print("undo_env_setup")
         for (
             env_var_key,
             orig_env_var_value,
