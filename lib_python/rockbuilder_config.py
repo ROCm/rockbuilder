@@ -5,6 +5,7 @@ import platform
 import sys
 import ast
 import subprocess
+import lib_python.rckb_constants as rckb_constants
 from lib_python.repo_management import RockProjectRepo
 from pathlib import Path, PurePosixPath
 
@@ -14,7 +15,7 @@ class RockBuilderConfig(configparser.ConfigParser):
         super(RockBuilderConfig, self).__init__(allow_no_value=True)
         self.rcb_root_dir = rcb_root_dir
         self.rcb_build_dir = rcb_build_dir
-        self.fname_cfg = rcb_root_dir / "rockbuilder.ini"
+        self.fname_cfg = rckb_constants.get_rock_builder_config_file()
         self.gpu_target_list = None
         self.rock_sdk_whl_url = None
         self.rock_sdk_new_build_dir = None
@@ -155,12 +156,12 @@ class RockBuilderConfig(configparser.ConfigParser):
         return targets.replace(" ", ";")
 
     def setup_build_env(self):
-        section_name_rocm_sdk = "rocm_sdk"
-        section_name_build_targets = "build_targets"
-        key_name_rocm_sdk_whl_url = "rocm_sdk_whl_server_url"
-        key_name_rocm_sdk_new_build = "rocm_sdk_build"
-        key_name_rocm_sdk_old_build = "rocm_sdk_dir"
-        key_name_gpus = "gpus"
+        section_name_rocm_sdk = rckb_constants.RCKB__CFG__SECTION__ROCM_SDK
+        section_name_build_targets = rckb_constants.RCKB__CFG__SECTION__BUILD_TARGETS
+        key_name_rocm_sdk_whl_url =  rckb_constants.RCKB__CFG__KEY__WHEEL_SERVER_URL
+        key_name_rocm_sdk_new_build = rckb_constants.RCKB__CFG__KEY__BUILD_ROCM_SDK
+        key_name_rocm_sdk_old_build = rckb_constants.RCKB__CFG__KEY__ROCM_SDK_HOME
+        key_name_gpus = rckb_constants.RCKB__CFG__KEY__GPUS
         rocm_sdk_uninstall_cmd = (
             sys.executable
             + " -m pip cache remove rocm_sdk --cache-dir "

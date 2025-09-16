@@ -9,20 +9,11 @@ import platform
 import subprocess
 import lib_python.project_builder as project_builder
 import lib_python.rockbuilder_config as RockBuilderConfig
+import lib_python.rckb_constants as rckb_constants
 from pathlib import Path, PurePosixPath
 
-ROCK_BUILDER_VERSION = "2025-06-25_01"
-PROJECT_CFG_FILE_SUFFIX = ".cfg"
-
-
-def get_rocm_builder_root_dir():
-    current_file_path = os.path.abspath(__file__)
-    ret = Path(os.path.dirname(current_file_path)).resolve()
-    return ret
-
-
 def printout_rock_builder_info():
-    print("RockBuilder " + ROCK_BUILDER_VERSION)
+    print("RockBuilder " + rckb_constants.RCKB__VERSION)
     print("")
     print("ROCK_BUILDER_HOME_DIR: " + os.environ["ROCK_BUILDER_HOME_DIR"])
     print("ROCK_BUILDER_SRC_DIR: " + os.environ["ROCK_BUILDER_SRC_DIR"])
@@ -51,13 +42,13 @@ def get_project_list_manager(rock_builder_home_dir: Path):
     parser.add_argument(
         "--project_list",
         type=str,
-        help="specify project list for the actions, for example: projects/pytorch_apps.pcfg",
+        help="specify project list for the actions, for example: projects/pytorch_apps" + rckb_constants.RCKB__APP_LIST_CFG_FILE_SUFFIX,
         default=None,
     )
     parser.add_argument(
         "--project",
         type=str,
-        help="specify target for the action, for example: pytorch or projects/pytorch.cfg",
+        help="specify target for the action, for example: pytorch or projects/pytorch" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX,
         default=None,
     )
     prj = None
@@ -91,7 +82,7 @@ def create_build_argument_parser(
     parser.add_argument(
         "--project",
         type=str,
-        help="specify project for the action, for example: pytorch or projects/pytorch.cfg",
+        help="specify project for the action, for example: pytorch or projects/pytorch" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX,
         default=None,
     )
     parser.add_argument(
@@ -357,7 +348,7 @@ def verify_build_env(args, rock_builder_home_dir: Path, rock_builder_build_dir: 
         rocm_home_root_path = Path(os.environ["ROCM_HOME"])
         rocm_home_root_path = rocm_home_root_path.resolve()
     else:
-        rocm_home_root_path = rock_builder_home_dir / "sdk/therock/build/dist/rocm"
+        rocm_home_root_path = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
         rocm_home_root_path = rocm_home_root_path.resolve()
         print("using locally build rocm sdk from TheRock:")
         print("    " + rocm_home_root_path.as_posix())
@@ -553,11 +544,12 @@ def do_therock(prj_builder):
 # othetwise assume that project name is "projects/project_name.cfg"
 def get_project_cfg_file_path(rock_builder_home_dir: Path, project_name: str):
     if project_name:
-        if project_name.endswith(PROJECT_CFG_FILE_SUFFIX):
+        if project_name.endswith(rckb_constants.RCKB__APP_CFG_FILE_SUFFIX):
             ret = Path(project_name)
         else:
+            fname_base = f"{project_name}" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX
             ret = (
-                Path(rock_builder_home_dir) / "projects" / f"{project_name}.cfg"
+                Path(rock_builder_home_dir) / "projects" / fname_base
             )
         ret = ret.resolve()
     else:
@@ -566,9 +558,9 @@ def get_project_cfg_file_path(rock_builder_home_dir: Path, project_name: str):
 
 is_posix = not any(platform.win32_ver())
 
-rock_builder_home_dir = get_rocm_builder_root_dir()
-rock_builder_build_dir = rock_builder_home_dir / "builddir"
-default_src_base_dir = rock_builder_home_dir / "src_projects"
+rock_builder_home_dir = rckb_constants.get_rock_builder_root_dir()
+rock_builder_build_dir = rckb_constants.get_project_build_base_dir()
+default_src_base_dir = rckb_constants.get_project_src_base_dir()
 
 os.environ["ROCK_BUILDER_HOME_DIR"] = rock_builder_home_dir.as_posix()
 os.environ["ROCK_BUILDER_BUILD_DIR"] = rock_builder_build_dir.as_posix()
@@ -590,7 +582,7 @@ verify_build_env(args, rock_builder_home_dir, rock_builder_build_dir)
 for ii, prj_item in enumerate(project_list):
     print(f"    Project [{ii}]: {prj_item}")
 
-# let user to see env variables for a while before build start
+# small delay to allow user to see env variable printouts before the build starts
 time.sleep(1)
 
 if not args.project:

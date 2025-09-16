@@ -7,16 +7,8 @@ import configparser
 import curses
 import os
 import sys
+import lib_python.rckb_constants as rckb_constants
 from pathlib import Path, PurePosixPath
-
-const__str_rocm_sdk_whl_server_url = "rocm_sdk_whl_server_url"
-
-
-def get_rocm_builder_root_dir():
-    current_file_path = os.path.abspath(__file__)
-    ret = Path(os.path.dirname(current_file_path)).resolve()
-    return ret
-
 
 # Basic heuristic vefication to check whether rocm_sdk directory looks valid
 #
@@ -41,21 +33,12 @@ def get_rocm_home_path_if_available():
     return ret
 
 
-# get rocm_sdk directory that would be procuded by therock build
-def get_therock_rocm_sdk_build_dir():
-    current_file_path = os.path.abspath(__file__)
-    ret = os.path.dirname(current_file_path)
-    ret = ret + "/sdk/therock/build/dist/rocm"
-    ret = Path(ret).resolve()
-    return ret
-
-
 # Check whether the ROCM_SDK is already build and available in default path
 #
 # return either Path to ROCM_SDK or None
 def get_local_rocm_sdk_path_if_available():
     ret = None
-    rocm_home = get_therock_rocm_sdk_build_dir()
+    rocm_home = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
     if is_valid_rocm_home_path(rocm_home):
         ret = rocm_home
     return ret
@@ -196,7 +179,9 @@ class BaseSelectionList:
 class GpuSelectionList(BaseSelectionList):
     def __init__(self, stdscr):
         super().__init__(
-            stdscr, "build_targets", f"Select target GPUs for the build", True
+            stdscr,
+            rckb_constants.RCKB__CFG__SECTION__BUILD_TARGETS,
+            f"Select target GPUs for the build", True
         )
 
     # Override the default selection logic because selection logic depends from the SDK selected
@@ -220,11 +205,13 @@ class GpuSelectionList(BaseSelectionList):
 class SDKSelectionList(BaseSelectionList):
     def __init__(self, stdscr):
         super().__init__(
-            stdscr, "rocm_sdk", f"Select ROCM SDK used for the build", False
+            stdscr,
+            rckb_constants.RCKB__CFG__SECTION__ROCM_SDK,
+            f"Select ROCM SDK used for the build", False
         )
 
         def_sel = True
-        whl_server_base_url = "https://d2awnip2yjpvqn.cloudfront.net/v2/"
+        whl_server_base_url = rckb_constants.THEROCK_SDK__PYTHON_WHEEL_SERVER_URL
         rocm_home = get_rocm_home_path_if_available()
         if rocm_home:
             # add rocm home to list of SDK's to select
@@ -232,7 +219,7 @@ class SDKSelectionList(BaseSelectionList):
                 SelectionItem(
                     "Use ROCm SDK from ROCM_HOME: "
                     + rocm_home.as_posix(),
-                    "rocm_sdk_dir",
+                    rckb_constants.RCKB__CFG__KEY__ROCM_SDK_HOME,
                     rocm_home.as_posix(),
                     def_sel,
                 )
@@ -244,7 +231,7 @@ class SDKSelectionList(BaseSelectionList):
             self.item_list.append(
                 SelectionItem(
                     "Use existing ROCm SDK: " + rocm_home.as_posix(),
-                    "rocm_sdk_dir",
+                    rckb_constants.RCKB__CFG__KEY__ROCM_SDK_HOME,
                     rocm_home.as_posix(),
                     def_sel,
                 )
@@ -252,11 +239,11 @@ class SDKSelectionList(BaseSelectionList):
             def_sel = False
         else:
             # add an option/selection to build the rocm sdk locally
-            rocm_home = get_therock_rocm_sdk_build_dir()
+            rocm_home = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
             self.item_list.append(
                 SelectionItem(
                     "Build and use ROCm SDK: " + rocm_home.as_posix(),
-                    "rocm_sdk_build",
+                    rckb_constants.RCKB__CFG__KEY__BUILD_ROCM_SDK,
                     rocm_home.as_posix(),
                     def_sel,
                 )
@@ -265,8 +252,8 @@ class SDKSelectionList(BaseSelectionList):
         # add an option/selection to use the rocm sdk that will be installed from the python wheel
         self.item_list.append(
             SelectionItem(
-                "Install ROCm SDK from Python wheels: " + whl_server_base_url,
-                const__str_rocm_sdk_whl_server_url,
+                "Install ROCm SDK from server: " + whl_server_base_url,
+                rckb_constants.RCKB__CFG__KEY__WHEEL_SERVER_URL,
                 whl_server_base_url,
                 def_sel,
             )
@@ -333,15 +320,14 @@ class SelectionListManager:
                 new_val = cfg_dict[new_key]
                 config[section][new_key] = str(new_val)
         # save the configuration to a file
-        fname = get_rocm_builder_root_dir()
-        fname = fname / "rockbuilder.ini"
+        fname = rckb_constants.get_rock_builder_config_file()
         with open(fname.as_posix(), "w") as configfile:
             config.write(configfile)
 
 
 class UiManager:
     def __init__(self, stdscr):
-        key_name_gpus = "gpus"
+        key_name_gpus = rckb_constants.RCKB__CFG__KEY__GPUS
         self.stdscr = stdscr
         # init curses based display to show text based ui
         self.stdscr.clear()
@@ -412,7 +398,7 @@ class UiManager:
 
     def handle_item_selected(self, sender, item, selected):
         key = item.get_key()
-        if key == const__str_rocm_sdk_whl_server_url:
+        if key == rckb_constants.RCKB__CFG__KEY__WHEEL_SERVER_URL:
             self.stdscr.clear()
             self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
             self.gpu_list.set_multi_selection(False)
