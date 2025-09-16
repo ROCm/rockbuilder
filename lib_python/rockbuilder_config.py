@@ -216,7 +216,7 @@ class RockBuilderConfig(configparser.ConfigParser):
                 )
                 sys.exit(1)
 
-        # check whether old rocm sdk build should be done
+        # check whether old rocm sdk build should be used
         if self.has_option(section_name_rocm_sdk, key_name_rocm_sdk_old_build):
             self.rock_sdk_old_build_dir = self.get_as_list(
                 section_name_rocm_sdk, key_name_rocm_sdk_old_build

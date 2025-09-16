@@ -22,7 +22,7 @@ RCKB__CFG__KEY__GPUS                    = "gpus"
 RCKB__CFG__KEY__WHEEL_SERVER_URL        = "rocm_sdk_whl_server"
 
 
-THEROCK_SDK__ROOT_DIR                   = RCKB__ROOT_DIR / "sdk/therock"
+THEROCK_SDK__ROOT_DIR                   = RCKB__ROOT_DIR / "src_projects/therock"
 THEROCK_SDK__ROCM_HOME_BUILD_DIR        = THEROCK_SDK__ROOT_DIR / "build/dist/rocm"
 
 THEROCK_SDK__PYTHON_WHEEL_SERVER_URL    = "https://d2awnip2yjpvqn.cloudfront.net/v2/"

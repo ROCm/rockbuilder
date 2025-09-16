@@ -239,12 +239,12 @@ class SDKSelectionList(BaseSelectionList):
             def_sel = False
         else:
             # add an option/selection to build the rocm sdk locally
-            rocm_home = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
+            the_rock_sdk_root_dir = rckb_constants.THEROCK_SDK__ROOT_DIR
             self.item_list.append(
                 SelectionItem(
-                    "Build and use ROCm SDK: " + rocm_home.as_posix(),
+                    "Build TheRock for ROCm SDK: " + the_rock_sdk_root_dir.as_posix(),
                     rckb_constants.RCKB__CFG__KEY__BUILD_ROCM_SDK,
-                    rocm_home.as_posix(),
+                    the_rock_sdk_root_dir.as_posix(),
                     def_sel,
                 )
             )

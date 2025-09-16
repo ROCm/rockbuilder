@@ -1,0 +1,43 @@
+From 0263b9d415c99da504a6527812e680d2d4c7d425 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 16 Sep 2025 17:02:28 -0700
+Subject: [PATCH] helper scripts to init and config therock
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ rcb_config.sh | 6 ++++++
+ rcb_init.sh   | 9 +++++++++
+ 2 files changed, 15 insertions(+)
+ create mode 100755 rcb_config.sh
+ create mode 100755 rcb_init.sh
+
+diff --git a/rcb_config.sh b/rcb_config.sh
+new file mode 100755
+index 0000000..bf80787
+--- /dev/null
++++ b/rcb_config.sh
+@@ -0,0 +1,6 @@
++FILE_DONE="./rcb_config.done"
++if [ ! -f "$FILE_DONE" ]; then
++    source .venv/bin/activate
++    cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${THEROCK_AMDGPU_TARGETS} .
++    echo "1" > "$FILE_DONE"
++fi
+diff --git a/rcb_init.sh b/rcb_init.sh
+new file mode 100755
+index 0000000..45e6497
+--- /dev/null
++++ b/rcb_init.sh
+@@ -0,0 +1,9 @@
++FILE_DONE="./rcb_init.done"
++
++if [ ! -f "$FILE_DONE" ]; then
++    python3 -m venv .venv && source .venv/bin/activate
++    pip install --upgrade pip
++    pip install -r requirements.txt
++    python ./build_tools/fetch_sources.py
++    echo "1" > "$FILE_DONE"
++fi
+-- 
+2.43.0
+

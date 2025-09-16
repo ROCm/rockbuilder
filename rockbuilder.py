@@ -466,9 +466,8 @@ def verify_build_env(args,
     else:
         if not "SKIP_ROCM_HOME_CHECK" in os.environ:
             print("")
-            print("Error, SKIP_ROCM_HOME_CHECK is not defined and")
-            print("       ROCM_HOME is not defined and")
-            print("       ROCM build is not detected in the RockBuilder build environment:")
+            print("Error, SKIP_ROCM_HOME_CHECK or ROCM_HOME is not defined and")
+            print("       existing ROCM build is not detected:")
             print("       " + rocm_home_root_path.as_posix())
             print("")
             sys.exit(1)
