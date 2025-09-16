@@ -2,3 +2,6 @@ src_projects
 builddir
 packages
 rockbuilder.ini
+.venv/
+__pycache__/
+*.pyc
