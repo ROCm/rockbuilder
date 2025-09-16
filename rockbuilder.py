@@ -234,7 +234,7 @@ def printout_build_arguments(args):
     print("Projects:", args.project)
 
 
-def verify_build_env__python(self):
+def verify_build_env__python(self, is_posix: bool):
     # check the python used. It needs to be by default an virtual env but
     # this can be overriden to real python version by setting up ENV variable
     # ROCK_PYTHON_PATH
@@ -309,7 +309,10 @@ def get_rocm_sdk_targets_on_linux(exec_dir: Path):
     return ret
 
 
-def verify_build_env(args, rock_builder_home_dir: Path, rock_builder_build_dir: Path):
+def verify_build_env(args,
+                     is_posix: bool,
+                     rock_builder_home_dir: Path,
+                     rock_builder_build_dir: Path):
     # we may actually need to have the build environment
     # even during the checkout as we do the hipify during the checkout process
     """"
@@ -483,7 +486,7 @@ def is_directory_in_env_variable_path(env_variable, directory):
 
 
 # do all build steps for given process
-def do_therock(prj_builder):
+def do_therock(prj_builder, args):
     ret = False
     if prj_builder is not None:
         if prj_builder.check_skip_on_os() == False:
@@ -556,94 +559,99 @@ def get_project_cfg_file_path(rock_builder_home_dir: Path, project_name: str):
         ret = project_name
     return ret
 
-is_posix = not any(platform.win32_ver())
+def main():
+    is_posix = not any(platform.win32_ver())
 
-rock_builder_home_dir = rckb_constants.get_rock_builder_root_dir()
-rock_builder_build_dir = rckb_constants.get_project_build_base_dir()
-default_src_base_dir = rckb_constants.get_project_src_base_dir()
+    rock_builder_home_dir = rckb_constants.get_rock_builder_root_dir()
+    rock_builder_build_dir = rckb_constants.get_project_build_base_dir()
+    default_src_base_dir = rckb_constants.get_project_src_base_dir()
 
-os.environ["ROCK_BUILDER_HOME_DIR"] = rock_builder_home_dir.as_posix()
-os.environ["ROCK_BUILDER_BUILD_DIR"] = rock_builder_build_dir.as_posix()
+    os.environ["ROCK_BUILDER_HOME_DIR"] = rock_builder_home_dir.as_posix()
+    os.environ["ROCK_BUILDER_BUILD_DIR"] = rock_builder_build_dir.as_posix()
 
-project_manager = get_project_list_manager(rock_builder_home_dir)
-project_list = project_manager.get_external_project_list()
-print(project_list)
+    project_manager = get_project_list_manager(rock_builder_home_dir)
+    project_list = project_manager.get_external_project_list()
+    print(project_list)
 
-arg_parser = create_build_argument_parser(
-    rock_builder_home_dir, default_src_base_dir, project_list
-)
-args = parse_build_arguments(arg_parser)
-# store the arguments to dictionary to make it easier to get "project_name"-version parameters
-args_dict = args.__dict__
-printout_build_arguments(args)
-verify_build_env__python(args)
-verify_build_env(args, rock_builder_home_dir, rock_builder_build_dir)
+    arg_parser = create_build_argument_parser(
+        rock_builder_home_dir, default_src_base_dir, project_list
+    )
+    args = parse_build_arguments(arg_parser)
+    # store the arguments to dictionary to make it easier to get "project_name"-version parameters
+    args_dict = args.__dict__
+    printout_build_arguments(args)
+    verify_build_env__python(args, is_posix)
+    verify_build_env(args, is_posix, rock_builder_home_dir, rock_builder_build_dir)
 
-for ii, prj_item in enumerate(project_list):
-    print(f"    Project [{ii}]: {prj_item}")
-
-# small delay to allow user to see env variable printouts before the build starts
-time.sleep(1)
-
-if not args.project:
-    # process all projects specified in the core_project.pcfg
-    if args.src_dir:
-        print(
-            '\nError, "--src-dir" parameter requires also to specify the project with the "--project"-parameter'
-        )
-        print('Alternatively you could use the "--src-base-dir" parameter.')
-        print("")
-        sys.exit(1)
     for ii, prj_item in enumerate(project_list):
-        print(f"[{ii}]: {prj_item}")
+        print(f"    Project [{ii}]: {prj_item}")
+
+    # small delay to allow user to see env variable printouts before the build starts
+    time.sleep(1)
+
+    if not args.project:
+        # process all projects specified in the core_project.pcfg
+        if args.src_dir:
+            print(
+                '\nError, "--src-dir" parameter requires also to specify the project with the "--project"-parameter'
+            )
+            print('Alternatively you could use the "--src-base-dir" parameter.')
+            print("")
+            sys.exit(1)
+        for ii, prj_item in enumerate(project_list):
+            print(f"[{ii}]: {prj_item}")
+            # argparser --> Keyword for parameter "--my-project-version=xyz" = "my_project_version"
+            prj_cfg_file = get_project_cfg_file_path(rock_builder_home_dir, project_list[ii])
+            prj_cfg_base_name = get_project_cfg_base_name_without_extension(prj_cfg_file)
+            prj_version_keyword = prj_cfg_base_name + "_version"
+            prj_version_keyword = prj_version_keyword.replace("-", "_")
+            version_override = args_dict[prj_version_keyword]
+            # when issuing a command for all projects, we assume that the src_base_dir
+            # is the base source directory under each project specific directory is checked out.
+            prj_builder = project_manager.get_rock_project_builder(
+                args.src_base_dir / prj_cfg_base_name,
+                prj_cfg_base_name,
+                prj_cfg_file,
+                args.output_dir,
+                version_override,
+            )
+            if prj_builder is None:
+                print("Error, could not get a project builder")
+                sys.exit(1)
+            else:
+                do_therock(prj_builder, args)
+    else:
+        # process only a single project specified with the "--project" parameter
         # argparser --> Keyword for parameter "--my-project-version=xyz" = "my_project_version"
-        prj_cfg_file = get_project_cfg_file_path(rock_builder_home_dir, project_list[ii])
+        prj_cfg_file = get_project_cfg_file_path(rock_builder_home_dir, args.project)
         prj_cfg_base_name = get_project_cfg_base_name_without_extension(prj_cfg_file)
         prj_version_keyword = prj_cfg_base_name + "_version"
         prj_version_keyword = prj_version_keyword.replace("-", "_")
         version_override = args_dict[prj_version_keyword]
-        # when issuing a command for all projects, we assume that the src_base_dir
-        # is the base source directory under each project specific directory is checked out.
-        prj_builder = project_manager.get_rock_project_builder(
-            args.src_base_dir / prj_cfg_base_name,
-            prj_cfg_base_name,
-            prj_cfg_file,
-            args.output_dir,
-            version_override,
-        )
+        if args.src_dir:
+            # source checkout dir = "--src-dir"
+            prj_builder = project_manager.get_rock_project_builder(
+                args.src_dir,
+                prj_cfg_base_name,
+                prj_cfg_file,
+                args.output_dir,
+                version_override
+            )
+        else:
+            # source checkout dir = "--src-base-dir" / project_name
+            prj_builder = project_manager.get_rock_project_builder(
+                args.src_base_dir / prj_cfg_base_name,
+                prj_cfg_base_name,
+                prj_cfg_file,
+                args.output_dir,
+                version_override,
+            )
         if prj_builder is None:
-            print("Error, could not get a project builder")
+            print("Error, failed to get the project builder")
             sys.exit(1)
         else:
-            do_therock(prj_builder)
-else:
-    # process only a single project specified with the "--project" parameter
-    # argparser --> Keyword for parameter "--my-project-version=xyz" = "my_project_version"
-    prj_cfg_file = get_project_cfg_file_path(rock_builder_home_dir, args.project)
-    prj_cfg_base_name = get_project_cfg_base_name_without_extension(prj_cfg_file)
-    prj_version_keyword = prj_cfg_base_name + "_version"
-    prj_version_keyword = prj_version_keyword.replace("-", "_")
-    version_override = args_dict[prj_version_keyword]
-    if args.src_dir:
-        # source checkout dir = "--src-dir"
-        prj_builder = project_manager.get_rock_project_builder(
-            args.src_dir,
-            prj_cfg_base_name,
-            prj_cfg_file,
-            args.output_dir,
-            version_override
-        )
-    else:
-        # source checkout dir = "--src-base-dir" / project_name
-        prj_builder = project_manager.get_rock_project_builder(
-            args.src_base_dir / prj_cfg_base_name,
-            prj_cfg_base_name,
-            prj_cfg_file,
-            args.output_dir,
-            version_override,
-        )
-    if prj_builder is None:
-        print("Error, failed to get the project builder")
-        sys.exit(1)
-    else:
-        do_therock(prj_builder)
+            do_therock(prj_builder, args)
+
+
+if __name__ == "__main__":
+    main()
