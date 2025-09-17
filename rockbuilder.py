@@ -24,8 +24,14 @@ def printout_build_env_info():
     printout_rock_builder_info()
     print("Build environment:")
     print("-----------------------------")
-    print("ROCM_HOME: " + os.environ["ROCM_HOME"])
-    print("ROCK_PYTHON_PATH: " + os.environ["ROCK_PYTHON_PATH"])
+    if "ROCM_HOME" in os.environ:
+        print("ROCM_HOME: " + os.environ["ROCM_HOME"])
+    else:
+        print("ROCK_HOME: not defined")
+    if "ROCM_HOME" in os.environ:
+        print("ROCK_PYTHON_PATH: " + os.environ["ROCK_PYTHON_PATH"])
+    else:
+        print("ROCK_PYTHON_PATH: not defined")
     print("PATH: " + os.environ["PATH"])
     print("-----------------------------")
     time.sleep(1)
@@ -458,12 +464,14 @@ def verify_build_env(args,
             )
             sys.exit(1)
     else:
-        print("Error, ROCM_HOME is not defined and")
-        print("ROCM build is not detected in the RockBuilder build environment:")
-        print("    " + rocm_home_root_path.as_posix())
-        print("")
-        sys.exit(1)
-
+        if not "SKIP_ROCM_HOME_CHECK" in os.environ:
+            print("")
+            print("Error, SKIP_ROCM_HOME_CHECK is not defined and")
+            print("       ROCM_HOME is not defined and")
+            print("       ROCM build is not detected in the RockBuilder build environment:")
+            print("       " + rocm_home_root_path.as_posix())
+            print("")
+            sys.exit(1)
     printout_build_env_info()
 
 
