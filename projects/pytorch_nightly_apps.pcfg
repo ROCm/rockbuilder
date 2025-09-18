@@ -1,0 +1,7 @@
+[projects]
+project_list=
+    deps_common
+    triton_pytorch_nightly
+    pytorch_nightly
+    pytorch_vision_nightly
+    pytorch_audio_nightly
