@@ -541,7 +541,7 @@ class RockProjectRepo:
         self.exec(["git", "reset", "--hard"], cwd=self.project_src_dir)
         try:
             self.exec(
-                ["git", "fetch"]
+                ["git", "fetch", "--force"]
                 + fetch_args + fetch_args_main_prj_only
                 + ["origin", "tag", self.project_version_hashtag],
                 cwd=self.project_src_dir,
@@ -553,7 +553,7 @@ class RockProjectRepo:
         except:
             # no git tag available, fetch and checkout other way
             self.exec(
-                ["git", "fetch"]
+                ["git", "fetch", "--force"]
                 + fetch_args + fetch_args_main_prj_only
                 + ["origin", self.project_version_hashtag],
                 cwd=self.project_src_dir,
