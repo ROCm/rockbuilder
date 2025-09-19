@@ -1,0 +1,8 @@
+init_cmd, ENV_COMMON: 1
+hipify_cmd
+pre_config_cmd, ENV_LINUX: 1
+config_cmd, ENV_WINDOWS: 
+post_config_cmd
+build_cmd
+install_cmd
+post_install_cmd
