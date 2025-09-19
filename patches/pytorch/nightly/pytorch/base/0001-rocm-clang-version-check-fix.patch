@@ -1,0 +1,29 @@
+From 2f0dfe5f5dcd33904bf5cfe367225e3f6c0fa50e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 18 Sep 2025 03:50:31 +0000
+Subject: [PATCH] use ROCM_VERSION_DEV in build summary printout
+
+LoadHIP.cmake sets in current builds ROCM_VERSION_DEV
+environment variable instead of ROCM_VERSION variable.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/Summary.cmake | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/cmake/Summary.cmake b/cmake/Summary.cmake
+index 3d388fe..e0c02b5 100644
+--- a/cmake/Summary.cmake
++++ b/cmake/Summary.cmake
+@@ -127,7 +127,7 @@ function(caffe2_print_configuration_summary)
+   endif()
+   message(STATUS "  USE_ROCM              : ${USE_ROCM}")
+   if(${USE_ROCM})
+-    message(STATUS "    ROCM_VERSION          : ${ROCM_VERSION}")
++    message(STATUS "    ROCM_VERSION_DEV      : ${ROCM_VERSION_DEV}")
+     message(STATUS "    USE_FLASH_ATTENTION   : ${USE_FLASH_ATTENTION}")
+     message(STATUS "    USE_MEM_EFF_ATTENTION : ${USE_MEM_EFF_ATTENTION}")
+     message(STATUS "    USE_ROCM_CK_SDPA      : ${USE_ROCM_CK_SDPA}")
+-- 
+2.43.0
+
