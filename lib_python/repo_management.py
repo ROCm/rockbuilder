@@ -471,7 +471,8 @@ class RockProjectRepo:
             # print("stored restore key: " + env_var_key)
             if orig_env_var_value is None:
                 # print("delete: " + env_var_key)
-                del os.environ[env_var_key]
+                if env_var_key in os.environ:
+                    del os.environ[env_var_key]
             else:
                 # print("restore: " + env_var_key)
                 # print("value: " + orig_env_var_value)
