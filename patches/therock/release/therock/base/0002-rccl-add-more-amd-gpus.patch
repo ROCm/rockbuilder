@@ -1,0 +1,94 @@
+From 7ccc3a00059e3a84e936997b52b114b36811e774 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 25 Sep 2025 13:34:38 -0700
+Subject: [PATCH 2/3] rccl add more amd gpus
+
+- disable trace_hwreg assembly command
+  s_getreg_b32 HW_REG_HW_ID for gpus and igpus's that
+  does not support it. (iGPUs like gfx1103, gfx1150, gfx1151 and newer gpus
+  like gfx1200 and gfx1201)
+- add support also for other navi2 gpus
+  in addition of the gfx1030
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../rccl/0001-rccl-add-more-amd-gpus.patch    | 67 +++++++++++++++++++
+ 1 file changed, 67 insertions(+)
+ create mode 100644 patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
+
+diff --git a/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
+new file mode 100644
+index 0000000..d539791
+--- /dev/null
++++ b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
+@@ -0,0 +1,67 @@
++From da85566834579cfff0a2ab91b2d9a419c944fde7 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 22 Sep 2025 01:25:44 -0700
++Subject: [PATCH] rccl add more amd gpus
++
++- disable trace_hwreg command as the assembly command
++  s_getreg_b32 HW_REG_HW_ID is not supported in the
++  iGPUs like gfx1103, gfx1150, gfx1151 and newer gpus
++  like gfx1200 and gfx1201
++- add support also for other navi gpus than gfx1030
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ src/device/common.h          | 3 ++-
++ src/include/rccl_float8.h    | 6 +++++-
++ tools/JitterBench/Common.hpp | 4 +++-
++ 3 files changed, 10 insertions(+), 3 deletions(-)
++
++diff --git a/src/device/common.h b/src/device/common.h
++index 47b740b1..d925f829 100644
++--- a/src/device/common.h
+++++ b/src/device/common.h
++@@ -26,7 +26,8 @@
++   { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
++ #endif
++ 
++-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1200__) || defined(__gfx1201__)
+++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
+++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__)
++ #define __trace_hwreg()
++ #else
++ #define __trace_hwreg() \
++diff --git a/src/include/rccl_float8.h b/src/include/rccl_float8.h
++index 8ccd4bd5..3691e794 100755
++--- a/src/include/rccl_float8.h
+++++ b/src/include/rccl_float8.h
++@@ -41,7 +41,11 @@ typedef struct
++ } rccl_bfloat8;
++ 
++ // __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
++-#elif HIP_VERSION >= 60300000 && !(defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1030__))
+++#elif HIP_VERSION >= 60300000 && \
+++     !(defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
+++       defined(__gfx1150__) || defined(__gfx1151__) || \
+++       defined(__gfx1030__) || defined(__gfx1031__) || defined(__gfx1032__) || defined(__gfx1034__) || \
+++       defined(__gfx1035__) || defined(__gfx1036__) )
++ 
++ #include <hip/hip_fp8.h>
++ 
++diff --git a/tools/JitterBench/Common.hpp b/tools/JitterBench/Common.hpp
++index bad12a1b..7489e18f 100644
++--- a/tools/JitterBench/Common.hpp
+++++ b/tools/JitterBench/Common.hpp
++@@ -43,7 +43,9 @@ THE SOFTWARE.
++ #endif
++ 
++ // Macro for collecting HW_REG_HW_ID
++-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__NVCC__)
+++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
+++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__) || \
+++    defined(__NVCC__)
++ #define GetHwId(val) \
++   val = 0
++ #else
++-- 
++2.43.0
++
+-- 
+2.43.0
+
