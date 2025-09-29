@@ -239,18 +239,12 @@ def verify_build_env__python(self, is_posix: bool):
         os.environ["ROCK_PYTHON_PATH"] = python_home_dir
     else:
         if "ROCK_PYTHON_PATH" in os.environ:
-            if not os.path.abspath(python_home_dir) == os.path.abspath(
-                os.environ["ROCK_PYTHON_PATH"]
-            ):
+            if not os.path.abspath(python_home_dir) == os.path.abspath(os.environ["ROCK_PYTHON_PATH"]):
                 print("Error, virtual python environment is not active and")
-                print(
-                    "PYTHON location is different than specified by the ROCK_PYTHON_PATH"
-                )
+                print("PYTHON location is different than specified by the ROCK_PYTHON_PATH")
                 print("    PYTHON location: " + python_home_dir)
                 print("    ROCK_PYTHON_PATH: " + os.environ["ROCK_PYTHON_PATH"])
-                print(
-                    "If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:"
-                )
+                print("If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:")
                 if is_posix:
                     print("    export ROCK_PYTHON_PATH=" + python_home_dir)
                 else:
@@ -260,19 +254,26 @@ def verify_build_env__python(self, is_posix: bool):
             else:
                 print("Using python from location: " + python_home_dir)
         else:
-            print(
-                "Error, virtual python environment is not active and ROCK_PYTHON_PATH is not defined"
-            )
+            print("Error, virtual python environment is not active and ROCK_PYTHON_PATH is not defined")
             print("    PYTHON location: " + python_home_dir)
-            print(
-                "If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:"
-            )
+            print("If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:")
             if is_posix:
                 print("    export ROCK_PYTHON_PATH=" + python_home_dir)
             else:
                 print("    set ROCK_PYTHON_PATH=" + python_home_dir)
             print("Alternatively activate the virtual python environment")
             sys.exit(1)
+
+def verify_build_env__rockbuilder_config(self,
+                     rock_builder_home_dir: Path,
+                     rock_builder_build_dir: Path):
+    # read and set up env based on to rockbuilder.ini file if it exist
+    rcb_config = RockBuilderConfig.RockBuilderConfig(
+        rock_builder_home_dir, rock_builder_build_dir
+    )
+    res = rcb_config.read_cfg()
+    if res:
+        rcb_config.setup_build_env()
 
 
 def get_rocm_sdk_targets_on_linux(exec_dir: Path):
@@ -303,183 +304,6 @@ def get_rocm_sdk_targets_on_linux(exec_dir: Path):
             )
             sys.exit(1)
     return ret
-
-
-def verify_build_env(args,
-                     is_posix: bool,
-                     rock_builder_home_dir: Path,
-                     rock_builder_build_dir: Path):
-    # we may actually need to have the build environment
-    # even during the checkout as we do the hipify during the checkout process
-    """"
-    if ((args.checkout == True) and\
-        (args.init == False) and\
-        (args.clean == False) and\
-        (args.hipify == False) and\
-        (args.pre_config == False) and\
-        (args.config == False) and\
-        (args.post_config == False) and\
-        (args.build == False) and\
-        (args.install == False) and\
-        (args.post_install == False)):
-        # allow code checkout even before TheRock build has been installed
-        printout_rock_builder_info()
-        return
-    """
-
-    # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
-    # whether code is executed on Linux or Windows (it is later used to set env-variables)
-    if is_posix:
-        ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
-    else:
-        ENV_VARIABLE_NAME__LIB = "LIBPATH"
-
-    # read and set up env based on to rockbuilder.ini file if it exist
-    rcb_config = RockBuilderConfig.RockBuilderConfig(
-        rock_builder_home_dir, rock_builder_build_dir
-    )
-    res = rcb_config.read_cfg()
-    if res:
-        rcb_config.setup_build_env()
-
-    # check rocm
-    if "ROCM_HOME" in os.environ:
-        rocm_home_root_path = Path(os.environ["ROCM_HOME"])
-        rocm_home_root_path = rocm_home_root_path.resolve()
-    else:
-        rocm_home_root_path = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
-        rocm_home_root_path = rocm_home_root_path.resolve()
-        print("using locally build rocm sdk from TheRock:")
-        print("    " + rocm_home_root_path.as_posix())
-    if rocm_home_root_path.exists():
-        rocm_home_bin_path = rocm_home_root_path / "bin"
-        rocm_home_lib_path = rocm_home_root_path / "lib"
-        rocm_home_bin_path = rocm_home_bin_path.resolve()
-        rocm_home_lib_path = rocm_home_lib_path.resolve()
-        rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
-        rocm_home_llvm_path = rocm_home_llvm_path.resolve()
-        if rocm_home_bin_path.exists() and rocm_home_lib_path.exists():
-            # set ROCM_HOME if not yet set
-            if not "ROCM_HOME" in os.environ:
-                # print("ROCM_HOME: " + rocm_home_root_path.as_posix())
-                os.environ["ROCM_HOME"] = rocm_home_root_path.as_posix()
-            # set ROCM_PATH to always point to same location than ROCM_HOME
-            # ROCM_PATH is used by some ROCM applications instead of ROCM_HOME
-            os.environ["ROCM_PATH"] = rocm_home_root_path.as_posix()
-            if not is_directory_in_env_variable_path(
-                "PATH", rocm_home_bin_path.as_posix()
-            ):
-                # print("Adding " + rocm_home_bin_path.as_posix() + " to PATH")
-                os.environ["PATH"] = (
-                    rocm_home_bin_path.as_posix()
-                    + os.pathsep
-                    + os.environ.get("PATH", "")
-                )
-            if not is_directory_in_env_variable_path(
-                "PATH", rocm_home_llvm_path.as_posix()
-            ):
-                # print("Adding " + rocm_home_llvm_path.as_posix() + " to PATH")
-                os.environ["PATH"] = (
-                    rocm_home_llvm_path.as_posix()
-                    + os.pathsep
-                    + os.environ.get("PATH", "")
-                )
-            if not is_directory_in_env_variable_path(
-                ENV_VARIABLE_NAME__LIB, rocm_home_lib_path.as_posix()
-            ):
-                # print("Adding " + rocm_home_lib_path.as_posix() + " to " + ENV_VARIABLE_NAME__LIB)
-                os.environ[ENV_VARIABLE_NAME__LIB] = (
-                    rocm_home_lib_path.as_posix()
-                    + os.pathsep
-                    + os.environ.get(ENV_VARIABLE_NAME__LIB, "")
-                )
-            # find bitcode and put it to path
-            for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
-                folder_path = folder_path.resolve()
-                os.environ["ROCK_BUILDER_BITCODE_HOME"] = folder_path.as_posix()
-                break
-            # find hipcc
-            if is_posix:
-                hipcc_exec_name = "hipcc"
-            else:
-                hipcc_exec_name = "hipcc.bat"
-            for folder_path in Path(rocm_home_root_path).glob("**/" + hipcc_exec_name):
-                hipcc_home = folder_path.parent
-                # make sure that we found bin/clang and not clang folder
-                if hipcc_home.name.lower() == "bin":
-                    os.environ["ROCK_BUILDER_COMPILER_HIPCC"] = folder_path.as_posix()
-                    hipcc_home = hipcc_home.parent
-                    if hipcc_home.is_dir():
-                        hipcc_home = hipcc_home.resolve()
-                        os.environ["ROCK_BUILDER_HIPCC_HOME"] = hipcc_home.as_posix()
-                        break
-            # find clang
-            if is_posix:
-                clang_exec_name = "clang"
-            else:
-                clang_exec_name = "clang.exe"
-            for folder_path in Path(rocm_home_root_path).glob("**/" + clang_exec_name):
-                clang_home = folder_path.parent
-                # make sure that we found bin/clang and not clang folder
-                if clang_home.name.lower() == "bin":
-                    os.environ["ROCK_BUILDER_COMPILER_CLANG"] = folder_path.as_posix()
-                    clang_home = clang_home.parent
-                    if clang_home.is_dir():
-                        clang_home = clang_home.resolve()
-                        os.environ["ROCK_BUILDER_CLANG_HOME"] = clang_home.as_posix()
-                        break
-            # check that THEROCK_AMDGPU_TARGETS environment variable is set.
-            # If not:
-            #   - Linux: check the gpus available and assign them to THEROCK_AMDGPU_TARGETS
-            #   - Windows: exit on error, because it can not be queried automatically
-            if not "THEROCK_AMDGPU_TARGETS" in os.environ:
-                if is_posix:
-                    gpu_targets = get_rocm_sdk_targets_on_linux(rocm_home_bin_path)
-                    os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_targets
-                    print("gpu_targets: " + gpu_targets)
-                else:
-                    print(
-                        "Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs"
-                    )
-                    print(
-                        "Target GPU must match with the GPU selected on TheRock core build"
-                    )
-                    print("Example for building for AMD Strix Halo and RX 9070:")
-                    print("  set THEROCK_AMDGPU_TARGETS=gfx1151;gfx1201")
-                    sys.exit(1)
-        else:
-            print(
-                "Error, could not find directory ROCM_SDK/lib: "
-                + rocm_home_lib_path.as_posix()
-            )
-            sys.exit(1)
-    else:
-        if not "SKIP_ROCM_HOME_CHECK" in os.environ:
-            print("")
-            print("Error, SKIP_ROCM_HOME_CHECK or ROCM_HOME is not defined and")
-            print("       existing ROCM build is not detected:")
-            print("       " + rocm_home_root_path.as_posix())
-            print("")
-            sys.exit(1)
-    printout_build_env_info()
-
-
-# check whether specified directory is included in the specified environment variable
-def is_directory_in_env_variable_path(env_variable, directory):
-    """
-    Checks if a directory is in the env_variable specified as a parameter.
-    (path, libpath, etc)
-
-    Args:
-      env_variable: Environment variable used to check the path
-      directory: The path searched from the environment variable
-
-    Returns:
-      True if the directory is in PATH, False otherwise.
-    """
-    path_env = os.environ.get(env_variable, "")
-    path_directories = path_env.split(os.pathsep)
-    return directory in path_directories
 
 
 # do all build steps for given process
@@ -592,7 +416,9 @@ def main():
     args_dict = args.__dict__
     printout_build_arguments(args)
     verify_build_env__python(args, is_posix)
-    verify_build_env(args, is_posix, rock_builder_home_dir, rock_builder_build_dir)
+    verify_build_env__rockbuilder_config(args, rock_builder_home_dir, rock_builder_build_dir)
+    #verify_build_env(args, is_posix, rock_builder_home_dir, rock_builder_build_dir)
+    printout_build_env_info()
 
     for ii, prj_item in enumerate(project_list):
         print(f"    Project [{ii}]: {prj_item}")

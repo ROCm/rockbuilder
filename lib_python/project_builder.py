@@ -24,6 +24,22 @@ class RockProjectBuilder(configparser.ConfigParser):
             ret = None
         return ret
 
+    def to_boolean(self, value):
+        if isinstance(value, bool):
+            return value
+        elif isinstance(value, (int, float)):
+            return bool(value)  # 0 and 0.0 are False, others are True
+        elif isinstance(value, str):
+            lower_value = value.lower().strip()
+            if lower_value in ("true", "yes", "1"):
+                return True
+            elif lower_value in ("false", "no", "0"):
+                return False
+            else:
+                raise ValueError(f"Cannot convert '{value}' to boolean.")
+        else:
+            raise TypeError(f"Unsupported type: {type(value)}")
+
     def __init__(
         self,
         rock_builder_root_dir,
@@ -57,12 +73,25 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.repo_url = self.get("project_info", "repo_url")
         else:
             self.repo_url = None
+
         if self.has_option("project_info", "repo_tags"):
-            self.repo_depth = 0
-            self.repo_tags = self.get("project_info", "repo_tags")
+            self.repo_tags = self._get_project_info_config_value("repo_tags")
+            self.repo_tags = self.to_boolean(self.repo_tags)
+            if self.repo_tags:
+                self.repo_depth = 0
+            else:
+                self.repo_depth = 1
         else:
             self.repo_depth = 1
             self.repo_tags = None
+
+        if self.has_option("project_info", "use_rocm_sdk"):
+            self.use_rocm_sdk = self._get_project_info_config_value("use_rocm_sdk")
+            self.use_rocm_sdk = self.to_boolean(self.use_rocm_sdk)
+        else:
+            self.use_rocm_sdk = True
+        print("use_rocm_sdk: " + str(self.use_rocm_sdk))
+
         # If the project's version_override parameter has been set, then use that version
         # instead of using the version specified in the project.cfg file
         env_version_name = "--" + self.project_name + "-version"
@@ -274,13 +303,158 @@ class RockProjectBuilder(configparser.ConfigParser):
             if not res:
                 self.printout_error_and_terminate(cmd_phase_name)
 
+
+    # check whether specified directory is included in the specified environment variable
+    def _is_directory_in_env_variable_path(self, env_variable, directory):
+        """
+        Checks if a directory is in the env_variable specified as a parameter.
+        (path, libpath, etc)
+
+        Args:
+          env_variable: Environment variable used to check the path
+          directory: The path searched from the environment variable
+
+        Returns:
+          True if the directory is in PATH, False otherwise.
+        """
+        path_env = os.environ.get(env_variable, "")
+        path_directories = path_env.split(os.pathsep)
+        return directory in path_directories
+
+    def get_rocm_sdk_env_variables(self):
+        # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
+        # whether code is executed on Linux or Windows (it is later used to set env-variables)
+        ret = []
+
+        NEW_PATH_ENV_DIRS = None
+        if self.is_posix:
+            ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
+        else:
+            ENV_VARIABLE_NAME__LIB = "LIBPATH"
+
+        # check rocm
+        if "ROCM_HOME" in os.environ:
+            rocm_home_root_path = Path(os.environ["ROCM_HOME"])
+            rocm_home_root_path = rocm_home_root_path.resolve()
+        else:
+            rocm_home_root_path = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
+            rocm_home_root_path = rocm_home_root_path.resolve()
+            print("using locally build rocm sdk from TheRock:")
+            print("    " + rocm_home_root_path.as_posix())
+        if rocm_home_root_path.exists():
+            rocm_home_bin_path = rocm_home_root_path / "bin"
+            rocm_home_lib_path = rocm_home_root_path / "lib"
+            rocm_home_bin_path = rocm_home_bin_path.resolve()
+            rocm_home_lib_path = rocm_home_lib_path.resolve()
+            rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
+            rocm_home_llvm_path = rocm_home_llvm_path.resolve()
+            if rocm_home_bin_path.exists() and rocm_home_lib_path.exists():
+                # set ROCM_HOME if not yet set
+                if not "ROCM_HOME" in os.environ:
+                    # print("ROCM_HOME: " + rocm_home_root_path.as_posix())
+                    ret.append("ROCM_HOME=" + rocm_home_root_path.as_posix())
+                # set ROCM_PATH to always point to same location than ROCM_HOME
+                # ROCM_PATH is used by some ROCM applications instead of ROCM_HOME
+                ret.append("ROCM_PATH=" + rocm_home_root_path.as_posix())
+                if not self._is_directory_in_env_variable_path("PATH", rocm_home_bin_path.as_posix()):
+                    NEW_PATH_ENV_DIRS=rocm_home_bin_path.as_posix()
+                    # print("Adding " + rocm_home_bin_path.as_posix() + " to PATH")
+                if not self._is_directory_in_env_variable_path("PATH", rocm_home_llvm_path.as_posix()):
+                    # print("Adding " + rocm_home_llvm_path.as_posix() + " to PATH")
+                    NEW_PATH_ENV_DIRS=NEW_PATH_ENV_DIRS + os.pathsep + rocm_home_llvm_path.as_posix()
+                if not self._is_directory_in_env_variable_path(ENV_VARIABLE_NAME__LIB, rocm_home_lib_path.as_posix()):
+                    # print("Adding " + rocm_home_lib_path.as_posix() + " to " + ENV_VARIABLE_NAME__LIB)
+                    ret.append(ENV_VARIABLE_NAME__LIB + "=" + (
+                        rocm_home_lib_path.as_posix()
+                        + os.pathsep
+                        + os.environ.get(ENV_VARIABLE_NAME__LIB, "")))
+                # find bitcode and put it to path
+                for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
+                    folder_path = folder_path.resolve()
+                    ret.append("ROCK_BUILDER_BITCODE_HOME=" + folder_path.as_posix())
+                    break
+                # find hipcc
+                if self.is_posix:
+                    hipcc_exec_name = "hipcc"
+                else:
+                    hipcc_exec_name = "hipcc.bat"
+                for folder_path in Path(rocm_home_root_path).glob("**/" + hipcc_exec_name):
+                    hipcc_home = folder_path.parent
+                    # make sure that we found bin/clang and not clang folder
+                    if hipcc_home.name.lower() == "bin":
+                        ret.append("ROCK_BUILDER_COMPILER_HIPCC=" + folder_path.as_posix())
+                        hipcc_home = hipcc_home.parent
+                        if hipcc_home.is_dir():
+                            hipcc_home = hipcc_home.resolve()
+                            ret.append("ROCK_BUILDER_HIPCC_HOME=" + hipcc_home.as_posix())
+                            break
+                # find clang
+                if self.is_posix:
+                    clang_exec_name = "clang"
+                else:
+                    clang_exec_name = "clang.exe"
+                for folder_path in Path(rocm_home_root_path).glob("**/" + clang_exec_name):
+                    clang_home = folder_path.parent
+                    # make sure that we found bin/clang and not clang folder
+                    if clang_home.name.lower() == "bin":
+                        ret.append("ROCK_BUILDER_COMPILER_CLANG=" + folder_path.as_posix())
+                        clang_home = clang_home.parent
+                        if clang_home.is_dir():
+                            clang_home = clang_home.resolve()
+                            ret.append("ROCK_BUILDER_CLANG_HOME=" + clang_home.as_posix())
+                            break
+                # check that THEROCK_AMDGPU_TARGETS environment variable is set.
+                # If not:
+                #   - Linux: check the gpus available and assign them to THEROCK_AMDGPU_TARGETS
+                #   - Windows: exit on error, because it can not be queried automatically
+                if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+                    if self.is_posix:
+                        gpu_targets = get_rocm_sdk_targets_on_linux(rocm_home_bin_path)
+                        ret.append("THEROCK_AMDGPU_TARGETS=" + gpu_targets)
+                        print("gpu_targets: " + gpu_targets)
+                    else:
+                        print(
+                            "Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs"
+                        )
+                        print(
+                            "Target GPU must match with the GPU selected on TheRock core build"
+                        )
+                        print("Example for building for AMD Strix Halo and RX 9070:")
+                        print("  set THEROCK_AMDGPU_TARGETS=gfx1151;gfx1201")
+                        sys.exit(1)
+            else:
+                print(
+                    "Error, could not find directory ROCM_SDK/lib: "
+                    + rocm_home_lib_path.as_posix()
+                )
+                sys.exit(1)
+        else:
+            if not self.use_rocm_sdk:
+                print("")
+                print("Error, use_rocm_sdk is not set to false in project config file")
+                print("       or ROCM_HOME is not defined")
+                print("       or existing ROCM SDK build is not detected:")
+                print("       " + rocm_home_root_path.as_posix())
+                print("")
+                sys.exit(1)
+        if NEW_PATH_ENV_DIRS:
+            ret.append("PATH=" + (
+                     NEW_PATH_ENV_DIRS
+                     + os.pathsep
+                     + os.environ.get("PATH", "")))
+        return ret
+
+
     def do_env_setup(self):
-        res = self.project_repo.do_env_setup(self.env_setup_cmd)
+        rocm_sdk_setup_cmd_list = None
+        if self.use_rocm_sdk:
+            rocm_sdk_setup_cmd_list = self.get_rocm_sdk_env_variables()
+        res = self.project_repo.do_env_setup(rocm_sdk_setup_cmd_list, self.env_setup_cmd)
         if not res:
             self.printout_error_and_terminate("env_setup")
 
     def undo_env_setup(self):
-        res = self.project_repo.undo_env_setup(self.env_setup_cmd)
+        res = self.project_repo.undo_env_setup()
         if not res:
             self.printout_error_and_terminate("undo_env_setup")
 

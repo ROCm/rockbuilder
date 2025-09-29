@@ -44,6 +44,7 @@ class RockProjectRepo:
         self.project_patch_dir_base_name = project_patch_dir_base_name
         self.patch_dir_root_arr = patch_dir_root_arr
         self.orig_env_variables_hashtable = dict()
+        self.is_posix = not any(platform.win32_ver())
         os.environ["ROCK_BUILDER_APP_SRC_DIR"] = project_src_dir.as_posix()
         os.environ["ROCK_BUILDER_APP_BUILD_DIR"] = project_build_dir.as_posix()
 
@@ -429,10 +430,16 @@ class RockProjectRepo:
         project_patch_dir_name = self.repo_hashtag_to_patches_dir_name(project_patch_dir_name)
         return Path(patch_dir_root / project_name / project_patch_dir_name)
 
-    def do_env_setup(self, env_setup_cmd_list):
-        ret = True
+    def do_env_setup(self, rocm_sdk_setup_cmd_list, prj_env_setup_cmd_list):
+        env_setup_cmd_list = []
+        if rocm_sdk_setup_cmd_list:
+            env_setup_cmd_list = rocm_sdk_setup_cmd_list
+        if prj_env_setup_cmd_list:
+            env_setup_cmd_list = env_setup_cmd_list + prj_env_setup_cmd_list
         if env_setup_cmd_list:
-            print(env_setup_cmd_list)
+            #print(rocm_sdk_setup_cmd_list)
+            #print(prj_env_setup_cmd_list)
+            #print(env_setup_cmd_list)
             for key_value_str in env_setup_cmd_list:
                 print(key_value_str)
                 key_value_arr = key_value_str.split("=", 1)
@@ -454,22 +461,20 @@ class RockProjectRepo:
                         + self.project_cfg_name
                     )
                     print("Key: " + key_value_str)
-                    ret = False
+                    sys.exit(1)
         else:
             print("No environment settings specified")
         print("------ env-settings start ----------")
         self._exec_subprocess_cmd("env", ".")
         print("------ env-settings end ----------")
 
-        if ret:
-            # create build dir
-            cur_p = Path(self.project_build_dir)
-            cur_p.mkdir(parents=True, exist_ok=True)
-            ret = cur_p.is_dir()
-
+        # create build dir
+        cur_p = Path(self.project_build_dir)
+        cur_p.mkdir(parents=True, exist_ok=True)
+        ret = cur_p.is_dir()
         return ret
 
-    def undo_env_setup(self, env_setup_cmd_list):
+    def undo_env_setup(self):
         #print("undo_env_setup")
         for (
             env_var_key,
@@ -507,7 +512,7 @@ class RockProjectRepo:
     def do_checkout(
         self,
         repo_fetch_depth=1,
-        repo_fetch_tags=None,
+        repo_fetch_tags=False,
         repo_fetch_job_cnt=1,
         apply_patches_enabled=1,
         hipify_enabled=1,
