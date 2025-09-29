@@ -9,8 +9,9 @@ import platform
 import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, urlunparse, quote
-
 import subprocess
+
+import lib_python.rckb_constants as rckb_constants
 
 TAG_UPSTREAM_DIFFBASE = "THEROCK_UPSTREAM_DIFFBASE"
 TAG_HIPIFY_DIFFBASE = "THEROCK_HIPIFY_DIFFBASE"
@@ -165,7 +166,7 @@ class RockProjectRepo:
                 ret = False
         return ret
 
-    def _handle_command_exec(self, exec_phase, exec_cmd, cmd_exec_dir):
+    def _handle_command_exec(self, exec_phase_name, exec_cmd, cmd_exec_dir):
         cmd_exec_dir = Path(os.path.expandvars(str(cmd_exec_dir)))
         if exec_cmd:
             exec_cmd = os.path.expandvars(exec_cmd)
@@ -203,23 +204,23 @@ class RockProjectRepo:
                     # first to bat-file and then execute that bat-file.
                     os.makedirs(self.project_build_dir, exist_ok=True)
                     build_cmd_file = os.path.join(
-                        self.project_build_dir, exec_phase + ".bat"
+                        self.project_build_dir, exec_phase_name + ".bat"
                     )
                     with open(build_cmd_file, "w") as file:
                         file.write(exec_cmd)
                     ret = self._exec_subprocess_batch_file(str(build_cmd_file))
                 else:
                     # bash can execute multiple commands in same subprocess.run process
-                    print("------ " + exec_phase + " start ----------")
+                    print("------ " + exec_phase_name + " start ----------")
                     self._exec_subprocess_cmd("env", cmd_exec_dir)
-                    print("------ " + exec_phase + " end ----------")
+                    print("------ " + exec_phase_name + " end ----------")
                     time.sleep(1)
                     ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
             else:
                 # execute just a single command
-                print("------ " + exec_phase + " start ----------")
+                print("------ " + exec_phase_name + " start ----------")
                 self._exec_subprocess_cmd("env", cmd_exec_dir)
-                print("------ " + exec_phase + " end ----------")
+                print("------ " + exec_phase_name + " end ----------")
                 time.sleep(1)
                 ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
         return ret
@@ -459,10 +460,16 @@ class RockProjectRepo:
         print("------ env-settings start ----------")
         self._exec_subprocess_cmd("env", ".")
         print("------ env-settings end ----------")
+
+        if ret:
+            # create build dir
+            cur_p = Path(self.project_build_dir)
+            cur_p.mkdir(parents=True, exist_ok=True)
+            ret = cur_p.is_dir()
+
         return ret
 
     def undo_env_setup(self, env_setup_cmd_list):
-        ret = True
         #print("undo_env_setup")
         for (
             env_var_key,
@@ -477,7 +484,7 @@ class RockProjectRepo:
                 # print("restore: " + env_var_key)
                 # print("value: " + orig_env_var_value)
                 os.environ[env_var_key] = orig_env_var_value
-        return ret
+        return True
 
     def is_multiline_text(self, exec_cmd):
         return len(exec_cmd.splitlines()) > 1
@@ -492,7 +499,7 @@ class RockProjectRepo:
 
     def do_clean(self, clean_cmd):
         ret = True
-        # we want to return true for clean command even if the project has not been checked out yet
+        # we want to return true for the clean command even if the project has not been checked out yet
         if self.project_src_dir.is_dir() == True:
             ret = self._handle_command_exec("clean", clean_cmd, self.project_exec_dir)
         return ret
@@ -710,13 +717,12 @@ class RockProjectRepo:
     def do_install(self, install_cmd):
         return self._handle_command_exec("install", install_cmd, self.project_exec_dir)
 
-    def do_cmake_install(self, cmake_config):
-        ret = True
-        if cmake_config:
-            install_cmd = "cmake --install " + self.project_build_dir.as_posix()
-            ret = self._handle_command_exec(
-                "cmake install", install_cmd, self.project_build_dir
-            )
+    # do cmake install call if there is cmake config command
+    def do_cmake_install(self):
+        install_cmd = "cmake --install " + self.project_build_dir.as_posix()
+        ret = self._handle_command_exec(
+            "cmake install", install_cmd, self.project_build_dir
+        )
         return ret
 
     def do_post_install(self, post_install_cmd):

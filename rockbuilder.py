@@ -187,10 +187,13 @@ def parse_build_arguments(parser):
         or ("--install" in sys.argv)
         or ("--post_install" in sys.argv)
     ):
+		# if cmd_phase argument is specified, we will execute the command even if the stamp file exist
+        args.cmd_force_exec = True
         print(
             "checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install argument specified"
         )
     else:
+        args.cmd_force_exec = False
         # print("Action not specified.(checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install)")
         # print("Using default values")
         # enable everything except clean
@@ -207,19 +210,6 @@ def parse_build_arguments(parser):
     # force the hipify step always as a part of the checkout
     if args.checkout:
         args.hipify = True
-
-    # add output dir to environment variables
-    if args.project and args.src_dir:
-        # single project case with optional src_dir specified
-        parent_dir = args.src_dir.parent
-        if parent_dir == args.src_dir:
-            print("Error, --src-dir parameter is not allowed to be a root-directory")
-            sys.exit(1)
-        os.environ["ROCK_BUILDER_SRC_DIR"] = parent_dir.as_posix()
-    else:
-        # directory where each projects source code is checked out
-        os.environ["ROCK_BUILDER_SRC_DIR"] = args.src_base_dir.as_posix()
-    os.environ["ROCK_BUILDER_PACKAGE_OUTPUT_DIR"] = args.output_dir.as_posix()
 
     return args
 
@@ -506,37 +496,37 @@ def do_therock(prj_builder, args):
             # multiple steps possible, so do not use else's here
             if args.clean:
                 prj_builder.printout("clean")
-                prj_builder.clean()
+                prj_builder.clean(args.cmd_force_exec)
             if args.checkout:
                 prj_builder.printout("checkout")
-                prj_builder.checkout()
+                prj_builder.checkout(args.cmd_force_exec)
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
             if args.init:
                 prj_builder.printout("init")
-                prj_builder.init()
+                prj_builder.init(args.cmd_force_exec)
             if args.hipify:
                 prj_builder.printout("hipify")
-                prj_builder.hipify()
+                prj_builder.hipify(args.cmd_force_exec)
             if args.pre_config:
                 prj_builder.printout("pre_config")
-                prj_builder.pre_config()
+                prj_builder.pre_config(args.cmd_force_exec)
             if args.config:
                 prj_builder.printout("config")
-                prj_builder.config()
+                prj_builder.config(args.cmd_force_exec)
             if args.post_config:
                 prj_builder.printout("post_config")
-                prj_builder.post_config()
+                prj_builder.post_config(args.cmd_force_exec)
             if args.build:
                 prj_builder.printout("build")
-                prj_builder.build()
+                prj_builder.build(args.cmd_force_exec)
             if args.install:
                 prj_builder.printout("install")
-                prj_builder.install()
+                prj_builder.install(args.cmd_force_exec)
             if args.post_install:
                 prj_builder.printout("post_install")
-                prj_builder.post_install()
+                prj_builder.post_install(args.cmd_force_exec)
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled
             prj_builder.undo_env_setup()
@@ -584,6 +574,20 @@ def main():
         rock_builder_home_dir, default_src_base_dir, project_list
     )
     args = parse_build_arguments(arg_parser)
+
+    # add output dir to environment variables
+    if args.project and args.src_dir:
+        # single project case with optional src_dir specified
+        parent_dir = args.src_dir.parent
+        if parent_dir == args.src_dir:
+            print("Error, --src-dir parameter is not allowed to be a root-directory")
+            sys.exit(1)
+        os.environ["ROCK_BUILDER_SRC_DIR"] = parent_dir.as_posix()
+    else:
+        # directory where each projects source code is checked out
+        os.environ["ROCK_BUILDER_SRC_DIR"] = args.src_base_dir.as_posix()
+    os.environ["ROCK_BUILDER_PACKAGE_OUTPUT_DIR"] = args.output_dir.as_posix()
+
     # store the arguments to dictionary to make it easier to get "project_name"-version parameters
     args_dict = args.__dict__
     printout_build_arguments(args)
