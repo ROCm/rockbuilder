@@ -115,10 +115,31 @@ class RockProjectRepo:
         print(ret)
         return ret
 
+    def _handle_RCB_CMD__DELETE_SOURCE_SUBDIR(self, delete_cmd):
+        print("_handle_RCB_CMD__DELETE_SOURCE_SUBDIR: " + delete_cmd)
+        cmd_arr = delete_cmd.split()
+        if len(cmd_arr) > 1:
+            try:
+                for item_to_delete in cmd_arr[1:]:
+                    print("file_or_dir_to_delete: " + item_to_delete)
+                    item_to_delete = self.project_src_dir / item_to_delete
+                    print("item_to_delete: " + str(item_to_delete))
+                    if item_to_delete.exists():
+                        if item_to_delete.is_file():
+                            item_to_delete.unlink()
+                        elif item_to_delete.is_dir():
+                            shutil.rmtree(item_to_delete)
+            except PermissionError:
+                print(f"Error: Permission denied to delete: {item_to_delete}")
+                sys.exit(1)
+            except OSError as e:
+                print(f"Error deleting: {item_to_delete}")
+                sys.exit(1)
+
     # 1) search the latest wheel file from certain directory
     # 2) copy wheel to packages/wheel directory
     # 3) install wheel to current python environment
-    def _handle_FIND_AND_HANDLE_LATEST_PYTHON_WHEEL_CMD(self, install_cmd):
+    def _handle_RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL(self, install_cmd):
         ret = True
         install_cmd_arr = install_cmd.split()
         print("len(install_cmd_arr): " + str(len(install_cmd_arr)))
@@ -178,11 +199,14 @@ class RockProjectRepo:
         #  - Special commands are keywords that will trigger the execution
         #    of internal python function.
         #  - Special commands needs to be the first commands executed
-        while (
-            (ret == True)
-            and (exec_cmd is not None)
-            and (exec_cmd.startswith("RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL"))
-        ):
+        #
+        #  TODO: it should be possible to have special commands also in the middle of
+        #        of other commands. Instead of single windows bat file, there would be multiple
+        #        bat files splitted by these special commands.
+        while ((ret == True) and
+               (exec_cmd is not None) and
+               ((exec_cmd.startswith("RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL")) or
+                (exec_cmd.startswith("RCB_CMD__DELETE_SOURCE_SUBDIR")))):
             line_arr = exec_cmd.splitlines(True)
             special_cmd = line_arr[0]
             # then concat rest of the lines for next command to be executed
@@ -190,7 +214,10 @@ class RockProjectRepo:
                 exec_cmd = "".join(line_arr[1:])
             else:
                 exec_cmd = None
-            ret = self._handle_FIND_AND_HANDLE_LATEST_PYTHON_WHEEL_CMD(special_cmd)
+            if special_cmd.startswith("RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL"):
+                ret = self._handle_RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL(special_cmd)
+            if special_cmd.startswith("RCB_CMD__DELETE_SOURCE_SUBDIR"):
+                ret = self._handle_RCB_CMD__DELETE_SOURCE_SUBDIR(special_cmd)
         # then handle regular command or multiple commands
         if (ret == True) and (exec_cmd is not None):
             is_multiline = self.is_multiline_text(exec_cmd)
