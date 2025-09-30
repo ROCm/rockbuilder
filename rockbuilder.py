@@ -327,12 +327,12 @@ def do_therock(prj_builder, args):
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
-            if args.init:
-                prj_builder.printout("init")
-                prj_builder.init(args.cmd_force_exec)
             if args.hipify:
                 prj_builder.printout("hipify")
                 prj_builder.hipify(args.cmd_force_exec)
+            if args.init:
+                prj_builder.printout("init")
+                prj_builder.init(args.cmd_force_exec)
             if args.pre_config:
                 prj_builder.printout("pre_config")
                 prj_builder.pre_config(args.cmd_force_exec)

@@ -250,9 +250,9 @@ class RockProjectBuilder(configparser.ConfigParser):
     def _get_cmd_phase_stamp_filenames_for_pending_commands(self, cmd_phase_name:str):
         ret = []
         force_add = False
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
@@ -413,20 +413,13 @@ class RockProjectBuilder(configparser.ConfigParser):
                         ret.append("THEROCK_AMDGPU_TARGETS=" + gpu_targets)
                         print("gpu_targets: " + gpu_targets)
                     else:
-                        print(
-                            "Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs"
-                        )
-                        print(
-                            "Target GPU must match with the GPU selected on TheRock core build"
-                        )
+                        print("Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs")
+                        print("Target GPU must match with the GPU selected on TheRock core build")
                         print("Example for building for AMD Strix Halo and RX 9070:")
                         print("  set THEROCK_AMDGPU_TARGETS=gfx1151;gfx1201")
                         sys.exit(1)
             else:
-                print(
-                    "Error, could not find directory ROCM_SDK/lib: "
-                    + rocm_home_lib_path.as_posix()
-                )
+                print("Error, could not find directory ROCM_SDK/lib: " + rocm_home_lib_path.as_posix())
                 sys.exit(1)
         else:
             if not self.use_rocm_sdk:
