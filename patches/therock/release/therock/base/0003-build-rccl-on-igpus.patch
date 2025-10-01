@@ -1,19 +1,26 @@
-From f5f08dcd4474904955b38e9dcf4c6bbaba22be81 Mon Sep 17 00:00:00 2001
+From 3216a65c0cdbf3e34a41cc666ba78b164439570c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 30 Sep 2025 05:56:14 +0000
 Subject: [PATCH 3/3] build rccl on igpus
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- cmake/therock_amdgpu_targets.cmake | 10 ++--------
- 1 file changed, 2 insertions(+), 8 deletions(-)
+ cmake/therock_amdgpu_targets.cmake | 15 +++------------
+ 1 file changed, 3 insertions(+), 12 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index bf1c62b..4ff5b65 100644
+index ed844ec..4ff5b65 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
-@@ -101,14 +101,8 @@ therock_add_amdgpu_target(gfx1102 "AMD RX 7700S/Framework Laptop 16" FAMILY dgpu
- therock_add_amdgpu_target(gfx1103 "AMD Radeon 780M Laptop iGPU" FAMILY igpu-all gfx110X-all gfx110X-igpu)
+@@ -98,20 +98,11 @@ therock_add_amdgpu_target(gfx1102 "AMD RX 7700S/Framework Laptop 16" FAMILY dgpu
+   EXCLUDE_TARGET_PROJECTS
+     hipBLASLt # https://github.com/ROCm/TheRock/issues/1062
+ )
+-therock_add_amdgpu_target(gfx1103 "AMD Radeon 780M Laptop iGPU" FAMILY igpu-all gfx110X-all gfx110X-igpu
+-  EXCLUDE_TARGET_PROJECTS
+-    rccl  # https://github.com/ROCm/TheRock/issues/150
+-)
++therock_add_amdgpu_target(gfx1103 "AMD Radeon 780M Laptop iGPU" FAMILY igpu-all gfx110X-all gfx110X-igpu)
  
  # gfx115X family
 -therock_add_amdgpu_target(gfx1150 "AMD Strix Point iGPU" FAMILY igpu-all gfx115X-all gfx115X-igpu
@@ -30,5 +37,5 @@ index bf1c62b..4ff5b65 100644
  # gfx120X family
  therock_add_amdgpu_target(gfx1200 "AMD RX 9060 / XT" FAMILY dgpu-all gfx120X-all)
 -- 
-2.43.0
+2.34.1
 
