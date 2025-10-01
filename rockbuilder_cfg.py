@@ -6,8 +6,11 @@
 import configparser
 import curses
 import os
+import subprocess
 import sys
-import lib_python.rckb_constants as rckb_constants
+from lib_python.utils import verify_env__python
+from lib_python.utils import install_rocm_sdk_from_python_wheels
+import lib_python.rcb_constants as rcb_const
 from pathlib import Path, PurePosixPath
 
 # Basic heuristic vefication to check whether rocm_sdk directory looks valid
@@ -38,7 +41,7 @@ def get_rocm_home_path_if_available():
 # return either Path to ROCM_SDK or None
 def get_local_rocm_sdk_path_if_available():
     ret = None
-    rocm_home = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
+    rocm_home = rcb_const.THEROCK_SDK__ROCM_HOME_BUILD_DIR
     if is_valid_rocm_home_path(rocm_home):
         ret = rocm_home
     return ret
@@ -180,7 +183,7 @@ class GpuSelectionList(BaseSelectionList):
     def __init__(self, stdscr):
         super().__init__(
             stdscr,
-            rckb_constants.RCKB__CFG__SECTION__BUILD_TARGETS,
+            rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
             f"Select target GPUs for the build", True
         )
 
@@ -206,12 +209,12 @@ class SDKSelectionList(BaseSelectionList):
     def __init__(self, stdscr):
         super().__init__(
             stdscr,
-            rckb_constants.RCKB__CFG__SECTION__ROCM_SDK,
+            rcb_const.RCB__CFG__SECTION__ROCM_SDK,
             f"Select ROCM SDK used for the build", False
         )
 
         def_sel = True
-        whl_server_base_url = rckb_constants.THEROCK_SDK__PYTHON_WHEEL_SERVER_URL
+        whl_server_base_url = rcb_const.THEROCK_SDK__PYTHON_WHEEL_SERVER_URL
         rocm_home = get_rocm_home_path_if_available()
         if rocm_home:
             # add rocm home to list of SDK's to select
@@ -219,7 +222,7 @@ class SDKSelectionList(BaseSelectionList):
                 SelectionItem(
                     "Use ROCm SDK from ROCM_HOME: "
                     + rocm_home.as_posix(),
-                    rckb_constants.RCKB__CFG__KEY__ROCM_SDK_HOME,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
                     rocm_home.as_posix(),
                     def_sel,
                 )
@@ -231,7 +234,7 @@ class SDKSelectionList(BaseSelectionList):
             self.item_list.append(
                 SelectionItem(
                     "Use existing ROCm SDK: " + rocm_home.as_posix(),
-                    rckb_constants.RCKB__CFG__KEY__ROCM_SDK_HOME,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
                     rocm_home.as_posix(),
                     def_sel,
                 )
@@ -239,11 +242,11 @@ class SDKSelectionList(BaseSelectionList):
             def_sel = False
         else:
             # add an option/selection to build the rocm sdk locally
-            the_rock_sdk_root_dir = rckb_constants.THEROCK_SDK__ROOT_DIR
+            the_rock_sdk_root_dir = rcb_const.THEROCK_SDK__ROCM_HOME_BUILD_DIR
             self.item_list.append(
                 SelectionItem(
-                    "Build TheRock for ROCm SDK: " + the_rock_sdk_root_dir.as_posix(),
-                    rckb_constants.RCKB__CFG__KEY__BUILD_ROCM_SDK,
+                    "Build ROCm SDK: " + the_rock_sdk_root_dir.as_posix(),
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD,
                     the_rock_sdk_root_dir.as_posix(),
                     def_sel,
                 )
@@ -252,8 +255,8 @@ class SDKSelectionList(BaseSelectionList):
         # add an option/selection to use the rocm sdk that will be installed from the python wheel
         self.item_list.append(
             SelectionItem(
-                "Install ROCm SDK from server: " + whl_server_base_url,
-                rckb_constants.RCKB__CFG__KEY__WHEEL_SERVER_URL,
+                "Install ROCm SDK Python Wheels: " + whl_server_base_url,
+                rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS,
                 whl_server_base_url,
                 def_sel,
             )
@@ -319,15 +322,18 @@ class SelectionListManager:
             for ii, new_key in enumerate(cfg_dict.keys()):
                 new_val = cfg_dict[new_key]
                 config[section][new_key] = str(new_val)
+                print("new_key: " + str(new_key))
+                print("new_val: " + str(new_val))
         # save the configuration to a file
-        fname = rckb_constants.get_rock_builder_config_file()
+        fname = rcb_const.get_rock_builder_config_file()
         with open(fname.as_posix(), "w") as configfile:
             config.write(configfile)
+        return config
 
 
 class UiManager:
     def __init__(self, stdscr):
-        key_name_gpus = rckb_constants.RCKB__CFG__KEY__GPUS
+        key_name_gpus = rcb_const.RCB__CFG__KEY__GPUS
         self.stdscr = stdscr
         # init curses based display to show text based ui
         self.stdscr.clear()
@@ -365,6 +371,7 @@ class UiManager:
         self.gpu_list.set_item_list(self.gpu_build_target_list)
 
     def show(self):
+        ret = None
         self.sdk_list.add_item_selection_listener(self)
 
         list_mngr = SelectionListManager(self.stdscr)
@@ -391,14 +398,15 @@ class UiManager:
             elif key == ord(" "):
                 list_mngr.on_selection_key_pressed(indx_cursor)
             elif key == curses.KEY_ENTER or key in [10, 13]:  # Handle Enter key
-                list_mngr.save_selection()
+                ret = list_mngr.save_selection()
                 break  # Exit the selection process
             elif key == 27:  # ESC-Key
                 break
+        return ret
 
     def handle_item_selected(self, sender, item, selected):
         key = item.get_key()
-        if key == rckb_constants.RCKB__CFG__KEY__WHEEL_SERVER_URL:
+        if key == rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS:
             self.stdscr.clear()
             self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
             self.gpu_list.set_multi_selection(False)
@@ -408,10 +416,65 @@ class UiManager:
             self.gpu_list.set_multi_selection(True)
 
 
-def main(stdscr):
-    ui_manager = UiManager(stdscr)
-    ui_manager.show()
+def show_config_ui():
+    ret = None
+
+    try:
+        # Initialize curses
+        stdscr = curses.initscr()
+        curses.noecho()  # Turn off automatic echoing of typed characters
+        curses.cbreak()  # React to keys instantly, without requiring Enter
+        stdscr.keypad(True) # Enable special key processing
+
+        ui_manager = UiManager(stdscr)
+        ret = ui_manager.show()
+    finally:
+        # Clean up curses
+        stdscr.keypad(False)
+        curses.echo()
+        curses.nocbreak()
+        curses.endwin()
+    return ret
 
 
-# execute the curses application
-curses.wrapper(main)
+def process_therock_rocm_sdk_build():
+    ret = True
+    try:
+        therock_build_cmd = ["python", "rockbuilder.py", "--project", "projects/therock.cfg"]
+        subprocess.run(therock_build_cmd)
+    except  Exception as ex:
+        print("ROCM SDK build error with the therock.cfg:")
+        print("    " + str(ex))
+        ret = False
+    return ret
+
+def process_therock_rocm_sdk_python_wheel_install(saved_cfg):
+    return install_rocm_sdk_from_python_wheels(saved_cfg)
+
+def process_config_selections(saved_cfg):
+    if saved_cfg:
+        if saved_cfg.has_section(rcb_const.RCB__CFG__SECTION__ROCM_SDK):
+            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK, rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
+                res = process_therock_rocm_sdk_build()
+                if not res:
+                    print("ROCM SDK build failed")
+                    sys.exit()
+            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK, rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS):
+                res = process_therock_rocm_sdk_python_wheel_install(saved_cfg)
+                if not res:
+                    print("ROCM SDK install from python wheels failed")
+                    sys.exit()
+
+def show_and_process_selections():
+    saved_cfg = show_config_ui()
+    process_config_selections(saved_cfg)
+    return saved_cfg
+
+    
+def main():
+	verify_env__python()
+	show_and_process_selections()
+
+
+if __name__ == "__main__":
+    main()

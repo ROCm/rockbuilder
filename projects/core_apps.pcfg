@@ -1,8 +1,8 @@
 [projects]
 project_list=
-    pytorch_deps
-    amdsmi
-    pytorch
-    pytorch_vision_22
-    pytorch_audio_27
+    deps_common
+    triton_34_amd
+    pytorch_28_amd
+    pytorch_vision_23
+    pytorch_audio_28
     comfyui

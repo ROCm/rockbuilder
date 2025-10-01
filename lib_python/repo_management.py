@@ -10,8 +10,7 @@ import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, urlunparse, quote
 import subprocess
-
-import lib_python.rckb_constants as rckb_constants
+import lib_python.rcb_constants as rcb_const
 
 TAG_UPSTREAM_DIFFBASE = "THEROCK_UPSTREAM_DIFFBASE"
 TAG_HIPIFY_DIFFBASE = "THEROCK_HIPIFY_DIFFBASE"
@@ -177,10 +176,8 @@ class RockProjectRepo:
                         print("Failed command: " + install_cmd)
                         ret = False
                 except:
-                    print(
-                        "Python wheel copy or install failed for project: "
-                        + self.project_cfg_name
-                    )
+                    print("Python wheel copy or install failed for project: " +
+                          self.project_cfg_name)
                     ret = False
             else:
                 # no wheel found

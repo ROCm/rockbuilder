@@ -5,9 +5,10 @@ import platform
 import shutil
 import sys
 from lib_python.repo_management import RockProjectRepo
+from lib_python.utils import get_rocm_sdk_env_variables
+from lib_python.utils import printout_list_items
 from pathlib import Path, PurePosixPath
-
-import lib_python.rckb_constants as rckb_constants
+import lib_python.rcb_constants as rcb_const
 
 class RockProjectBuilder(configparser.ConfigParser):
 
@@ -250,21 +251,21 @@ class RockProjectBuilder(configparser.ConfigParser):
     def _get_cmd_phase_stamp_filenames_for_pending_commands(self, cmd_phase_name:str):
         ret = []
         force_add = False
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_POSTCONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTCONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_POSTINSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTINSTALL, cmd_phase_name, force_add)
         return ret
 
     def _clean_pending_cmd_phases_stamp_filenames(self, cmd_phase_name):
@@ -304,144 +305,18 @@ class RockProjectBuilder(configparser.ConfigParser):
                 self.printout_error_and_terminate(cmd_phase_name)
 
 
-    # check whether specified directory is included in the specified environment variable
-    def _is_directory_in_env_variable_path(self, env_variable, directory):
-        """
-        Checks if a directory is in the env_variable specified as a parameter.
-        (path, libpath, etc)
-
-        Args:
-          env_variable: Environment variable used to check the path
-          directory: The path searched from the environment variable
-
-        Returns:
-          True if the directory is in PATH, False otherwise.
-        """
-        path_env = os.environ.get(env_variable, "")
-        path_directories = path_env.split(os.pathsep)
-        return directory in path_directories
-
-    def get_rocm_sdk_env_variables(self):
-        # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
-        # whether code is executed on Linux or Windows (it is later used to set env-variables)
-        ret = []
-
-        NEW_PATH_ENV_DIRS = None
-        if self.is_posix:
-            ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
-        else:
-            ENV_VARIABLE_NAME__LIB = "LIBPATH"
-
-        # check rocm
-        if "ROCM_HOME" in os.environ:
-            rocm_home_root_path = Path(os.environ["ROCM_HOME"])
-            rocm_home_root_path = rocm_home_root_path.resolve()
-        else:
-            rocm_home_root_path = rckb_constants.THEROCK_SDK__ROCM_HOME_BUILD_DIR
-            rocm_home_root_path = rocm_home_root_path.resolve()
-            print("using locally build rocm sdk from TheRock:")
-            print("    " + rocm_home_root_path.as_posix())
-        if rocm_home_root_path.exists():
-            rocm_home_bin_path = rocm_home_root_path / "bin"
-            rocm_home_lib_path = rocm_home_root_path / "lib"
-            rocm_home_bin_path = rocm_home_bin_path.resolve()
-            rocm_home_lib_path = rocm_home_lib_path.resolve()
-            rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
-            rocm_home_llvm_path = rocm_home_llvm_path.resolve()
-            if rocm_home_bin_path.exists() and rocm_home_lib_path.exists():
-                # set ROCM_HOME if not yet set
-                if not "ROCM_HOME" in os.environ:
-                    # print("ROCM_HOME: " + rocm_home_root_path.as_posix())
-                    ret.append("ROCM_HOME=" + rocm_home_root_path.as_posix())
-                # set ROCM_PATH to always point to same location than ROCM_HOME
-                # ROCM_PATH is used by some ROCM applications instead of ROCM_HOME
-                ret.append("ROCM_PATH=" + rocm_home_root_path.as_posix())
-                if not self._is_directory_in_env_variable_path("PATH", rocm_home_bin_path.as_posix()):
-                    NEW_PATH_ENV_DIRS=rocm_home_bin_path.as_posix()
-                    # print("Adding " + rocm_home_bin_path.as_posix() + " to PATH")
-                if not self._is_directory_in_env_variable_path("PATH", rocm_home_llvm_path.as_posix()):
-                    # print("Adding " + rocm_home_llvm_path.as_posix() + " to PATH")
-                    NEW_PATH_ENV_DIRS=NEW_PATH_ENV_DIRS + os.pathsep + rocm_home_llvm_path.as_posix()
-                if not self._is_directory_in_env_variable_path(ENV_VARIABLE_NAME__LIB, rocm_home_lib_path.as_posix()):
-                    # print("Adding " + rocm_home_lib_path.as_posix() + " to " + ENV_VARIABLE_NAME__LIB)
-                    ret.append(ENV_VARIABLE_NAME__LIB + "=" + (
-                        rocm_home_lib_path.as_posix()
-                        + os.pathsep
-                        + os.environ.get(ENV_VARIABLE_NAME__LIB, "")))
-                # find bitcode and put it to path
-                for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
-                    folder_path = folder_path.resolve()
-                    ret.append("ROCK_BUILDER_BITCODE_HOME=" + folder_path.as_posix())
-                    break
-                # find hipcc
-                if self.is_posix:
-                    hipcc_exec_name = "hipcc"
-                else:
-                    hipcc_exec_name = "hipcc.bat"
-                for folder_path in Path(rocm_home_root_path).glob("**/" + hipcc_exec_name):
-                    hipcc_home = folder_path.parent
-                    # make sure that we found bin/clang and not clang folder
-                    if hipcc_home.name.lower() == "bin":
-                        ret.append("ROCK_BUILDER_COMPILER_HIPCC=" + folder_path.as_posix())
-                        hipcc_home = hipcc_home.parent
-                        if hipcc_home.is_dir():
-                            hipcc_home = hipcc_home.resolve()
-                            ret.append("ROCK_BUILDER_HIPCC_HOME=" + hipcc_home.as_posix())
-                            break
-                # find clang
-                if self.is_posix:
-                    clang_exec_name = "clang"
-                else:
-                    clang_exec_name = "clang.exe"
-                for folder_path in Path(rocm_home_root_path).glob("**/" + clang_exec_name):
-                    clang_home = folder_path.parent
-                    # make sure that we found bin/clang and not clang folder
-                    if clang_home.name.lower() == "bin":
-                        ret.append("ROCK_BUILDER_COMPILER_CLANG=" + folder_path.as_posix())
-                        clang_home = clang_home.parent
-                        if clang_home.is_dir():
-                            clang_home = clang_home.resolve()
-                            ret.append("ROCK_BUILDER_CLANG_HOME=" + clang_home.as_posix())
-                            break
-                # check that THEROCK_AMDGPU_TARGETS environment variable is set.
-                # If not:
-                #   - Linux: check the gpus available and assign them to THEROCK_AMDGPU_TARGETS
-                #   - Windows: exit on error, because it can not be queried automatically
-                if not "THEROCK_AMDGPU_TARGETS" in os.environ:
-                    if self.is_posix:
-                        gpu_targets = get_rocm_sdk_targets_on_linux(rocm_home_bin_path)
-                        ret.append("THEROCK_AMDGPU_TARGETS=" + gpu_targets)
-                        print("gpu_targets: " + gpu_targets)
-                    else:
-                        print("Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs")
-                        print("Target GPU must match with the GPU selected on TheRock core build")
-                        print("Example for building for AMD Strix Halo and RX 9070:")
-                        print("  set THEROCK_AMDGPU_TARGETS=gfx1151;gfx1201")
-                        sys.exit(1)
-            else:
-                print("Error, could not find directory ROCM_SDK/lib: " + rocm_home_lib_path.as_posix())
-                sys.exit(1)
-        else:
-            if not self.use_rocm_sdk:
-                print("")
-                print("Error, use_rocm_sdk is not set to false in project config file")
-                print("       or ROCM_HOME is not defined")
-                print("       or existing ROCM SDK build is not detected:")
-                print("       " + rocm_home_root_path.as_posix())
-                print("")
-                sys.exit(1)
-        if NEW_PATH_ENV_DIRS:
-            ret.append("PATH=" + (
-                     NEW_PATH_ENV_DIRS
-                     + os.pathsep
-                     + os.environ.get("PATH", "")))
-        return ret
-
-
     def do_env_setup(self):
         rocm_sdk_setup_cmd_list = None
         if self.use_rocm_sdk:
-            rocm_sdk_setup_cmd_list = self.get_rocm_sdk_env_variables()
+            if "ROCM_HOME" in os.environ:
+                rocm_home_root_path = Path(os.environ["ROCM_HOME"])
+                rocm_home_root_path = rocm_home_root_path.resolve()
+                rocm_sdk_setup_cmd_list = get_rocm_sdk_env_variables(rocm_home_root_path, self.use_rocm_sdk, True)
+                printout_list_items(rocm_sdk_setup_cmd_list)
+            else:
+                print("Failed to setup env for rockbuilder project")
+                print("    ROCM_HOME not defined")
+                sys.exit(1)
         res = self.project_repo.do_env_setup(rocm_sdk_setup_cmd_list, self.env_setup_cmd)
         if not res:
             self.printout_error_and_terminate("env_setup")
@@ -452,7 +327,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.printout_error_and_terminate("undo_env_setup")
 
     def init(self, force_exec: bool):
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INIT
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_init(self.init_cmd)
@@ -469,7 +344,7 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def checkout(self, force_exec: bool):
         if self.repo_url:
-            phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CHECKOUT
+            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CHECKOUT
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 res = self.project_repo.do_checkout(repo_fetch_depth=self.repo_depth, repo_fetch_tags=self.repo_tags)
@@ -477,14 +352,14 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def hipify(self, force_exec: bool):
         if self.repo_url:
-            phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_HIPIFY
+            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_HIPIFY
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 res = self.project_repo.do_hipify(self.hipify_cmd)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
     def pre_config(self, force_exec: bool):
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_PRECONFIG
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_PRECONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_pre_config(self.pre_config_cmd)
@@ -493,21 +368,21 @@ class RockProjectBuilder(configparser.ConfigParser):
     def config(self, force_exec: bool):
 		# cmd_config_cmake
         if self.cmake_config:
-            phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_CONFIG
+            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_CONFIG
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 # in case that project has cmake configure/build/install needs
                 res = self.project_repo.do_cmake_config(self.cmake_config)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_config
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CONFIG
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_config(self.config_cmd)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def post_config(self, force_exec: bool):
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_POSTCONFIG
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTCONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_post_config(self.post_config_cmd)
@@ -516,14 +391,14 @@ class RockProjectBuilder(configparser.ConfigParser):
     def build(self, force_exec: bool):
         # cmd_build_cmake is done only if cmake config exist
         if self.cmake_config:
-            phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_BUILD
+            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_BUILD
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 # not all projects have things to build with cmake
                 res = self.project_repo.do_cmake_build(self.cmake_config)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_build
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_BUILD
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_BUILD
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_build(self.build_cmd)
@@ -532,13 +407,13 @@ class RockProjectBuilder(configparser.ConfigParser):
     def install(self, force_exec: bool):
         # do cmd_install_cmake is done only if cmake config exist
         if self.cmake_config:
-            phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_CMAKE_INSTALL
+            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_INSTALL
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 res = self.project_repo.do_cmake_install()
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_install
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_INSTALL
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_INSTALL
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_install(self.install_cmd)
@@ -546,7 +421,7 @@ class RockProjectBuilder(configparser.ConfigParser):
 
 
     def post_install(self, force_exec: bool):
-        phase_name = rckb_constants.RCKB__PROJECT_CFG__KEY__CMD_POSTINSTALL
+        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTINSTALL
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_post_install(self.post_install_cmd)

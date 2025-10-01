@@ -8,12 +8,19 @@ import time
 import platform
 import subprocess
 import lib_python.project_builder as project_builder
-import lib_python.rockbuilder_config as RockBuilderConfig
-import lib_python.rckb_constants as rckb_constants
+import rockbuilder_cfg as rcb_cfg_writer
+import lib_python.rcb_cfg_reader as rcb_cfg_reader
+import lib_python.rcb_constants as rcb_const
+from lib_python.utils import get_python_wheel_rocm_sdk_home
+from lib_python.utils import install_rocm_sdk_from_python_wheels
+from lib_python.utils import get_rocm_sdk_env_variables
+from lib_python.utils import verify_env__python
+from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
 from pathlib import Path, PurePosixPath
 
+
 def printout_rock_builder_info():
-    print("RockBuilder " + rckb_constants.RCKB__VERSION)
+    print("RockBuilder " + rcb_const.RCB__VERSION)
     print("")
     print("ROCK_BUILDER_HOME_DIR: " + os.environ["ROCK_BUILDER_HOME_DIR"])
     print("ROCK_BUILDER_SRC_DIR: " + os.environ["ROCK_BUILDER_SRC_DIR"])
@@ -29,9 +36,9 @@ def printout_build_env_info():
     else:
         print("ROCK_HOME: not defined")
     if "ROCM_HOME" in os.environ:
-        print("ROCK_PYTHON_PATH: " + os.environ["ROCK_PYTHON_PATH"])
+        print("RCB_PYTHON_PATH: " + os.environ["RCB_PYTHON_PATH"])
     else:
-        print("ROCK_PYTHON_PATH: not defined")
+        print("RCB_PYTHON_PATH: not defined")
     print("PATH: " + os.environ["PATH"])
     print("-----------------------------")
     time.sleep(1)
@@ -48,13 +55,13 @@ def get_project_list_manager(rock_builder_home_dir: Path):
     parser.add_argument(
         "--project_list",
         type=str,
-        help="specify project list for the actions, for example: projects/pytorch_apps" + rckb_constants.RCKB__APP_LIST_CFG_FILE_SUFFIX,
+        help="specify project list for the actions, for example: projects/pytorch_apps" + rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX,
         default=None,
     )
     parser.add_argument(
         "--project",
         type=str,
-        help="specify target for the action, for example: pytorch or projects/pytorch" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX,
+        help="specify target for the action, for example: pytorch or projects/pytorch" + rcb_const.RCB__APP_CFG_FILE_SUFFIX,
         default=None,
     )
     prj = None
@@ -88,7 +95,7 @@ def create_build_argument_parser(
     parser.add_argument(
         "--project",
         type=str,
-        help="specify project for the action, for example: pytorch or projects/pytorch" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX,
+        help="specify project for the action, for example: pytorch or projects/pytorch" + rcb_const.RCB__APP_CFG_FILE_SUFFIX,
         default=None,
     )
     parser.add_argument(
@@ -189,9 +196,7 @@ def parse_build_arguments(parser):
     ):
 		# if cmd_phase argument is specified, we will execute the command even if the stamp file exist
         args.cmd_force_exec = True
-        print(
-            "checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install argument specified"
-        )
+        print("checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install argument specified")
     else:
         args.cmd_force_exec = False
         # print("Action not specified.(checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install)")
@@ -216,93 +221,30 @@ def parse_build_arguments(parser):
 
 def printout_build_arguments(args):
     # printout arguments enabled
-    print("Actions Enabled:")
-    print("    checkout: ", args.checkout)
-    print("    init:    ", args.init)
-    print("    clean:    ", args.clean)
-    print("    hipify:    ", args.hipify)
-    print("    pre_config:", args.pre_config)
-    print("    config:", args.config)
-    print("    post_config:", args.post_config)
-    print("    build:    ", args.build)
-    print("    install:  ", args.install)
-    print("    post_install:  ", args.post_install)
+    print("Actions Enabled: ")
+    print("    clean:       ", args.clean)
+    print("    checkout:    ", args.checkout)
+    print("    hipify:      ", args.hipify)
+    print("    init:        ", args.init)
+    print("    pre_config:  ", args.pre_config)
+    print("    config:      ", args.config)
+    print("    post_config: ", args.post_config)
+    print("    build:       ", args.build)
+    print("    install:     ", args.install)
+    print("    post_install:", args.post_install)
     print("Projects:", args.project)
 
 
-def verify_build_env__python(self, is_posix: bool):
-    # check the python used. It needs to be by default an virtual env but
-    # this can be overriden to real python version by setting up ENV variable
-    # ROCK_PYTHON_PATH
-    python_home_dir = os.path.dirname(sys.executable)
-    if "VIRTUAL_ENV" in os.environ:
-        os.environ["ROCK_PYTHON_PATH"] = python_home_dir
-    else:
-        if "ROCK_PYTHON_PATH" in os.environ:
-            if not os.path.abspath(python_home_dir) == os.path.abspath(os.environ["ROCK_PYTHON_PATH"]):
-                print("Error, virtual python environment is not active and")
-                print("PYTHON location is different than specified by the ROCK_PYTHON_PATH")
-                print("    PYTHON location: " + python_home_dir)
-                print("    ROCK_PYTHON_PATH: " + os.environ["ROCK_PYTHON_PATH"])
-                print("If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:")
-                if is_posix:
-                    print("    export ROCK_PYTHON_PATH=" + python_home_dir)
-                else:
-                    print("    set ROCK_PYTHON_PATH=" + python_home_dir)
-                print("Alternatively activate the virtual python environment")
-                sys.exit(1)
-            else:
-                print("Using python from location: " + python_home_dir)
-        else:
-            print("Error, virtual python environment is not active and ROCK_PYTHON_PATH is not defined")
-            print("    PYTHON location: " + python_home_dir)
-            print("If you want use this python location instead of using a virtual python env, define ROCK_PYTHON_PATH:")
-            if is_posix:
-                print("    export ROCK_PYTHON_PATH=" + python_home_dir)
-            else:
-                print("    set ROCK_PYTHON_PATH=" + python_home_dir)
-            print("Alternatively activate the virtual python environment")
-            sys.exit(1)
-
-def verify_build_env__rockbuilder_config(self,
-                     rock_builder_home_dir: Path,
+def get_config_reader(rock_builder_home_dir: Path,
                      rock_builder_build_dir: Path):
     # read and set up env based on to rockbuilder.ini file if it exist
-    rcb_config = RockBuilderConfig.RockBuilderConfig(
-        rock_builder_home_dir, rock_builder_build_dir
-    )
-    res = rcb_config.read_cfg()
-    if res:
-        rcb_config.setup_build_env()
-
-
-def get_rocm_sdk_targets_on_linux(exec_dir: Path):
-    ret = ""
-    if exec_dir is not None:
-        exec_cmd = "rocm_agent_enumerator"
-        print("exec_dir: " + str(exec_dir))
-        print("exec_cmd: " + exec_cmd)
-        result = subprocess.run(
-            exec_cmd, cwd=exec_dir, shell=False, capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            if result.stdout:
-                print(result.stdout)
-                gpu_list = result.stdout.splitlines()
-                # remove duplicates in case there are multiple instances of same gpu
-                gpu_list = list(set(gpu_list))
-                for ii, val in enumerate(gpu_list):
-                    if ii == 0:
-                        ret = val
-                    else:
-                        ret = ret + ";" + val
-        else:
-            ret = False
-            print(result.stdout)
-            print(
-                f"Failed use to rocm_agent_enumerator to get gpu list: {result.stderr}"
-            )
-            sys.exit(1)
+    ret = None
+    try:
+        ret = rcb_cfg_reader.RCBConfigReader(rock_builder_home_dir,
+                                             rock_builder_build_dir)
+    except:
+        # it's ok to not to find the config
+        pass
     return ret
 
 
@@ -368,10 +310,10 @@ def do_therock(prj_builder, args):
 # othetwise assume that project name is "projects/project_name.cfg"
 def get_project_cfg_file_path(rock_builder_home_dir: Path, project_name: str):
     if project_name:
-        if project_name.endswith(rckb_constants.RCKB__APP_CFG_FILE_SUFFIX):
+        if project_name.endswith(rcb_const.RCB__APP_CFG_FILE_SUFFIX):
             ret = Path(project_name)
         else:
-            fname_base = f"{project_name}" + rckb_constants.RCKB__APP_CFG_FILE_SUFFIX
+            fname_base = f"{project_name}" + rcb_const.RCB__APP_CFG_FILE_SUFFIX
             ret = (
                 Path(rock_builder_home_dir) / "projects" / fname_base
             )
@@ -380,23 +322,140 @@ def get_project_cfg_file_path(rock_builder_home_dir: Path, project_name: str):
         ret = project_name
     return ret
 
+def verify_rockbuilder_config(rcb_cfg_reader):
+    if rcb_cfg_reader:
+        gpu_list = rcb_cfg_reader.get_configured_gpu_list()
+    if not rcb_cfg_reader or not gpu_list:
+        print("Rockbuilder is not yet configured, launching config UI")
+        time.sleep(1)
+        saved_cfg = rcb_cfg_writer.show_and_process_selections()
+        if saved_cfg:
+            print("ROCM SDK and target GPU configured ok.")
+        else:
+            print("ROCM SDK and target GPU configure failed.")
+            sys.exit(1)
+
+# TODO: cleanup this method and make all 3 options to look consistent
+# - variables that needs to be set in all 3 use cases are:
+# - ROCM_HOME
+# - THEROCK_AMDGPU_TARGETS
+#
+# All other variables are set in method: project_builder.do_env_setup() 
+def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_dir):
+    default_src_base_dir = rcb_const.get_project_src_base_dir()
+    rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
+    if rocm_home:
+        # rocm sdk is wanted to be used from locally build therock dir
+        # if none is returned, SDK is not yet build
+        if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+            gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
+            if gpu_list_str:
+                os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+            else:
+                print("Could not get a list of configured target GPUs")
+                sys.exit(1)
+        env_var_arr = get_rocm_sdk_env_variables(Path(rocm_home), True, False)
+        if env_var_arr:
+			# use rocm sdk from location where the rock has been build
+            os.environ["ROCM_HOME"] = rocm_home
+        else:
+            # environment variables not returned
+            # --> sdk not found
+            # --> build rocm_sdk by using therock
+            rocm_sdk_local_build_needed = True
+            prj_cfg_file = get_project_cfg_file_path(rock_builder_home_dir, "therock")
+            prj_cfg_base_name = get_project_cfg_base_name_without_extension(prj_cfg_file)
+            version_override = None
+            prj_builder = project_manager.get_rock_project_builder(
+                    rcb_const.RCB__PROJECT_SRC_BASE_DIR / "therock",
+                    prj_cfg_base_name,
+                    prj_cfg_file,
+                    rcb_const.RCB__PROJECT_BUILD_BASE_DIR,
+                    version_override
+                )
+            if prj_builder:
+                project_list = ["therock"]
+                arg_parser = create_build_argument_parser(rock_builder_home_dir,
+                                    default_src_base_dir,
+                                    project_list)
+                args = parse_build_arguments(arg_parser)
+                do_therock(prj_builder, args)
+                os.environ["ROCM_HOME"] = rocm_home
+    else:
+        rocm_sdk_wheel_server_url = rcb_cfg_reader.get_python_wheel_rocm_sdk_server_url()
+        if rocm_sdk_wheel_server_url:
+            inst_wheels = rcb_cfg_reader.is_python_wheel_rocm_sdk_install_needed()
+            if inst_wheels:
+                rocm_home = install_rocm_sdk_from_python_wheels()
+            else:
+                rocm_home = get_python_wheel_rocm_sdk_home("root")
+            if rocm_home:
+                print("rocm_home: " + rocm_home.as_posix())
+                os.environ["ROCM_HOME"] = rocm_home.as_posix()
+                # set target GPUs to environment variable if not set earlier
+                if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+                    # get list of gpus that are supported by the currently installed
+                    # python wheel based rocm sdk
+                    gpu_list_str = get_python_wheel_rocm_sdk_gpu_list_str()
+                    if gpu_list_str:
+                        print("python wheel rocm-sdk THEROCK_AMDGPU_TARGETS: " + gpu_list_str)
+                        os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+                    else:
+                        print("Python wheel based ROCM SDK install failed")
+                        print("Could not get a list of configured target GPUs.")
+                        print("   Python wheel server url: " + rocm_sdk_wheel_server_url)
+                        sys.exit(1)
+                else:
+                    print("Failed to install ROCM_SDK from python wheels")
+                    print("   Python wheel server url: " + rocm_sdk_wheel_server_url)
+                    sys.exit(1)
+        else:
+            if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+                gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
+                if gpu_list_str:
+                    os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+			# use installed rocm sdk from the location specified by the rockbuilder.ini
+            env_var_arr = None
+            rocm_home = rcb_cfg_reader.get_configured_and_existing_rocm_sdk_home()
+            if rocm_home:
+                # check whether the rocm sdk has been configured ok in this location
+                env_var_arr = get_rocm_sdk_env_variables(Path(rocm_home), True, False)
+            if env_var_arr:
+                os.environ["ROCM_HOME"] = rocm_home
+            else:
+                print("Failed to use ROCM_SDK from location configured in rockbuilder.ini")
+                print("   ROCM_SDK location searched: " + rocm_home)
+                sys.exit(1)
+
+
 def main():
     is_posix = not any(platform.win32_ver())
-
-    rock_builder_home_dir = rckb_constants.get_rock_builder_root_dir()
-    rock_builder_build_dir = rckb_constants.get_project_build_base_dir()
-    default_src_base_dir = rckb_constants.get_project_src_base_dir()
-
+    rocm_sdk_local_build_needed = False
+    
+    rock_builder_home_dir = rcb_const.get_rock_builder_root_dir()
+    rock_builder_build_dir = rcb_const.get_project_build_base_dir()
+    default_src_base_dir = rcb_const.get_project_src_base_dir()
     os.environ["ROCK_BUILDER_HOME_DIR"] = rock_builder_home_dir.as_posix()
     os.environ["ROCK_BUILDER_BUILD_DIR"] = rock_builder_build_dir.as_posix()
+    
+    verify_env__python()
 
+    rcb_cfg_reader = get_config_reader(rock_builder_home_dir,
+                              rock_builder_build_dir)
+    verify_rockbuilder_config(rcb_cfg_reader)
+    if not rcb_cfg_reader:
+		# read the configure again if the configuration was only done above
+        rcb_cfg_reader = get_config_reader(rock_builder_home_dir,
+                                           rock_builder_build_dir)
     project_manager = get_project_list_manager(rock_builder_home_dir)
+    verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_dir)    
+
     project_list = project_manager.get_external_project_list()
     print(project_list)
 
-    arg_parser = create_build_argument_parser(
-        rock_builder_home_dir, default_src_base_dir, project_list
-    )
+    arg_parser = create_build_argument_parser(rock_builder_home_dir,
+                                    default_src_base_dir,
+                                    project_list)
     args = parse_build_arguments(arg_parser)
 
     # add output dir to environment variables
@@ -415,8 +474,6 @@ def main():
     # store the arguments to dictionary to make it easier to get "project_name"-version parameters
     args_dict = args.__dict__
     printout_build_arguments(args)
-    verify_build_env__python(args, is_posix)
-    verify_build_env__rockbuilder_config(args, rock_builder_home_dir, rock_builder_build_dir)
     #verify_build_env(args, is_posix, rock_builder_home_dir, rock_builder_build_dir)
     printout_build_env_info()
 
@@ -429,9 +486,7 @@ def main():
     if not args.project:
         # process all projects specified in the core_project.pcfg
         if args.src_dir:
-            print(
-                '\nError, "--src-dir" parameter requires also to specify the project with the "--project"-parameter'
-            )
+            print('\nError, "--src-dir" parameter requires also to specify the project with the "--project"-parameter')
             print('Alternatively you could use the "--src-base-dir" parameter.')
             print("")
             sys.exit(1)
@@ -483,12 +538,11 @@ def main():
                 args.output_dir,
                 version_override,
             )
-        if prj_builder is None:
-            print("Error, failed to get the project builder")
-            sys.exit(1)
-        else:
+        if prj_builder:
             do_therock(prj_builder, args)
-
+        else:
+            print("Error, failed to find the target project.")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

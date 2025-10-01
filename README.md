@@ -233,11 +233,11 @@ source .venv/bin/activate
 
 By default the RockBuilder will refuse to run if you are trying to use a real
 python virtual environment instead of using a virtual env. You can change that behaviour
-by setting the ROCK_PYTHON_PATH environment variable that will point to python directory.
+by setting the RCB_PYTHON_PATH environment variable that will point to python directory.
 In Linux this can be set for example in a following way:
 
 ```bash
-export ROCK_PYTHON_PATH=/usr/bin
+export RCB_PYTHON_PATH=/usr/bin
 ```
 
 # Adding new projects to RockBuilder
