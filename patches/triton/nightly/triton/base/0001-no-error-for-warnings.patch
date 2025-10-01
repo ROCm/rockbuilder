@@ -1,0 +1,30 @@
+From dafd5c30e2a061a7f0323110ff2ff8b009285f02 Mon Sep 17 00:00:00 2001
+From: Mika Laitiom <mika.laitio@amd.com>
+Date: Tue, 30 Sep 2025 19:57:50 -0600
+Subject: [PATCH] no error for warnings
+
+Fixes following error:
+/usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/x86_64-linux-gnu/c++/12/bits/c++config.h:119:34: note: expanded from macro '_GLIBCXX17_DEPRECATED'
+  119 | # define _GLIBCXX17_DEPRECATED [[__deprecated__]]
+
+Signed-off-by: Mika Laitiom <mika.laitio@amd.com>
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 47a0f3b..b179e9d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -146,7 +146,7 @@ endfunction()
+ 
+ # Disable warnings that show up in external code (gtest;pybind11)
+ if(NOT MSVC)
+-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-covered-switch-default -fvisibility=hidden")
++  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-covered-switch-default -fvisibility=hidden")
+ else()
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4244 /wd4624 /wd4715 /wd4530")
+ endif()
+-- 
+2.34.1
+
