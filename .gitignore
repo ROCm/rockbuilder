@@ -5,3 +5,5 @@ rockbuilder.ini
 .venv/
 __pycache__/
 *.pyc
+rocm_sdk_wheels.done
+pip
