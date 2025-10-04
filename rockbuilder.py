@@ -202,9 +202,9 @@ def parse_build_arguments(parser):
         # print("Action not specified.(checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install)")
         # print("Using default values")
         # enable everything except clean
-        args.checkout = True
-        args.init = True
         args.clean = False
+        args.init = True
+        args.checkout = True
         args.hipify = True
         args.pre_config = True
         args.config = True
@@ -223,9 +223,9 @@ def printout_build_arguments(args):
     # printout arguments enabled
     print("Actions Enabled: ")
     print("    clean:       ", args.clean)
+    print("    init:        ", args.init)
     print("    checkout:    ", args.checkout)
     print("    hipify:      ", args.hipify)
-    print("    init:        ", args.init)
     print("    pre_config:  ", args.pre_config)
     print("    config:      ", args.config)
     print("    post_config: ", args.post_config)
@@ -260,6 +260,13 @@ def do_therock(prj_builder, args):
 
             # then do all possible commands requested for the project
             # multiple steps possible, so do not use else's here
+
+            # init command differs from others
+            # and will be executed always even if not arg flag is specified
+            # It can be used to execute a script that can be used for example
+            # to set an environment variable for the revision to be checked out
+            prj_builder.printout("init")
+            prj_builder.init(args.cmd_force_exec)
             if args.clean:
                 prj_builder.printout("clean")
                 prj_builder.clean(args.cmd_force_exec)
@@ -272,9 +279,6 @@ def do_therock(prj_builder, args):
             if args.hipify:
                 prj_builder.printout("hipify")
                 prj_builder.hipify(args.cmd_force_exec)
-            if args.init:
-                prj_builder.printout("init")
-                prj_builder.init(args.cmd_force_exec)
             if args.pre_config:
                 prj_builder.printout("pre_config")
                 prj_builder.pre_config(args.cmd_force_exec)

@@ -251,9 +251,9 @@ class RockProjectBuilder(configparser.ConfigParser):
     def _get_cmd_phase_stamp_filenames_for_pending_commands(self, cmd_phase_name:str):
         ret = []
         force_add = False
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
@@ -330,7 +330,10 @@ class RockProjectBuilder(configparser.ConfigParser):
         phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_init(self.init_cmd)
+            if self.init_cmd:
+                res = self.project_repo.do_init(self.init_cmd)
+            else:
+                res = True
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def clean(self, force_exec: bool):

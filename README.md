@@ -40,17 +40,11 @@ experimental/rockbuilder directory. Example:
 Example commands to build and test on Linux:
 
 ```bash
-cd TheRock
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python ./build_tools/fetch_sources.py
-cmake -B build -GNinja . -DTHEROCK_AMDGPU_TARGETS=gfx1201
-cmake --build build
-cd experimental/rockbuilder
+cd rockbuilder
+source ./init_rcb_env.sh
 python rockbuilder.py
 cd examples
-export ROCM_HOME=TheRock/build/dist/rocm
+export ROCM_HOME=src_project/TheRock/build/dist/rocm
 export LD_LIBRARY_PATH=${ROCM_HOME}/lib:${ROCM_HOME}/lib/llvm/lib
 python torch_gpu_hello_world.py
 python torch_vision_hello_world.py
@@ -60,18 +54,12 @@ python torch_audio_hello_world.py
 Example commands to build and test on Windows by using the 'x64 Native MSVC command prompt':
 
 ```bash
-cd c:\TheRock
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python ./build_tools/fetch_sources.py
-cmake -B build -GNinja . -DTHEROCK_AMDGPU_TARGETS=gfx1201
-cmake --build build
-cd experimental\rockbuilder
+cd c:\rockbuilder
+init_rcb_env.bat
 set PYTORCH_ROCM_ARCH=gfx1201
 python rockbuilder.py
+set PATH=c:/rockbuilder/src_projects/the_rock/build/dist/rocm/bin;c:/TheRock/build/dist/rocm/lib;%PATH%
 cd examples
-set PATH=c:\TheRock\build\dist\rocm\bin;c:\TheRock\build\dist\rocm\lib;%PATH%
 python torch_gpu_hello_world.py
 python torch_vision_hello_world.py
 python torch_audio_hello_world.py
@@ -81,7 +69,7 @@ python torch_audio_hello_world.py
 Example output from test apps in Windows when using the AMD Radeon W7900 GPU:
 
 ```bash
-(.venv) D:\rock\TheRock\experimental\rockbuilder\examples>python torch_gpu_hello_world.py
+(.venv) D:\rockbuilder\examples>python torch_gpu_hello_world.py
 Pytorch version: 2.7.0
 ROCM HIP version: 6.5.25222-1f8e4aaca
 cuda device count: 1
@@ -92,11 +80,11 @@ Running simple model training test
     tensor([0., 1., 2.], device='cuda:0')
 Hello World, test executed succesfully
 
-(.venv) D:\rock\TheRock\experimental\rockbuilder\examples>python torch_vision_hello_world.py
+(.venv) D:\rockbuilder\examples>python torch_vision_hello_world.py
 pytorch version: 2.7.0
 pytorch vision version: 0.22.0
 
-(.venv) D:\rock\TheRock\experimental\rockbuilder\examples>python torch_audio_hello_world.py
+(.venv) D:\rockbuilder\examples>python torch_audio_hello_world.py
 pytorch version: 2.7.0
 pytorch audio version: 2.7.0
 
@@ -110,9 +98,8 @@ pytorch audio version: 2.7.0
    experimental/rockbuilder directory. Example:
 
 ```bash
-export ROCM_HOME=/opt/rocm
-source ${ROCM_HOME}/.venv/bin/activate
-cd TheRock/experimental/rockbuilder
+cd rockbuilder
+source ./init_rcb_env.sh
 python rockbuilder.py
 cd examples
 python torch_gpu_hello_world.py
@@ -210,7 +197,7 @@ used from that directory.
 If ROCM_HOME is not defined, RockBuilder will try to find it from the directory
 
 ```
-  therock/build/dist/rocm
+  src_projects/Therock/build/dist/rocm
 ```
 
 ## Python Environment
@@ -227,8 +214,8 @@ can be for example python 3.11, 3.12 or 3.13.
 You can either create a new python venv or use the one already done and used for TheRock build.
 
 ```bash
-cd TheRock
-source .venv/bin/activate
+cd rockbuilder
+source ./init_rcb_env.sh
 ```
 
 By default the RockBuilder will refuse to run if you are trying to use a real

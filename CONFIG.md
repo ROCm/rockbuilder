@@ -20,14 +20,17 @@ sequenceDiagram
         App_Specific_Config-->>RockBuilder: Application Specific Build Settings
         RockBuilder->>RockBuilder: Check Whether to Continue or Skip building [in Linux/Windows]
         RockBuilder->>RockBuilder: Set Env Variables
+        RockBuilder->>RockBuilder: Init_cmd [Called always, optional]
         RockBuilder->>RockBuilder: Checkout Source Code
         RockBuilder->>RockBuilder: Apply Base Patches [optional]
         RockBuilder->>RockBuilder: Hipify_cmd [optional]
         RockBuilder->>RockBuilder: Apply hipify patches [optional]
-        RockBuilder->>RockBuilder: Init_cmd [optional]
+        RockBuilder->>RockBuilder: Pre-Configure [optional]
         RockBuilder->>RockBuilder: Configure_cmd [optional]
+        RockBuilder->>RockBuilder: Post-Configure [optional]
         RockBuilder->>RockBuilder: Build_cmd [optional]
         RockBuilder->>RockBuilder: Install_cmd [optional]
+        RockBuilder->>RockBuilder: Post-Install_cmd [optional]
         RockBuilder->>RockBuilder: Unset Env Variables
     end
 ```
