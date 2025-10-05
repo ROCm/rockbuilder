@@ -20,7 +20,7 @@ index 0000000..f8019f7
 +#!/bin/bash
 +
 +source ./.venv/bin/activate
-+cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${THEROCK_AMDGPU_TARGETS} .
++cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
 diff --git a/rcb_init.sh b/rcb_init.sh
 new file mode 100755
 index 0000000..45c9f11

@@ -58,7 +58,7 @@ cd c:\rockbuilder
 init_rcb_env.bat
 set PYTORCH_ROCM_ARCH=gfx1201
 python rockbuilder.py
-set PATH=c:/rockbuilder/src_projects/the_rock/build/dist/rocm/bin;c:/TheRock/build/dist/rocm/lib;%PATH%
+set PATH=c:/rockbuilder/src_apps/the_rock/build/dist/rocm/bin;c:/TheRock/build/dist/rocm/lib;%PATH%
 cd examples
 python torch_gpu_hello_world.py
 python torch_vision_hello_world.py
@@ -115,7 +115,7 @@ Wheels that have been build can be found from the packages/wheels directory.
 python rockbuilder.py --checkout --project_list projects/pytorch_28_amd.pcfg
 ```
 
-Source code would be checked out to directory `src_projects`
+Source code would be checked out to directory `src_apps`
 
 ## Checkout all projects to custom directory
 
@@ -141,10 +141,10 @@ or
 python rockbuilder.py --project projects/pytorch_audio.cfg --output-dir test
 ```
 
-By default this checks out pytorch audio source to directory `src_projects/pytorch_audio`:
+By default this checks out pytorch audio source to directory `src_apps/pytorch_audio`:
 
 ```bash
-$ ls src_projects/
+$ ls src_apps/
 pytorch_audio/
 ```
 
@@ -197,7 +197,7 @@ used from that directory.
 If ROCM_HOME is not defined, RockBuilder will try to find it from the directory
 
 ```
-  src_projects/Therock/build/dist/rocm
+  src_apps/Therock/build/dist/rocm
 ```
 
 ## Python Environment

@@ -4,7 +4,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 cd ..
 
-BLD_DIR="builddir/test1_check_build_steps"
+BLD_DIR="build/test1_check_build_steps"
 
 TEST_GIT_REPO_FILE=tests/repositories/test1_check_build_steps_git.tar
 
@@ -14,8 +14,12 @@ TEST1_GOLDEN_FILE="tests/resources/test1/build_steps_clean.txt"
 TEST2_RES_FILE="$BLD_DIR/build_steps.txt"
 TEST2_GOLDEN_FILE="tests/resources/test1/build_steps.txt"
 
-TEST3_RES_FILE="src_projects/test1_check_build_steps/hello_world.txt"
+TEST3_RES_FILE="src_apps/test1_check_build_steps/hello_world.txt"
 TEST3_GOLDEN_FILE="tests/resources/test1/hello_world.txt"
+
+TEST1_OK=0
+TEST2_OK=0
+TEST3_OK=0
 
 echo "SCRIPT_DIR: $SCRIPT_DIR"
 echo "BLD_DIR: " $BLD_DIR

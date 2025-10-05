@@ -22,9 +22,9 @@ from pathlib import Path, PurePosixPath
 def printout_rock_builder_info():
     print("RockBuilder " + rcb_const.RCB__VERSION)
     print("")
-    print("ROCK_BUILDER_HOME_DIR: " + os.environ["ROCK_BUILDER_HOME_DIR"])
-    print("ROCK_BUILDER_SRC_DIR: " + os.environ["ROCK_BUILDER_SRC_DIR"])
-    print("ROCK_BUILDER_BUILD_DIR: " + os.environ["ROCK_BUILDER_BUILD_DIR"])
+    print("RCB_HOME_DIR: " + os.environ["RCB_HOME_DIR"])
+    print("RCB_SRC_DIR: " + os.environ["RCB_SRC_DIR"])
+    print("RCB_BUILD_DIR: " + os.environ["RCB_BUILD_DIR"])
 
 
 def printout_build_env_info():
@@ -158,7 +158,7 @@ def create_build_argument_parser(
     parser.add_argument(
         "--src-base-dir",
         type=Path,
-        help="Base directory where each projects source code is checked out. Default is src_projects.",
+        help="Base directory where each projects source code is checked out. Default is src_apps.",
         default=default_src_base_dir,
     )
     parser.add_argument(
@@ -304,7 +304,7 @@ def do_therock(prj_builder, args):
             print("Operations finished ok: " +prj_builder.project_cfg_base_name)
             ret = True
         else:
-            print("skip_windows or skip_linux enabled for project")
+            print("PROPERTY_SKIP_WINDOWS or PROPERTY_SKIP_LINUX enabled for project")
             prj_builder.printout("skip")
             ret = True
     return ret
@@ -339,22 +339,22 @@ def verify_rockbuilder_config(rcb_cfg_reader):
             print("ROCM SDK and target GPU configure failed.")
             sys.exit(1)
 
-# TODO: cleanup this method and make all 3 options to look consistent
-# - variables that needs to be set in all 3 use cases are:
-# - ROCM_HOME
-# - THEROCK_AMDGPU_TARGETS
-#
-# All other variables are set in method: project_builder.do_env_setup() 
+# Ensures that rocm_sdk install exist or will be installed by using
+# the method that has been saved to rockbuilder.ini config file.
+# (by using the rockbuilder_cfg.py)
+# - rocm_sdk from from the python wheels provied by therock
+# - rocm_sdk from the therock sources
+# - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
 def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_dir):
     default_src_base_dir = rcb_const.get_project_src_base_dir()
     rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
     if rocm_home:
         # rocm sdk is wanted to be used from locally build therock dir
         # if none is returned, SDK is not yet build
-        if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+        if not "RCB_AMDGPU_TARGETS" in os.environ:
             gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
             if gpu_list_str:
-                os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+                os.environ["RCB_AMDGPU_TARGETS"] = gpu_list_str
             else:
                 print("Could not get a list of configured target GPUs")
                 sys.exit(1)
@@ -397,13 +397,13 @@ def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_d
                 print("rocm_home: " + rocm_home.as_posix())
                 os.environ["ROCM_HOME"] = rocm_home.as_posix()
                 # set target GPUs to environment variable if not set earlier
-                if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+                if not "RCB_AMDGPU_TARGETS" in os.environ:
                     # get list of gpus that are supported by the currently installed
                     # python wheel based rocm sdk
                     gpu_list_str = get_python_wheel_rocm_sdk_gpu_list_str()
                     if gpu_list_str:
-                        print("python wheel rocm-sdk THEROCK_AMDGPU_TARGETS: " + gpu_list_str)
-                        os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+                        print("python wheel rocm-sdk RCB_AMDGPU_TARGETS: " + gpu_list_str)
+                        os.environ["RCB_AMDGPU_TARGETS"] = gpu_list_str
                     else:
                         print("Python wheel based ROCM SDK install failed")
                         print("Could not get a list of configured target GPUs.")
@@ -414,10 +414,10 @@ def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_d
                     print("   Python wheel server url: " + rocm_sdk_wheel_server_url)
                     sys.exit(1)
         else:
-            if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+            if not "RCB_AMDGPU_TARGETS" in os.environ:
                 gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
                 if gpu_list_str:
-                    os.environ["THEROCK_AMDGPU_TARGETS"] = gpu_list_str
+                    os.environ["RCB_AMDGPU_TARGETS"] = gpu_list_str
 			# use installed rocm sdk from the location specified by the rockbuilder.ini
             env_var_arr = None
             rocm_home = rcb_cfg_reader.get_configured_and_existing_rocm_sdk_home()
@@ -439,8 +439,8 @@ def main():
     rock_builder_home_dir = rcb_const.get_rock_builder_root_dir()
     rock_builder_build_dir = rcb_const.get_project_build_base_dir()
     default_src_base_dir = rcb_const.get_project_src_base_dir()
-    os.environ["ROCK_BUILDER_HOME_DIR"] = rock_builder_home_dir.as_posix()
-    os.environ["ROCK_BUILDER_BUILD_DIR"] = rock_builder_build_dir.as_posix()
+    os.environ["RCB_HOME_DIR"] = rock_builder_home_dir.as_posix()
+    os.environ["RCB_BUILD_DIR"] = rock_builder_build_dir.as_posix()
     
     verify_env__python()
 
@@ -469,11 +469,11 @@ def main():
         if parent_dir == args.src_dir:
             print("Error, --src-dir parameter is not allowed to be a root-directory")
             sys.exit(1)
-        os.environ["ROCK_BUILDER_SRC_DIR"] = parent_dir.as_posix()
+        os.environ["RCB_SRC_DIR"] = parent_dir.as_posix()
     else:
         # directory where each projects source code is checked out
-        os.environ["ROCK_BUILDER_SRC_DIR"] = args.src_base_dir.as_posix()
-    os.environ["ROCK_BUILDER_PACKAGE_OUTPUT_DIR"] = args.output_dir.as_posix()
+        os.environ["RCB_SRC_DIR"] = args.src_base_dir.as_posix()
+    os.environ["RCB_ARTIFACT_EXPORT_DIR"] = args.output_dir.as_posix()
 
     # store the arguments to dictionary to make it easier to get "project_name"-version parameters
     args_dict = args.__dict__

@@ -9,7 +9,7 @@ building of amdsmi can fail for following error because
 32-bit versions are find first and tried to link
 instead of the 64 bit versions of same files.
 
-therock/build/dist/rocm/lib/llvm/bin/clang++ --driver-mode=g++ -O3 --hip-link  -fPIC -Wl,--build-id=sha1 -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o "goamdsmi_shim/libgoamdsmi_shim64.so.1.0" goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o -Wl,-rpath,/therock/builddir/amdsmi/src\: -lpthread -lrt -lm src/libamd_smi.so.0.0 -L/lib -L/lib64 -lpthread -lrt -ldl
+therock/build/dist/rocm/lib/llvm/bin/clang++ --driver-mode=g++ -O3 --hip-link  -fPIC -Wl,--build-id=sha1 -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o "goamdsmi_shim/libgoamdsmi_shim64.so.1.0" goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o -Wl,-rpath,/rockbuilder/src/amdsmi/src\: -lpthread -lrt -lm src/libamd_smi.so.0.0 -L/lib -L/lib64 -lpthread -lrt -ldl
 ld.lld: error: /usr/lib/gcc/x86_64-linux-gnu/12/../../../../lib64/crti.o is incompatible with elf32-i386
 
 Fix is is to add lib64 dir before lib-dir so that lib64 versions

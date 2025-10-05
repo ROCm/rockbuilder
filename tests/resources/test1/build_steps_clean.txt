@@ -1,1 +1,1 @@
-clean_cmd
+CMD_CLEAN

@@ -440,8 +440,8 @@ def show_config_ui():
 def process_therock_rocm_sdk_build():
     ret = True
     try:
-        therock_build_cmd = ["python", "rockbuilder.py", "--project", "projects/therock.cfg"]
-        subprocess.run(therock_build_cmd)
+        therock_cmd_build = ["python", "rockbuilder.py", "--project", "projects/therock.cfg"]
+        subprocess.run(therock_cmd_build)
     except  Exception as ex:
         print("ROCM SDK build error with the therock.cfg:")
         print("    " + str(ex))

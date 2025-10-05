@@ -83,8 +83,8 @@ version=v2.7.0
 You can also specify whether to skip building the project on Linux or Windows using the following optional settings:
 
 ```
-skip_linux=1
-skip_windows=1
+PROPERTY_SKIP_LINUX=1
+PROPERTY_SKIP_WINDOWS=1
 ```
 
 ### Environment Variables
@@ -99,13 +99,13 @@ Base environment variables are automatically specified for each application that
 
 - `ROCM_HOME`:
   The ROCm SDK install prefix directory
-- `ROCK_BUILDER_APP_SRC_DIR`:
+- `RCB_APP_SRC_DIR`:
   The source code directory for the currently built application
-- `ROCK_BUILDER_APP_BUILD_DIR`:
+- `RCB_APP_BUILD_DIR`:
   The build directory for the currently built application
-- `ROCK_BUILDER_CLANG_HOME`:
+- `RCB_ROCM_SDK_CLANG_HOME_DIR`:
   Home directory for the clang. It location may vary depending whether the rocm_sdk used is build locally or used from the rocm_sdk python wheel.
-- `ROCK_BUILDER_BITCODE_HOME`:
+- `RCB_ROCM_SDK_BITCODE_HOME_DIR`:
   Directory containing gpu specific bitcode (\*.bc) files
 
 #### Application-Specific Environment Variables
@@ -117,9 +117,9 @@ RockBuilder will first set common environment variables (if defined), followed b
 Example:
 
 ```
-env_common  = USE_ROCM=1
-env_windows = USE_FLASH_ATTENTION=1
-env_linux   = USE_FLASH_ATTENTION=0
+ENV_VAR  = USE_ROCM=1
+ENV_VAR_WINDOWS = USE_FLASH_ATTENTION=1
+ENV_VAR_LINUX   = USE_FLASH_ATTENTION=0
 ```
 
 ### Build Phase Commands
@@ -128,47 +128,47 @@ In addition to supporting configure, build, and install phases for CMake-based p
 
 The following optional build phase commands are supported:
 
-- `clean_cmd`
-- `hipify_cmd`
-- `init_cmd`
-- `pre_config_cmd`
-- `config_cmd`
-- `post_config_cmd`
-- `build_cmd`
-- `install_cmd`
-- `post_install_cmd`
+- `CMD_CLEAN`
+- `CMD_HIPIFY`
+- `CMD_INIT`
+- `CMD_PRE_CONFIG`
+- `CMD_CONFIG`
+- `CMD_POST_CONFIG`
+- `CMD_BUILD`
+- `CMD_INSTALL`
+- `CMD_POST_INSTALL`
 
 Each command can be a single command or a sequence of commands.
 
 Example:
 
 ```
-init_cmd = python -m pip install -r ./requirements.txt
-clean_cmd = python setup.py clean
-hipify_cmd = python tools/amd_build/build_amd.py
-build_cmd = python setup.py bdist_wheel
+CMD_INIT = python -m pip install -r ./requirements.txt
+CMD_CLEAN = python setup.py clean
+CMD_HIPIFY = python tools/amd_build/build_amd.py
+CMD_BUILD = python setup.py bdist_wheel
 ```
 
 Example of a sequence of commands:
 
 ```
-install_cmd = cd ${ROCM_HOME}/share/amd_smi
+CMD_INSTALL = cd ${ROCM_HOME}/share/amd_smi
               pip install .
 ```
 
 #### Command Execution Directory
 
 By default, build phase commands are executed from the root directory of the project’s source code.
-You can override this by specifying the `cmd_exec_dir` in the configuration:
+You can override this by specifying the `CMD_EXEC_DIR` in the configuration:
 
 ```
 # Execute from the 'py' subdirectory
-cmd_exec_dir=${ROCK_BUILDER_APP_SRC_DIR}/py
+CMD_EXEC_DIR=${RCB_APP_SRC_DIR}/py
 ```
 
 #### Note About the HIPIFY Command
 
-The `hipify_cmd` is somewhat special compared to other commands.
+The `CMD_HIPIFY` is somewhat special compared to other commands.
 It is partially tied to the source code checkout phase, where patches are split into:
 
 - Base patches (applied immediately after checkout)
@@ -179,7 +179,7 @@ If a hipify command is specified, the execution flow is:
 1. Source code checkout
 1. Tagging of source code base
 1. Applying base patches
-1. Executing `hipify_cmd`
+1. Executing `CMD_HIPIFY`
 1. Tagging HIPIFY patches
 
 The ROCm SDK provides a hipify tool that converts CUDA files and APIs to ROCm-compatible equivalents.
@@ -188,7 +188,7 @@ Some projects, like PyTorch, provide their own HIPIFY command.
 Example from the PyTorch project:
 
 ```
-hipify_cmd = python tools/amd_build/build_amd.py
+CMD_HIPIFY = python tools/amd_build/build_amd.py
 ```
 
 HIPIFIED patches are applied from the directory:
@@ -217,19 +217,19 @@ Note: Installing the Python wheel may be necessary to resolve build-time depende
 Example:
 
 ```
-install_cmd = RCB_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL ${ROCK_BUILDER_APP_SRC_DIR}/py/dist
+CMD_INSTALL = RCB_CMD__INSTALL_PYTHON_WHEEL ${RCB_APP_SRC_DIR}/py/dist
 ```
 
 ### CMake Build Support
 
 If project uses CMake, it is possible to specify the application specific cmake configuration options.
 
-If cmake_config option is specified fro the project in configure file, it will indicate for the RockBuilder that it should also execute the configure, build and install commands by using the cmake.
+If CMD_CMAKE_CONFIG option is specified fro the project in configure file, it will indicate for the RockBuilder that it should also execute the configure, build and install commands by using the cmake.
 
 CMake build command support does not prevent using also the phase commands in parallel. For example the amdsmi project consist of both from the c-code based library handled by the cmake and python specific code handled by the python installer.
 
 Example:
 
 ```
-cmake_config=-DCMAKE_INSTALL_PREFIX=${ROCM_HOME} ${ROCK_BUILDER_APP_SRC_DIR}
+CMD_CMAKE_CONFIG=-DCMAKE_INSTALL_PREFIX=${ROCM_HOME} ${RCB_APP_SRC_DIR}
 ```

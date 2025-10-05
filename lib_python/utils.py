@@ -134,10 +134,10 @@ def get_installed_gpu_list_str(exec_dir: Path) -> str:
                 print(f"Failed use to rocm_agent_enumerator to get the gpu list: {result.stderr}")
                 sys.exit(1)
     else:
-        print("Error, THEROCK_AMDGPU_TARGETS must be set on Windows to select the target GPUs")
+        print("Error, RCB_AMDGPU_TARGETS must be set on Windows to select the target GPUs")
         print("Target GPU must match with the GPU selected on TheRock core build")
         print("Example for building for AMD Strix Halo and RX 9070:")
-        print("  set THEROCK_AMDGPU_TARGETS=gfx1151;gfx1201")
+        print("  set RCB_AMDGPU_TARGETS=gfx1151;gfx1201")
 
     return ret
 
@@ -238,7 +238,7 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
     ret = None
     res = True
 
-    rocm_sdk_uninstall_cmd = (sys.executable +
+    rocm_sdk_unCMD_INSTALL = (sys.executable +
                   " -m pip cache remove rocm_sdk --cache-dir " +
                   (rcb_const.RCB__ROOT_DIR / "pip").as_posix())
     install_deps_cmd = (
@@ -246,7 +246,7 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
         " -m pip install setuptools --cache-dir " +
         (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
     )
-    rocm_sdk_install_cmd_base = (
+    rocm_sdk_CMD_INSTALL_base = (
         sys.executable +
         " -m pip install rocm[libraries,devel] --force-reinstall --cache-dir " +
         (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
@@ -260,12 +260,12 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS)
         whl_server_url_full = whl_server_url_base + gpu_target
-        rocm_sdk_install_cmd_full = rocm_sdk_install_cmd_base + " --index-url " + whl_server_url_full
+        rocm_sdk_CMD_INSTALL_full = rocm_sdk_CMD_INSTALL_base + " --index-url " + whl_server_url_full
         exec_subprocess_cmd(install_deps_cmd, rcb_const.RCB__ROOT_DIR.as_posix())
         # uninstall old
-        exec_subprocess_cmd(rocm_sdk_uninstall_cmd, rcb_const.RCB__ROOT_DIR.as_posix())
+        exec_subprocess_cmd(rocm_sdk_unCMD_INSTALL, rcb_const.RCB__ROOT_DIR.as_posix())
         # install rocm sdk and pytorch
-        exec_subprocess_cmd(rocm_sdk_install_cmd_full, rcb_const.RCB__ROOT_DIR.as_posix())        
+        exec_subprocess_cmd(rocm_sdk_CMD_INSTALL_full, rcb_const.RCB__ROOT_DIR.as_posix())
     except  Exception as ex:
         print("ROCM SDK python wheel install error with the therock.cfg:")
         print("    " + str(ex))
@@ -330,7 +330,7 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                 # find bitcode and put it to path
                 for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
                     folder_path = folder_path.resolve()
-                    ret.append("ROCK_BUILDER_BITCODE_HOME=" + folder_path.as_posix())
+                    ret.append("RCB_ROCM_SDK_BITCODE_HOME_DIR=" + folder_path.as_posix())
                     break
                 # find hipcc
                 if is_posix:
@@ -341,11 +341,12 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                     hipcc_home = folder_path.parent
                     # make sure that we found bin/clang and not clang folder
                     if hipcc_home.name.lower() == "bin":
-                        ret.append("ROCK_BUILDER_COMPILER_HIPCC=" + folder_path.as_posix())
+                        ret.append("RCB_ROCM_SDK_HIPCC_BIN_DIR=" + hipcc_home.as_posix())
+                        ret.append("RCB_ROCM_SDK_HIPCC_APP=" + folder_path.as_posix())
                         hipcc_home = hipcc_home.parent
                         if hipcc_home.is_dir():
                             hipcc_home = hipcc_home.resolve()
-                            ret.append("ROCK_BUILDER_HIPCC_HOME=" + hipcc_home.as_posix())
+                            ret.append("RCB_ROCM_SDK_HIPCC_HOME_DIR=" + hipcc_home.as_posix())
                             break
                 # find clang
                 if is_posix:
@@ -356,21 +357,22 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                     clang_home = folder_path.parent
                     # make sure that we found bin/clang and not clang folder
                     if clang_home.name.lower() == "bin":
-                        ret.append("ROCK_BUILDER_COMPILER_CLANG=" + folder_path.as_posix())
+                        ret.append("RCB_ROCM_SDK_CLANG_BIN_DIR=" + clang_home.as_posix())
+                        ret.append("RCB_ROCM_SDK_CLANG_APP=" + folder_path.as_posix())
                         clang_home = clang_home.parent
                         if clang_home.is_dir():
                             clang_home = clang_home.resolve()
-                            ret.append("ROCK_BUILDER_CLANG_HOME=" + clang_home.as_posix())
+                            ret.append("RCB_ROCM_SDK_CLANG_HOME_DIR=" + clang_home.as_posix())
                             break
-                # check that THEROCK_AMDGPU_TARGETS environment variable is set.
+                # check that RCB_AMDGPU_TARGETS environment variable is set.
                 # If not:
-                #   - Linux: check the gpus available and assign them to THEROCK_AMDGPU_TARGETS
+                #   - Linux: check the gpus available and assign them to RCB_AMDGPU_TARGETS
                 #   - Windows: exit on error, because it can not be queried automatically
-                if not "THEROCK_AMDGPU_TARGETS" in os.environ:
+                if not "RCB_AMDGPU_TARGETS" in os.environ:
                     gpu_targets = get_installed_gpu_list_str(rocm_home_bin_path)
                     if gpu_targets:
-                        ret.append("THEROCK_AMDGPU_TARGETS=" + gpu_targets)
-                        print("THEROCK_AMDGPU_TARGETS: " + gpu_targets)
+                        ret.append("RCB_AMDGPU_TARGETS=" + gpu_targets)
+                        print("RCB_AMDGPU_TARGETS: " + gpu_targets)
                     else:
                         print("Could not get the list of GPU's installed to the system")
                         err_happened = True

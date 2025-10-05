@@ -66,17 +66,17 @@ class RockProjectBuilder(configparser.ConfigParser):
             )
         # name, repo_url and version are not mandatory
         # (project could want to run pip install command for example)
-        if self.has_option("project_info", "name"):
-            self.project_name = self.get("project_info", "name")
+        if self.has_option("project_info", "APP_NAME"):
+            self.project_name = self.get("project_info", "APP_NAME")
         else:
             self.project_name = project_cfg_base_name
-        if self.has_option("project_info", "repo_url"):
-            self.repo_url = self.get("project_info", "repo_url")
+        if self.has_option("project_info", "REPO_URL"):
+            self.repo_url = self.get("project_info", "REPO_URL")
         else:
             self.repo_url = None
 
-        if self.has_option("project_info", "repo_tags"):
-            self.repo_tags = self._get_project_info_config_value("repo_tags")
+        if self.has_option("project_info", "REPO_TAGS"):
+            self.repo_tags = self._get_project_info_config_value("REPO_TAGS")
             self.repo_tags = self.to_boolean(self.repo_tags)
             if self.repo_tags:
                 self.repo_depth = 0
@@ -102,28 +102,28 @@ class RockProjectBuilder(configparser.ConfigParser):
             print("    " + env_version_name + ": " + self.project_version)
         else:
             # check the version from the project.cfg file
-            if self.has_option("project_info", "version"):
-                self.project_version = self.get("project_info", "version")
+            if self.has_option("project_info", "APP_VERSION"):
+                self.project_version = self.get("project_info", "APP_VERSION")
             else:
                 self.project_version = None
-        if self.has_option("project_info", "patch_dir"):
-            self.project_patch_dir_base_name = self.get("project_info", "patch_dir")
+        if self.has_option("project_info", "PATCH_DIR"):
+            self.project_patch_dir_base_name = self.get("project_info", "PATCH_DIR")
         else:
             self.project_patch_dir_base_name = self.project_version
 
         # environment setup can have common and os-specific sections that needs to be appended together
         if self.is_posix:
-            self.skip_on_os = self._get_project_info_config_value("skip_linux")
+            self.skip_on_os = self._get_project_info_config_value("PROPERTY_SKIP_LINUX")
         else:
-            self.skip_on_os = self._get_project_info_config_value("skip_windows")
+            self.skip_on_os = self._get_project_info_config_value("PROPERTY_SKIP_WINDOWS")
         self.env_setup_cmd = None
-        value = self._get_project_info_config_value("env_common")
+        value = self._get_project_info_config_value("ENV_VAR")
         if value:
             self.env_setup_cmd = list(
                 filter(None, (x.strip() for x in value.splitlines()))
             )
         if self.is_posix:
-            value = self._get_project_info_config_value("env_linux")
+            value = self._get_project_info_config_value("ENV_VAR_LINUX")
             if value:
                 temp_env_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
@@ -133,7 +133,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 else:
                     self.env_setup_cmd = temp_env_list
         else:
-            value = self._get_project_info_config_value("env_windows")
+            value = self._get_project_info_config_value("ENV_VAR_WINDOWS")
             if value:
                 temp_env_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
@@ -142,31 +142,31 @@ class RockProjectBuilder(configparser.ConfigParser):
                     self.env_setup_cmd.extend(temp_env_list)
                 else:
                     self.env_setup_cmd = temp_env_list
-        self.init_cmd = self._get_project_info_config_value("init_cmd")
-        self.clean_cmd = self._get_project_info_config_value("clean_cmd")
-        self.hipify_cmd = self._get_project_info_config_value("hipify_cmd")
-        self.pre_config_cmd = self._get_project_info_config_value("pre_config_cmd")
-        self.config_cmd = self._get_project_info_config_value("config_cmd")
-        self.post_config_cmd = self._get_project_info_config_value("post_config_cmd")
+        self.CMD_INIT = self._get_project_info_config_value("CMD_INIT")
+        self.CMD_CLEAN = self._get_project_info_config_value("CMD_CLEAN")
+        self.CMD_HIPIFY = self._get_project_info_config_value("CMD_HIPIFY")
+        self.CMD_PRE_CONFIG = self._get_project_info_config_value("CMD_PRE_CONFIG")
+        self.CMD_CONFIG = self._get_project_info_config_value("CMD_CONFIG")
+        self.CMD_POST_CONFIG = self._get_project_info_config_value("CMD_POST_CONFIG")
 
-        is_windows = any(platform.win32_ver())
+        is_WINDOWS = any(platform.win32_ver())
         # here we want to check if window option is set
-        # otherwise we use generic "build_cmd" option also on windows
-        if is_windows and self.has_option("project_info", "build_cmd_windows"):
-            self.build_cmd = self._get_project_info_config_value("build_cmd_windows")
+        # otherwise we use generic "CMD_BUILD" option also on windows
+        if is_WINDOWS and self.has_option("project_info", "CMD_BUILD_WINDOWS"):
+            self.CMD_BUILD = self._get_project_info_config_value("CMD_BUILD_WINDOWS")
         else:
-            self.build_cmd = self._get_project_info_config_value("build_cmd")
-        self.cmake_config = self._get_project_info_config_value("cmake_config")
-        self.install_cmd = self._get_project_info_config_value("install_cmd")
-        self.post_install_cmd = self._get_project_info_config_value("post_install_cmd")
+            self.CMD_BUILD = self._get_project_info_config_value("CMD_BUILD")
+        self.CMD_CMAKE_CONFIG = self._get_project_info_config_value("CMD_CMAKE_CONFIG")
+        self.CMD_INSTALL = self._get_project_info_config_value("CMD_INSTALL")
+        self.CMD_POST_INSTALL = self._get_project_info_config_value("CMD_POST_INSTALL")
 
         self.project_root_dir_path = Path(rock_builder_root_dir)
         self.project_src_dir_path = project_src_dir
         self.project_build_dir_path = (
-            Path(rock_builder_root_dir) / "builddir" / self.project_cfg_base_name
+            Path(rock_builder_root_dir) / "build" / self.project_cfg_base_name
         )
 
-        self.cmd_execution_dir = self._get_project_info_config_value("cmd_exec_dir")
+        self.cmd_execution_dir = self._get_project_info_config_value("CMD_EXEC_DIR")
         if self.cmd_execution_dir is None:
             # default value if not specified in the config-file
             self.cmd_execution_dir = self.project_src_dir_path
@@ -251,21 +251,21 @@ class RockProjectBuilder(configparser.ConfigParser):
     def _get_cmd_phase_stamp_filenames_for_pending_commands(self, cmd_phase_name:str):
         ret = []
         force_add = False
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTCONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POSTCONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTINSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POSTINSTALL, cmd_phase_name, force_add)
         return ret
 
     def _clean_pending_cmd_phases_stamp_filenames(self, cmd_phase_name):
@@ -327,11 +327,11 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.printout_error_and_terminate("undo_env_setup")
 
     def init(self, force_exec: bool):
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_INIT
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INIT
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            if self.init_cmd:
-                res = self.project_repo.do_init(self.init_cmd)
+            if self.CMD_INIT:
+                res = self.project_repo.do_init(self.CMD_INIT)
             else:
                 res = True
             self._set_cmd_phase_done_on_success(res, phase_name)
@@ -343,11 +343,11 @@ class RockProjectBuilder(configparser.ConfigParser):
         cur_p = Path(self.project_build_dir_path)
         cur_p.mkdir(parents=True, exist_ok=True)
         # and finally run other optional clean commands
-        res = self.project_repo.do_clean(self.clean_cmd)
+        res = self.project_repo.do_clean(self.CMD_CLEAN)
 
     def checkout(self, force_exec: bool):
         if self.repo_url:
-            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CHECKOUT
+            phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 res = self.project_repo.do_checkout(repo_fetch_depth=self.repo_depth, repo_fetch_tags=self.repo_tags)
@@ -355,79 +355,79 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def hipify(self, force_exec: bool):
         if self.repo_url:
-            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_HIPIFY
+            phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
-                res = self.project_repo.do_hipify(self.hipify_cmd)
+                res = self.project_repo.do_hipify(self.CMD_HIPIFY)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
     def pre_config(self, force_exec: bool):
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_PRECONFIG
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_PRECONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_pre_config(self.pre_config_cmd)
+            res = self.project_repo.do_pre_config(self.CMD_PRE_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def config(self, force_exec: bool):
 		# cmd_config_cmake
-        if self.cmake_config:
-            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_CONFIG
+        if self.CMD_CMAKE_CONFIG:
+            phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 # in case that project has cmake configure/build/install needs
-                res = self.project_repo.do_cmake_config(self.cmake_config)
+                res = self.project_repo.do_CMD_CMAKE_CONFIG(self.CMD_CMAKE_CONFIG)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_config
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CONFIG
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_config(self.config_cmd)
+            res = self.project_repo.do_config(self.CMD_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def post_config(self, force_exec: bool):
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTCONFIG
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POSTCONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_post_config(self.post_config_cmd)
+            res = self.project_repo.do_post_config(self.CMD_POST_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def build(self, force_exec: bool):
         # cmd_build_cmake is done only if cmake config exist
-        if self.cmake_config:
-            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_BUILD
+        if self.CMD_CMAKE_CONFIG:
+            phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 # not all projects have things to build with cmake
-                res = self.project_repo.do_cmake_build(self.cmake_config)
+                res = self.project_repo.do_cmake_build(self.CMD_CMAKE_CONFIG)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_build
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_BUILD
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_BUILD
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_build(self.build_cmd)
+            res = self.project_repo.do_build(self.CMD_BUILD)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def install(self, force_exec: bool):
         # do cmd_install_cmake is done only if cmake config exist
-        if self.cmake_config:
-            phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_CMAKE_INSTALL
+        if self.CMD_CMAKE_CONFIG:
+            phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL
             res = self._is_cmd_phase_exec_required(phase_name, force_exec)
             if res:
                 res = self.project_repo.do_cmake_install()
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_install
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_INSTALL
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_install(self.install_cmd)
+            res = self.project_repo.do_install(self.CMD_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
 
     def post_install(self, force_exec: bool):
-        phase_name = rcb_const.RCB__PRJ_CFG__KEY__CMD_POSTINSTALL
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POSTINSTALL
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
-            res = self.project_repo.do_post_install(self.post_install_cmd)
+            res = self.project_repo.do_post_install(self.CMD_POST_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
 class RockExternalProjectListManager(configparser.ConfigParser):

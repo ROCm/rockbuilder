@@ -28,8 +28,8 @@ index 4ab8635..0f15641 100644
 -    "-DENABLE_BF16",
 -    "-DENABLE_FP8",
 -]
-+is_windows = any(platform.win32_ver())
-+if is_windows:
++is_WINDOWS = any(platform.win32_ver())
++if is_WINDOWS:
 +    hipcc_flags = [
 +        "-DNDEBUG",
 +        f"-DOPERATOR_NAMESPACE={operator_namespace}",

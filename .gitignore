@@ -1,5 +1,5 @@
-src_projects
-builddir
+src_apps
+build
 packages
 rockbuilder.ini
 .venv/
