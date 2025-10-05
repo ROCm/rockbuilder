@@ -4,8 +4,9 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 cd ..
 
-BLD_DIR="build/test1_check_build_steps"
+BLD_DIR="build/testapp_01"
 
+TEST_APP_CFG="./tests/projects/testapp_01.cfg"
 TEST_GIT_REPO_FILE=tests/repositories/test1_check_build_steps_git.tar
 
 TEST1_RES_FILE="$BLD_DIR/build_steps_clean.txt"
@@ -14,19 +15,21 @@ TEST1_GOLDEN_FILE="tests/resources/test1/build_steps_clean.txt"
 TEST2_RES_FILE="$BLD_DIR/build_steps.txt"
 TEST2_GOLDEN_FILE="tests/resources/test1/build_steps.txt"
 
-TEST3_RES_FILE="src_apps/test1_check_build_steps/hello_world.txt"
-TEST3_GOLDEN_FILE="tests/resources/test1/hello_world.txt"
+TEST3_RES_FILE="src_apps/testapp_01/hello_world.txt"
+TEST3_GOLDEN_FILE="tests/resources/testapp_01/hello_world.txt"
 
 TEST1_OK=0
 TEST2_OK=0
 TEST3_OK=0
 
 echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "TEST_APP_CFG: ${TEST_APP_CFG}"
 echo "BLD_DIR: " $BLD_DIR
 echo "TEST1_RES_FILE: " $TEST1_RES_FILE
 echo "TEST2_RES_FILE: " $TEST2_RES_FILE
 echo "TEST3_RES_FILE: " $TEST3_RES_FILE
 
+exit 1
 if [ -f ${TEST_GIT_REPO_FILE} ]; then
     tar -xvf ${TEST_GIT_REPO_FILE} -C /tmp
 else
@@ -34,11 +37,11 @@ else
     echo "    ${TEST_GIT_REPO_FILE}"
 fi
 
-./rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg --clean
+./rockbuilder.py --project ${TEST_APP_CFG} --clean
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg --clean'"
+    echo "    './rockbuilder.py --project ${TEST_APP_CFG} --clean'"
     exit 1
 fi
 
@@ -51,19 +54,19 @@ if cmp -s "$TEST1_RES_FILE" "$TEST1_GOLDEN_FILE"; then
     TEST1_OK=1
 fi
 
-./rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg --checkout
+./rockbuilder.py --project ${TEST_APP_CFG} --checkout
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg --checkout'"
+    echo "    './rockbuilder.py --project ${TEST_APP_CFG} --checkout'"
     exit 1
 fi
 
-./rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg
+./rockbuilder.py --project ${TEST_APP_CFG}
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ./tests/projects/test1_check_build_steps.cfg'"
+    echo "    './rockbuilder.py --project ${TEST_APP_CFG}'"
     exit 1
 fi
 
