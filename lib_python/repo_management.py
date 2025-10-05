@@ -185,13 +185,14 @@ class RockProjectRepo:
                 ret = False
         return ret
 
-    def _handle_command_exec(self, exec_phase_name, exec_cmd, CMD_EXEC_DIR):
-        CMD_EXEC_DIR = Path(os.path.expandvars(str(CMD_EXEC_DIR)))
+    def _handle_command_exec(self, exec_phase_name, exec_cmd, cmd_exec_dir):
+        ret = True
         if exec_cmd:
             exec_cmd = os.path.expandvars(exec_cmd)
-        if CMD_EXEC_DIR:
-            CMD_EXEC_DIR = os.path.expandvars(CMD_EXEC_DIR)
-        ret = Path(CMD_EXEC_DIR).is_dir()
+            cmd_exec_dir = Path(os.path.expandvars(str(cmd_exec_dir)))
+            if cmd_exec_dir:
+                cmd_exec_dir = os.path.expandvars(cmd_exec_dir)
+                ret = Path(cmd_exec_dir).is_dir()
         # Handle first special API command or commands:
         #  - Special commands are keywords that will trigger the execution
         #    of internal python function.
@@ -237,17 +238,17 @@ class RockProjectRepo:
                 else:
                     # bash can execute multiple commands in same subprocess.run process
                     print("------ " + exec_phase_name + " start ----------")
-                    self._exec_subprocess_cmd("env", CMD_EXEC_DIR)
+                    self._exec_subprocess_cmd("env", cmd_exec_dir)
                     print("------ " + exec_phase_name + " end ----------")
                     time.sleep(1)
-                    ret = self._exec_subprocess_cmd(exec_cmd, CMD_EXEC_DIR)
+                    ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
             else:
                 # execute just a single command
                 print("------ " + exec_phase_name + " start ----------")
-                self._exec_subprocess_cmd("env", CMD_EXEC_DIR)
+                self._exec_subprocess_cmd("env", cmd_exec_dir)
                 print("------ " + exec_phase_name + " end ----------")
                 time.sleep(1)
-                ret = self._exec_subprocess_cmd(exec_cmd, CMD_EXEC_DIR)
+                ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
         return ret
 
     # public methods
@@ -709,9 +710,7 @@ class RockProjectRepo:
         return ret
 
     def do_pre_config(self, CMD_PRE_CONFIG):
-        return self._handle_command_exec(
-            "pre_config", CMD_PRE_CONFIG, self.project_exec_dir
-        )
+        return self._handle_command_exec("pre_config", CMD_PRE_CONFIG, self.project_exec_dir)
 
     def do_config(self, CMD_CONFIG):
         return self._handle_command_exec("config", CMD_CONFIG, self.project_exec_dir)

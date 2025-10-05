@@ -366,6 +366,7 @@ class RockProjectBuilder(configparser.ConfigParser):
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_pre_config(self.CMD_PRE_CONFIG)
+            print("res: " + str(res))
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def config(self, force_exec: bool):

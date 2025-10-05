@@ -29,7 +29,6 @@ echo "TEST1_RES_FILE: " $TEST1_RES_FILE
 echo "TEST2_RES_FILE: " $TEST2_RES_FILE
 echo "TEST3_RES_FILE: " $TEST3_RES_FILE
 
-exit 1
 if [ -f ${TEST_GIT_REPO_FILE} ]; then
     tar -xvf ${TEST_GIT_REPO_FILE} -C /tmp
 else
