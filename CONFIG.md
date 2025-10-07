@@ -83,8 +83,8 @@ version=v2.7.0
 You can also specify whether to skip building the project on Linux or Windows using the following optional settings:
 
 ```
-PROPERTY_SKIP_LINUX=1
-PROPERTY_SKIP_WINDOWS=1
+PROP_IS_BUILD_ENABLED_LINUX=1
+PROP_IS_BUILD_ENABLED_WINDOWS=1
 ```
 
 ### Environment Variables
@@ -217,7 +217,7 @@ Note: Installing the Python wheel may be necessary to resolve build-time depende
 Example:
 
 ```
-CMD_INSTALL = RCB_CMD__INSTALL_PYTHON_WHEEL ${RCB_APP_SRC_DIR}/py/dist
+CMD_INSTALL = RCB_CALLBACK__INSTALL_PYTHON_WHEEL ${RCB_APP_SRC_DIR}/py/dist
 ```
 
 ### CMake Build Support

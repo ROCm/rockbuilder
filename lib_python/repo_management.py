@@ -114,15 +114,15 @@ class RockProjectRepo:
         print(ret)
         return ret
 
-    def _handle_RCB_CMD__DELETE_SOURCE_SUBDIR(self, delete_cmd):
-        print("_handle_RCB_CMD__DELETE_SOURCE_SUBDIR: " + delete_cmd)
+    def _handle_RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR(self, delete_cmd):
+        print("RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR: " + delete_cmd)
         cmd_arr = delete_cmd.split()
         if len(cmd_arr) > 1:
             try:
                 for item_to_delete in cmd_arr[1:]:
-                    print("file_or_dir_to_delete: " + item_to_delete)
+                    #print("file_or_dir_to_delete: " + item_to_delete)
                     item_to_delete = self.project_src_dir / item_to_delete
-                    print("item_to_delete: " + str(item_to_delete))
+                    print("Deleting: " + str(item_to_delete))
                     if item_to_delete.exists():
                         if item_to_delete.is_file():
                             item_to_delete.unlink()
@@ -138,7 +138,7 @@ class RockProjectRepo:
     # 1) search the latest wheel file from certain directory
     # 2) copy wheel to packages/wheel directory
     # 3) install wheel to current python environment
-    def _handle_RCB_CMD__INSTALL_PYTHON_WHEEL(self, CMD_INSTALL):
+    def _handle_RCB_CALLBACK__INSTALL_PYTHON_WHEEL(self, CMD_INSTALL):
         ret = True
         CMD_INSTALL_arr = CMD_INSTALL.split()
         print("len(CMD_INSTALL_arr): " + str(len(CMD_INSTALL_arr)))
@@ -203,8 +203,8 @@ class RockProjectRepo:
         #        bat files splitted by these special commands.
         while ((ret == True) and
                (exec_cmd is not None) and
-               ((exec_cmd.startswith("RCB_CMD__INSTALL_PYTHON_WHEEL")) or
-                (exec_cmd.startswith("RCB_CMD__DELETE_SOURCE_SUBDIR")))):
+               ((exec_cmd.startswith(rcb_const.RCB_CALLBACK__INSTALL_PYTHON_WHEEL)) or
+                (exec_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR)))):
             line_arr = exec_cmd.splitlines(True)
             special_cmd = line_arr[0]
             # then concat rest of the lines for next command to be executed
@@ -212,10 +212,10 @@ class RockProjectRepo:
                 exec_cmd = "".join(line_arr[1:])
             else:
                 exec_cmd = None
-            if special_cmd.startswith("RCB_CMD__INSTALL_PYTHON_WHEEL"):
-                ret = self._handle_RCB_CMD__INSTALL_PYTHON_WHEEL(special_cmd)
-            if special_cmd.startswith("RCB_CMD__DELETE_SOURCE_SUBDIR"):
-                ret = self._handle_RCB_CMD__DELETE_SOURCE_SUBDIR(special_cmd)
+            if special_cmd.startswith(rcb_const.RCB_CALLBACK__INSTALL_PYTHON_WHEEL):
+                ret = self._handle_RCB_CALLBACK__INSTALL_PYTHON_WHEEL(special_cmd)
+            if special_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR):
+                ret = self._handle_RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR(special_cmd)
         # then handle regular command or multiple commands
         if (ret == True) and (exec_cmd is not None):
             is_multiline = self.is_multiline_text(exec_cmd)

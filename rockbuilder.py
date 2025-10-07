@@ -252,7 +252,7 @@ def get_config_reader(rock_builder_home_dir: Path,
 def do_therock(prj_builder, args):
     ret = False
     if prj_builder is not None:
-        if prj_builder.check_skip_on_os() == False:
+        if prj_builder.is_build_enabled_on_current_os():
             # setup first the project specific environment variables
             prj_builder.printout("start")
             prj_builder.do_env_setup()
@@ -304,7 +304,7 @@ def do_therock(prj_builder, args):
             print("Operations finished ok: " +prj_builder.project_cfg_base_name)
             ret = True
         else:
-            print("PROPERTY_SKIP_WINDOWS or PROPERTY_SKIP_LINUX enabled for project")
+            print("PROP_IS_BUILD_ENABLED_WINDOWS or PROP_IS_BUILD_ENABLED_LINUX enabled for project")
             prj_builder.printout("skip")
             ret = True
     return ret
@@ -342,10 +342,15 @@ def verify_rockbuilder_config(rcb_cfg_reader):
 # Ensures that rocm_sdk install exist or will be installed by using
 # the method that has been saved to rockbuilder.ini config file.
 # (by using the rockbuilder_cfg.py)
+#
+# Check is disabled if env-variable 'RCB_DISABLE_ROCM_SDK_CHECK' has been defined.
+# Otherwise following cases are checked depending on from the rockbuilder configuration:
 # - rocm_sdk from from the python wheels provied by therock
 # - rocm_sdk from the therock sources
 # - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
 def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_dir):
+    if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
+        return
     default_src_base_dir = rcb_const.get_project_src_base_dir()
     rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
     if rocm_home:
@@ -371,10 +376,10 @@ def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_d
             prj_cfg_base_name = get_project_cfg_base_name_without_extension(prj_cfg_file)
             version_override = None
             prj_builder = project_manager.get_rock_project_builder(
-                    rcb_const.RCB__PROJECT_SRC_BASE_DIR / "therock",
+                    rcb_const.RCB__PROJECT_SRC_ROOT_DIR / "therock",
                     prj_cfg_base_name,
                     prj_cfg_file,
-                    rcb_const.RCB__PROJECT_BUILD_BASE_DIR,
+                    rcb_const.RCB__PROJECT_BUILD_ROOT_DIR,
                     version_override
                 )
             if prj_builder:
@@ -390,7 +395,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, project_manager, rock_builder_home_d
         if rocm_sdk_wheel_server_url:
             inst_wheels = rcb_cfg_reader.is_python_wheel_rocm_sdk_install_needed()
             if inst_wheels:
-                rocm_home = install_rocm_sdk_from_python_wheels()
+                rocm_home = install_rocm_sdk_from_python_wheels(rcb_cfg_reader)
             else:
                 rocm_home = get_python_wheel_rocm_sdk_home("root")
             if rocm_home:

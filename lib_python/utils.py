@@ -388,7 +388,8 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
         else:
             err_happened = True
             print("")
-            print("Error, use_rocm_sdk is not set to false in project config file")
+            print("Error, " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED +
+                  " is not set to FALSE in application config file")
             print("   or ROCM_HOME is not defined")
             print("   or existing ROCM SDK build is not detected in directory:")
             print(rocm_home_root_path.as_posix())

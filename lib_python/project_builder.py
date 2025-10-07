@@ -11,35 +11,45 @@ from pathlib import Path, PurePosixPath
 import lib_python.rcb_constants as rcb_const
 
 class RockProjectBuilder(configparser.ConfigParser):
-
-    # Read the value from the config-file's "project_info" section.
-    #
-    # Return value if it exist, otherwise return None
-    def _get_project_info_config_value(self, config_key):
-        try:
-            ret = self.get("project_info", config_key)
-        except:
-            # just catch what ever exception is thrown by current python
-            # env-version in case that the config-key/value is not specified
-            # in the configuration file. (key/value pairs can be optional)
-            ret = None
-        return ret
-
-    def to_boolean(self, value):
+    def _to_boolean(self, value):
+        if not value:
+            return False
         if isinstance(value, bool):
             return value
-        elif isinstance(value, (int, float)):
+        if isinstance(value, (int, float)):
             return bool(value)  # 0 and 0.0 are False, others are True
         elif isinstance(value, str):
             lower_value = value.lower().strip()
-            if lower_value in ("true", "yes", "1"):
+            if lower_value in ("true", "yes", "on", "1"):
                 return True
-            elif lower_value in ("false", "no", "0"):
+            elif lower_value in ("false", "no", "off", "0"):
                 return False
             else:
                 raise ValueError(f"Cannot convert '{value}' to boolean.")
         else:
             raise TypeError(f"Unsupported type: {type(value)}")
+
+    # Read the value from the config-file's rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO section.
+    #
+    # Return value if it exist, otherwise return None
+    def _get_project_info_config_value(self, config_key):
+        ret = None
+        try:
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, config_key):
+                ret = self.get(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, config_key)
+        except:
+            pass
+            # just catch what ever exception is thrown by current python
+            # env-version in case that the config-key/value is not specified
+            # in the configuration file. (key/value pairs can be optional)
+        return ret
+
+
+    def _get_project_info_boolean_value(self, config_key):
+        val = self._get_project_info_config_value(config_key)
+        ret = self._to_boolean(val)
+        return ret
+
 
     def __init__(
         self,
@@ -66,18 +76,17 @@ class RockProjectBuilder(configparser.ConfigParser):
             )
         # name, repo_url and version are not mandatory
         # (project could want to run pip install command for example)
-        if self.has_option("project_info", "APP_NAME"):
-            self.project_name = self.get("project_info", "APP_NAME")
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__APP_NAME):
+            self.project_name = self.get(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__APP_NAME)
         else:
             self.project_name = project_cfg_base_name
-        if self.has_option("project_info", "REPO_URL"):
-            self.repo_url = self.get("project_info", "REPO_URL")
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__REPO_URL):
+            self.repo_url = self.get(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__REPO_URL)
         else:
             self.repo_url = None
 
-        if self.has_option("project_info", "REPO_TAGS"):
-            self.repo_tags = self._get_project_info_config_value("REPO_TAGS")
-            self.repo_tags = self.to_boolean(self.repo_tags)
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__PROP_FETCH_REPO_TAGS):
+            self.repo_tags = self._get_project_info_boolean_value(rcb_const.RCB__APP_CFG__KEY__PROP_FETCH_REPO_TAGS)
             if self.repo_tags:
                 self.repo_depth = 0
             else:
@@ -86,12 +95,11 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.repo_depth = 1
             self.repo_tags = None
 
-        if self.has_option("project_info", "use_rocm_sdk"):
-            self.use_rocm_sdk = self._get_project_info_config_value("use_rocm_sdk")
-            self.use_rocm_sdk = self.to_boolean(self.use_rocm_sdk)
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED):
+            self.use_rocm_sdk = self._get_project_info_boolean_value(rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED)
         else:
             self.use_rocm_sdk = True
-        print("use_rocm_sdk: " + str(self.use_rocm_sdk))
+        print(rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED + ": " + str(self.use_rocm_sdk))
 
         # If the project's version_override parameter has been set, then use that version
         # instead of using the version specified in the project.cfg file
@@ -102,28 +110,39 @@ class RockProjectBuilder(configparser.ConfigParser):
             print("    " + env_version_name + ": " + self.project_version)
         else:
             # check the version from the project.cfg file
-            if self.has_option("project_info", "APP_VERSION"):
-                self.project_version = self.get("project_info", "APP_VERSION")
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__APP_VERSION):
+                self.project_version = self.get(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__APP_VERSION)
             else:
                 self.project_version = None
-        if self.has_option("project_info", "PATCH_DIR"):
-            self.project_patch_dir_base_name = self.get("project_info", "PATCH_DIR")
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__PATCH_DIR):
+            self.project_patch_dir_base_name = self.get(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__PATCH_DIR)
         else:
             self.project_patch_dir_base_name = self.project_version
 
         # environment setup can have common and os-specific sections that needs to be appended together
         if self.is_posix:
-            self.skip_on_os = self._get_project_info_config_value("PROPERTY_SKIP_LINUX")
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_LINUX
         else:
-            self.skip_on_os = self._get_project_info_config_value("PROPERTY_SKIP_WINDOWS")
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_WINDOWS
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, prop_name):
+            self.enable_on_os = self._get_project_info_config_value(prop_name)
+        else:
+            # check only if OS specific property version is not used
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, prop_name):
+                self.enable_on_os = self._get_project_info_config_value(prop_name)
+            else:
+                self.enable_on_os = True
+
+        self._get_project_info_boolean_value
         self.env_setup_cmd = None
-        value = self._get_project_info_config_value("ENV_VAR")
+        value = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__ENV_VAR)
         if value:
             self.env_setup_cmd = list(
                 filter(None, (x.strip() for x in value.splitlines()))
             )
         if self.is_posix:
-            value = self._get_project_info_config_value("ENV_VAR_LINUX")
+            value = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__ENV_VAR_LINUX)
             if value:
                 temp_env_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
@@ -133,7 +152,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 else:
                     self.env_setup_cmd = temp_env_list
         else:
-            value = self._get_project_info_config_value("ENV_VAR_WINDOWS")
+            value = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__ENV_VAR_WINDOWS)
             if value:
                 temp_env_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
@@ -142,39 +161,42 @@ class RockProjectBuilder(configparser.ConfigParser):
                     self.env_setup_cmd.extend(temp_env_list)
                 else:
                     self.env_setup_cmd = temp_env_list
-        self.CMD_INIT = self._get_project_info_config_value("CMD_INIT")
-        self.CMD_CLEAN = self._get_project_info_config_value("CMD_CLEAN")
-        self.CMD_HIPIFY = self._get_project_info_config_value("CMD_HIPIFY")
-        self.CMD_PRE_CONFIG = self._get_project_info_config_value("CMD_PRE_CONFIG")
-        self.CMD_CONFIG = self._get_project_info_config_value("CMD_CONFIG")
-        self.CMD_POST_CONFIG = self._get_project_info_config_value("CMD_POST_CONFIG")
+        self.CMD_INIT = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_INIT)
+        self.CMD_CLEAN = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN)
+        self.CMD_HIPIFY = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY)
+        self.CMD_PRE_CONFIG = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG)
+        self.CMD_CONFIG = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG)
+        self.CMD_POST_CONFIG = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG)
 
-        is_WINDOWS = any(platform.win32_ver())
-        # here we want to check if window option is set
-        # otherwise we use generic "CMD_BUILD" option also on windows
-        if is_WINDOWS and self.has_option("project_info", "CMD_BUILD_WINDOWS"):
-            self.CMD_BUILD = self._get_project_info_config_value("CMD_BUILD_WINDOWS")
+        # here we want to check if specific CMD_BUILD_LINUX or CMD_BUILD_WINDOWS option is set
+        # otherwise we use generic "CMD_BUILD" option
+        if self.is_posix:
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_LINUX):
+                self.CMD_BUILD = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_LINUX)
+            else:
+                self.CMD_BUILD = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD)
         else:
-            self.CMD_BUILD = self._get_project_info_config_value("CMD_BUILD")
-        self.CMD_CMAKE_CONFIG = self._get_project_info_config_value("CMD_CMAKE_CONFIG")
-        self.CMD_INSTALL = self._get_project_info_config_value("CMD_INSTALL")
-        self.CMD_POST_INSTALL = self._get_project_info_config_value("CMD_POST_INSTALL")
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_PROJECT_INFO, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_WINDOWS):
+                self.CMD_BUILD = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_WINDOWS)
+            else:
+                self.CMD_BUILD = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD)
+        self.CMD_CMAKE_CONFIG = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG)
+        self.CMD_INSTALL = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL)
+        self.CMD_POST_INSTALL = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL)
 
         self.project_root_dir_path = Path(rock_builder_root_dir)
         self.project_src_dir_path = project_src_dir
         self.project_build_dir_path = (
-            Path(rock_builder_root_dir) / "build" / self.project_cfg_base_name
+            rcb_const.RCB__PROJECT_BUILD_ROOT_DIR / self.project_cfg_base_name
         )
 
-        self.cmd_execution_dir = self._get_project_info_config_value("CMD_EXEC_DIR")
+        self.cmd_execution_dir = self._get_project_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_EXEC_DIR)
         if self.cmd_execution_dir is None:
             # default value if not specified in the config-file
             self.cmd_execution_dir = self.project_src_dir_path
         self.patch_dir_root_arr = []
-        self.patch_dir_root_arr.append(Path(rock_builder_root_dir)
-                      / "patches")
-        self.patch_dir_root_arr.append(Path(rock_builder_root_dir)
-                      / "sdk/therock/external-builds/pytorch/patches")
+        self.patch_dir_root_arr.append(rcb_const.RCB__PROJECT_PATCHES_ROOT_DIR)
+        self.patch_dir_root_arr.append(rcb_const.THEROCK_SDK_SRC__PATCHES_ROOT_DIR)
         for ii, element in enumerate(self.patch_dir_root_arr):
             self.patch_dir_root_arr[ii] = self.patch_dir_root_arr[ii].resolve()
         self.project_repo = RockProjectRepo(
@@ -218,15 +240,10 @@ class RockProjectBuilder(configparser.ConfigParser):
         sys.exit(1)
 
     # check whether operations should be skipped on current operating system
-    def check_skip_on_os(self):
-        ret = True
-        if (self.skip_on_os is None) or (
-            (self.skip_on_os != "1")
-            and (str(self.skip_on_os).casefold() != str("y").casefold())
-            and (str(self.skip_on_os).casefold() != str("yes").casefold())
-            and (str(self.skip_on_os).casefold() != str("on").casefold())
-        ):
-            ret = False
+    def is_build_enabled_on_current_os(self):
+        ret = False
+        if self.enable_on_os:
+            ret = self.enable_on_os
         return ret
 
     def _get_cmd_phase_stamp_filename(self, operation_phase_name:str):
@@ -254,18 +271,18 @@ class RockProjectBuilder(configparser.ConfigParser):
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_PRECONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POSTCONFIG, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
         # add cmake version of phase_cmd after as we do not have specific user arg command for it
         force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POSTINSTALL, cmd_phase_name, force_add)
+        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL, cmd_phase_name, force_add)
         return ret
 
     def _clean_pending_cmd_phases_stamp_filenames(self, cmd_phase_name):
@@ -362,11 +379,11 @@ class RockProjectBuilder(configparser.ConfigParser):
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
     def pre_config(self, force_exec: bool):
-        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_PRECONFIG
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_pre_config(self.CMD_PRE_CONFIG)
-            print("res: " + str(res))
+            # print("res: " + str(res))
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def config(self, force_exec: bool):
@@ -386,7 +403,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def post_config(self, force_exec: bool):
-        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POSTCONFIG
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_post_config(self.CMD_POST_CONFIG)
@@ -425,7 +442,7 @@ class RockProjectBuilder(configparser.ConfigParser):
 
 
     def post_install(self, force_exec: bool):
-        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POSTINSTALL
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL
         res = self._is_cmd_phase_exec_required(phase_name, force_exec)
         if res:
             res = self.project_repo.do_post_install(self.CMD_POST_INSTALL)

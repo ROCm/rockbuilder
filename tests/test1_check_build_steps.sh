@@ -4,6 +4,9 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 cd ..
 
+# these tests does not require the installation/build of rocm sdk itself
+export RCB_DISABLE_ROCM_SDK_CHECK=1
+
 BLD_DIR="build/testapp_01"
 
 TEST_APP_CFG="./tests/projects/testapp_01.cfg"
