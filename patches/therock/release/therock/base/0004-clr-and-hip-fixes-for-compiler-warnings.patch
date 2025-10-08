@@ -1,0 +1,224 @@
+From 985dd487b2f4dfd961a3589fa651b7cd91799f5a Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 8 Oct 2025 00:14:39 +0000
+Subject: [PATCH 4/4] clr and hip fixes for compiler warnings
+
+- fix warnings thay are showed when building for example
+  the clr project itself or other projects like miopen
+- examples from the warnings fixed:
+
+therock/rocm-systems/projects/clr/hipamd/src/hip_event.hpp:223:14:
+warning: 'GetHandle' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
+
+include/hip/hip_common.h:65:5: warning: '__HIP_DEVICE_COMPILE__' is not defined, evaluates to 0 [-Wundef]
+30.9       65 | #if __HIP_DEVICE_COMPILE__ == 0
+
+include/hip/amd_detail/hip_prof_str.h:6711:5: warning: 'HIP_PROF_HIP_API_STRING' is not defined, evaluates to 0 [-Wundef]
+30.9     6711 | #if HIP_PROF_HIP_API_STRING
+
+include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline-eof]
+140.6     138 | #endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...r-and-hip-fix-various-build-warnings.patch | 188 ++++++++++++++++++
+ 1 file changed, 188 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
+new file mode 100644
+index 0000000..73c499b
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
+@@ -0,0 +1,188 @@
++From 5179496efaa930eb7b266d9ae7476ef819ff02a7 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Tue, 7 Oct 2025 23:31:11 +0000
++Subject: [PATCH 6/6] clr and hip fix various build warnings
++
++- fix warnings thay are showed when building for example
++  the clr project itself or other projects like miopen
++- examples from the warnings fixed:
++
++therock/rocm-systems/projects/clr/hipamd/src/hip_event.hpp:223:14:
++warning: 'GetHandle' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
++
++include/hip/hip_common.h:65:5: warning: '__HIP_DEVICE_COMPILE__' is not defined, evaluates to 0 [-Wundef]
++30.9	   65 | #if __HIP_DEVICE_COMPILE__ == 0
++
++include/hip/amd_detail/hip_prof_str.h:6711:5: warning: 'HIP_PROF_HIP_API_STRING' is not defined, evaluates to 0 [-Wundef]
++30.9	 6711 | #if HIP_PROF_HIP_API_STRING
++
++include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline-eof]
++140.6	  138 | #endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ .../clr/hipamd/include/hip/amd_detail/host_defines.h |  2 +-
++ projects/clr/hipamd/src/hip_event.hpp                | 12 ++++++------
++ projects/clr/hipamd/src/hip_graph_internal.hpp       |  6 +++---
++ projects/clr/hipamd/src/hip_mempool.cpp              |  2 +-
++ projects/clr/hipamd/src/hip_prof_gen.py              |  2 +-
++ projects/clr/rocclr/platform/command.hpp             |  6 +++---
++ projects/hip/include/hip/hip_common.h                |  2 +-
++ projects/hip/include/hip/linker_types.h              |  3 ++-
++ 8 files changed, 18 insertions(+), 17 deletions(-)
++
++diff --git a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
++index 8081966..2a5712b 100644
++--- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
+++++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
++@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
++ 
++ #define __forceinline__ inline __attribute__((always_inline))
++ 
++-#if __HIP_NO_IMAGE_SUPPORT
+++#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
++ #define __hip_img_chk__                                                                            \
++   __attribute__((unavailable("The image/texture API not supported on the device")))
++ #else
++diff --git a/projects/clr/hipamd/src/hip_event.hpp b/projects/clr/hipamd/src/hip_event.hpp
++index 754ca41..7986a4c 100644
++--- a/projects/clr/hipamd/src/hip_event.hpp
+++++ b/projects/clr/hipamd/src/hip_event.hpp
++@@ -220,16 +220,16 @@ class IPCEvent : public Event {
++   }
++   IPCEvent() : Event(hipEventInterprocess) {}
++   bool createIpcEventShmemIfNeeded();
++-  hipError_t GetHandle(ihipIpcEventHandle_t* handle);
++-  hipError_t OpenHandle(ihipIpcEventHandle_t* handle);
++-  hipError_t synchronize();
++-  hipError_t query();
+++  hipError_t GetHandle(ihipIpcEventHandle_t* handle) override;
+++  hipError_t OpenHandle(ihipIpcEventHandle_t* handle) override;
+++  hipError_t synchronize() override;
+++  hipError_t query() override;
++ 
++-  hipError_t streamWait(hip::Stream* stream, uint flags);
+++  hipError_t streamWait(hip::Stream* stream, uint flags) override;
++ 
++   hipError_t recordCommand(amd::Command*& command, amd::HostQueue* queue, uint32_t flags = 0,
++                            bool batch_flush = true) override;
++-  hipError_t enqueueRecordCommand(hip::Stream* stream, amd::Command* command);
+++  hipError_t enqueueRecordCommand(hip::Stream* stream, amd::Command* command) override;
++ };
++ 
++ 
++diff --git a/projects/clr/hipamd/src/hip_graph_internal.hpp b/projects/clr/hipamd/src/hip_graph_internal.hpp
++index 0d212e3..a0d22e2 100644
++--- a/projects/clr/hipamd/src/hip_graph_internal.hpp
+++++ b/projects/clr/hipamd/src/hip_graph_internal.hpp
++@@ -2689,7 +2689,7 @@ class hipGraphExternalSemSignalNode : public GraphNode {
++ 
++   GraphNode* clone() const override { return new hipGraphExternalSemSignalNode(*this); }
++ 
++-  hipError_t CreateCommand(hip::Stream* stream) {
+++  hipError_t CreateCommand(hip::Stream* stream) override {
++     hipError_t status = GraphNode::CreateCommand(stream);
++     if (status != hipSuccess) {
++       return status;
++@@ -2742,7 +2742,7 @@ class hipGraphExternalSemWaitNode : public GraphNode {
++ 
++   GraphNode* clone() const override { return new hipGraphExternalSemWaitNode(*this); }
++ 
++-  hipError_t CreateCommand(hip::Stream* stream) {
+++  hipError_t CreateCommand(hip::Stream* stream) override {
++     hipError_t status = GraphNode::CreateCommand(stream);
++     if (status != hipSuccess) {
++       return status;
++@@ -2794,7 +2794,7 @@ class hipGraphBatchMemOpNode : public GraphNode {
++ 
++   GraphNode* clone() const override { return new hipGraphBatchMemOpNode(*this); }
++ 
++-  hipError_t CreateCommand(hip::Stream* stream) {
+++  hipError_t CreateCommand(hip::Stream* stream) override {
++     hipError_t status = GraphNode::CreateCommand(stream);
++     if (status != hipSuccess) {
++       return status;
++diff --git a/projects/clr/hipamd/src/hip_mempool.cpp b/projects/clr/hipamd/src/hip_mempool.cpp
++index f80c564..4a10c0e 100644
++--- a/projects/clr/hipamd/src/hip_mempool.cpp
+++++ b/projects/clr/hipamd/src/hip_mempool.cpp
++@@ -32,7 +32,7 @@ namespace {
++ inline bool IsMemPoolValid(MemoryPool* mem_pool) {
++   bool result = false;
++   for (auto it : g_devices) {
++-    if (result = it->IsMemoryPoolValid(mem_pool) == true) {
+++    if ((result = it->IsMemoryPoolValid(mem_pool)) == true) {
++       break;
++     }
++   }
++diff --git a/projects/clr/hipamd/src/hip_prof_gen.py b/projects/clr/hipamd/src/hip_prof_gen.py
++index 40d5a28..923a898 100755
++--- a/projects/clr/hipamd/src/hip_prof_gen.py
+++++ b/projects/clr/hipamd/src/hip_prof_gen.py
++@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
++     f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
++   f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
++ 
++-  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
+++  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
++   # Generating the method for the API args filling
++   f.write('// HIP API args filling helper\n')
++   f.write('static inline void hipApiArgsInit(hip_api_id_t id, hip_api_data_t* data) {\n')
++diff --git a/projects/clr/rocclr/platform/command.hpp b/projects/clr/rocclr/platform/command.hpp
++index bd91cd3..1cf0a3e 100644
++--- a/projects/clr/rocclr/platform/command.hpp
+++++ b/projects/clr/rocclr/platform/command.hpp
++@@ -502,7 +502,7 @@ class OneMemoryArgCommand : public Command {
++     memory_->retain();
++   }
++ 
++-  virtual void releaseResources() {
+++  virtual void releaseResources() override {
++     memory_->release();
++     DEBUG_ONLY(memory_ = NULL);
++     Command::releaseResources();
++@@ -510,14 +510,14 @@ class OneMemoryArgCommand : public Command {
++   }
++ 
++   //! Release all pinned memory for this command
++-  virtual void ReleasePinnedMemory() {
+++  virtual void ReleasePinnedMemory() override {
++     for (auto it : pinned_memory_) {
++       it->release();
++     }
++     pinned_memory_.clear();
++   }
++   //! Release all pinned memory for this command
++-  virtual bool IsMemoryPinned() const { return !pinned_memory_.empty(); }
+++  virtual bool IsMemoryPinned() const override { return !pinned_memory_.empty(); }
++ 
++   //! Adds pinned memory, used in this command for later release
++   virtual void AddPinnedMemory(Memory* pinned) override { pinned_memory_.push_back(pinned); }
++diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
++index 4a7dcff..6fffe7f 100644
++--- a/projects/hip/include/hip/hip_common.h
+++++ b/projects/hip/include/hip/hip_common.h
++@@ -62,7 +62,7 @@ THE SOFTWARE.
++ #define HIP_INTERNAL_EXPORTED_API
++ #endif
++ 
++-#if __HIP_DEVICE_COMPILE__ == 0
+++#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
++ // 32-bit Atomics
++ #define __HIP_ARCH_HAS_GLOBAL_INT32_ATOMICS__ (0)
++ #define __HIP_ARCH_HAS_GLOBAL_FLOAT_ATOMIC_EXCH__ (0)
++diff --git a/projects/hip/include/hip/linker_types.h b/projects/hip/include/hip/linker_types.h
++index 1131910..ea369f4 100755
++--- a/projects/hip/include/hip/linker_types.h
+++++ b/projects/hip/include/hip/linker_types.h
++@@ -135,4 +135,5 @@ typedef enum hipLibraryOption_e {
++ #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
++ #endif
++ 
++-#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
++\ No newline at end of file
+++#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+++
++-- 
++2.43.0
++
+-- 
+2.43.0
+
