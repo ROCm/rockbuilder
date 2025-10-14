@@ -7,7 +7,6 @@ import ast
 import subprocess
 import lib_python.rcb_constants as rcb_const
 from lib_python.utils import get_python_wheel_rocm_sdk_home
-from lib_python.utils import get_rocm_sdk_env_variables
 from lib_python.utils import get_config_value_from_one_element_list
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
 from lib_python.repo_management import RockProjectRepo

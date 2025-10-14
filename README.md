@@ -1,41 +1,38 @@
 # RockBuilder
 
-RockBuilder provides a configuration file based way of building one or multiple external projects on top of the existing ROCM core installation.
-
-Project can be application, library or some other buildable or installable entity.
+RockBuilder provides a configuration file based way of building one or multiple external applications on top of the existing ROCM core installation.
 
 RockBuilder supports both the Linux and Windows but some of the applications build may be operating system-specific.
 
 ## Applications Build
 
-RockBuilder will build the list of applications that are listed in the in the project list configuration file:
+RockBuilder will build the list of applications that are listed in the in the application list configuration file:
 
 ```
-projects/core_apps.pcfg
+apps/core.apps
 ```
 
 For each application build there is a application specific configuration file which will then specify the application name, version, source code checkout address and required configure, build and install commands.
 
 At the moment RockBuilder will build by default a following list of applications in Linux and Windows:
 
-- pytorch (projects/pytorch.cfg)
-- pytorch vision (projects/pytorch_vision.cfg)
-- pytorch audio (projects/pytorch_audio.cfg)
-- torch migraphx (projects/torch_migraphx.cfg)
+- pytorch (apps/pytorch.cfg)
+- pytorch vision (apps/pytorch_vision.cfg)
+- pytorch audio (apps/pytorch_audio.cfg)
+- torch migraphx (apps/torch_migraphx.cfg)
 
 Configuration file format is specified in [CONFIG.md](CONFIG.md) document.
 
 # Usage
 
 Below are described the steps required for setting up the RockBuilder environment
-and how to use it either to build all projects or to use it for just to execute some smaller task.
+and how to use it either to build all applications or to use it for just to execute some smaller task.
 
 ## Build everything by using TheRock ROCm build
 
 First build the TheRock base system by following the instructions in
 [README.md](../../README.md#building-from-source).
-Then build the RockBuilder projects from the
-experimental/rockbuilder directory. Example:
+Then build the RockBuilder applications from the rockbuilder directory.
 
 Example commands to build and test on Linux:
 
@@ -44,7 +41,7 @@ cd rockbuilder
 source ./init_rcb_env.sh
 python rockbuilder.py
 cd examples
-export ROCM_HOME=src_project/TheRock/build/dist/rocm
+export ROCM_HOME=src_apps/therock/build/dist/rocm
 export LD_LIBRARY_PATH=${ROCM_HOME}/lib:${ROCM_HOME}/lib/llvm/lib
 python torch_gpu_hello_world.py
 python torch_vision_hello_world.py
@@ -94,8 +91,8 @@ pytorch audio version: 2.7.0
 
 1. First build the TheRock base system by following the instructions in
    [README.md](../../README.md#building-from-source).
-   Then build the RockBuilder projects from the
-   experimental/rockbuilder directory. Example:
+   Then build the RockBuilder apps from the
+   rockbuilder directory. Example:
 
 ```bash
 cd rockbuilder
@@ -109,15 +106,15 @@ python torch_audio_hello_world.py
 
 Wheels that have been build can be found from the packages/wheels directory.
 
-## Checkout all pytorch_28_amd projects (without build and install)
+## Checkout all pytorch_28_amd related applications (without build and install)
 
 ```bash
-python rockbuilder.py --checkout --project_list projects/pytorch_28_amd.pcfg
+python rockbuilder.py --checkout --app_list apps/pytorch_28_rocm.apps
 ```
 
 Source code would be checked out to directory `src_apps`
 
-## Checkout all projects to custom directory
+## Checkout all applications to custom directory
 
 ```bash
 python rockbuilder.py --checkout --src-base-dir src_prj
@@ -132,13 +129,13 @@ copy the produced pytorch audio wheel to directory "test" instead of using defau
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --project pytorch_audio --output-dir test
+python rockbuilder.py --app pytorch_audio --output-dir test
 ```
 
 or
 
 ```bash
-python rockbuilder.py --project projects/pytorch_audio.cfg --output-dir test
+python rockbuilder.py --app apps/pytorch_audio.cfg --output-dir test
 ```
 
 By default this checks out pytorch audio source to directory `src_apps/pytorch_audio`:
@@ -151,7 +148,7 @@ pytorch_audio/
 ## Checkout pytorch_audio sources to custom directory
 
 ```bash
-python rockbuilder.py --checkout --project pytorch_audio --src-dir src_prj/py_audio
+python rockbuilder.py --checkout --app pytorch_audio --src-dir src_prj/py_audio
 ```
 
 Source code would be checked out to directory `src_prj/py_audio`:
@@ -166,7 +163,7 @@ py_audio/
 This would checkout the v2.6.0 version instead of the version specified in the pytorch_audio.cfg file
 
 ```bash
-python rockbuilder.py --checkout --project pytorch_audio --pytorch_audio-version=v2.6.0
+python rockbuilder.py --checkout --app pytorch_audio --pytorch_audio-version=v2.6.0
 ```
 
 ## Build only pytorch audio
@@ -174,7 +171,7 @@ python rockbuilder.py --checkout --project pytorch_audio --pytorch_audio-version
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --build --project pytorch_audio
+python rockbuilder.py --build --app pytorch_audio
 ```
 
 ## Install only pytorch audio
@@ -182,7 +179,7 @@ python rockbuilder.py --build --project pytorch_audio
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --install --project pytorch_audio
+python rockbuilder.py --install --app pytorch_audio
 ```
 
 # Environment setup
@@ -227,25 +224,25 @@ In Linux this can be set for example in a following way:
 export RCB_PYTHON_PATH=/usr/bin
 ```
 
-# Adding new projects to RockBuilder
+# Adding a new application to RockBuilder
 
 There exist two types of configuration files that are stored in the applications directory.
 
 ## Project list configuration files
 
-projects/core_apps.pcfg is an example of project list configuration file.
+apps/core.apps is an example of project list configuration file.
 
-Project list configuration files are used to define a list of projects
+Project list configuration files are used to define a list of applications
 that are build by the RockBuilder. For now the RockBuilder is hardcoded
-to always use the projects/core_apps.pcfg to check the appliation list but
+to always use the apps/core.apps to check the appliation list but
 in the future the functionality can be extended to allow having multiple
 different project lists.
 
-core_apps.pcfg example:
+core.apps example:
 
 ```bash
-[projects]
-project_list=
+[apps]
+app_list=
     pytorch
     pytorch_vision
     pytorch_audio
@@ -254,7 +251,7 @@ project_list=
 
 ## Project specific configuration files
 
-projects/pytorch.cfg is an example from the project configuration file.
+apps/pytorch.cfg is an example from the project configuration file.
 
 Project configuration file specifies actions that RockBuilder executes for the project:
 

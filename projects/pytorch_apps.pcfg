@@ -1,7 +1,0 @@
-[projects]
-project_list=
-    deps_common
-    triton
-    pytorch
-    pytorch_vision_22
-    pytorch_audio_27

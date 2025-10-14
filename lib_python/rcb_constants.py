@@ -4,18 +4,32 @@ from pathlib import Path
 RCB__VERSION                                 = "2025-10-07_01"
 
 RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK          = "RCB_DISABLE_ROCM_SDK_CHECK"
+RCB__ENV_VAR__ROCM_SDK_BITCODE_HOME_DIR      = "RCB_ROCM_SDK_BITCODE_HOME_DIR"
+RCB__ENV_VAR__ROCM_SDK_HIPCC_HOME_DIR        = "RCB_ROCM_SDK_HIPCC_HOME_DIR"
+RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR         = "RCB_ROCM_SDK_HIPCC_BIN_DIR"
+RCB__ENV_VAR__ROCM_SDK_HIPCC_APP             = "RCB_ROCM_SDK_HIPCC_APP"
 
-RCB__PROJECT_SRC_BASE_DIR                    = "src_apps"
-RCB__PROJECT_BUILD_BASE_DIR                  = "build"
-RCB__PROJECT_PATCHES_BASE_DIR                = "patches"
+RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR         = "RCB_ROCM_SDK_CLANG_BIN_DIR"
+RCB__ENV_VAR__ROCM_SDK_CLANG_APP             = "RCB_ROCM_SDK_CLANG_APP"
+RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR        = "RCB_ROCM_SDK_CLANG_HOME_DIR"
+RCB__ENV_VAR__AMDGPU_TARGETS                 = "RCB_AMDGPU_TARGETS"
+
+RCB__ENV_VAR__APP_SRC_DIR                    = "RCB_APP_SRC_DIR"
+RCB__ENV_VAR__APP_BUILD_DIR                  = "RCB_APP_BUILD_DIR"
+RCB__ENV_VAR__APP_VERSION                    = "RCB_APP_VERSION"
+
+RCB__APP_CFG_DEFAULT_BASE_DIR                = "apps"
+RCB__APP_SRC_BASE_DIR                        = "src_apps"
+RCB__APP_BUILD_BASE_DIR                      = "build"
+RCB__APP_PATCHES_BASE_DIR                    = "patches"
 
 RCB__ROOT_DIR                                = Path(os.path.dirname(os.path.abspath(__file__))).parent.resolve()
-RCB__PROJECT_SRC_ROOT_DIR                    = RCB__ROOT_DIR / RCB__PROJECT_SRC_BASE_DIR
-RCB__PROJECT_BUILD_ROOT_DIR                  = RCB__ROOT_DIR / RCB__PROJECT_BUILD_BASE_DIR
-RCB__PROJECT_PATCHES_ROOT_DIR                = RCB__ROOT_DIR / RCB__PROJECT_PATCHES_BASE_DIR
+RCB__APP_SRC_ROOT_DIR                        = RCB__ROOT_DIR / RCB__APP_SRC_BASE_DIR
+RCB__APP_BUILD_ROOT_DIR                      = RCB__ROOT_DIR / RCB__APP_BUILD_BASE_DIR
+RCB__APP_PATCHES_ROOT_DIR                    = RCB__ROOT_DIR / RCB__APP_PATCHES_BASE_DIR
 
 RCB__APP_CFG_FILE_SUFFIX                     = ".cfg"
-RCB__APP_LIST_CFG_FILE_SUFFIX                = ".pcfg"
+RCB__APP_LIST_CFG_FILE_SUFFIX                = ".apps"
 
 RCB__CFG__FILE_NAME                          = RCB__ROOT_DIR / "rockbuilder.ini"
 RCB__CFG__STAMP_FILE_NAME                    = RCB__ROOT_DIR / "rocm_sdk_wheels.done"
@@ -28,8 +42,13 @@ RCB__CFG__KEY__ROCM_SDK_FROM_BUILD           = "rocm_sdk_build"
 RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS   = "rocm_sdk_whl"
 RCB__CFG__KEY__GPUS                          = "gpus"
 
+RCB__APPS_CFG__SECTION_APPS                  = "apps"
+RCB__APPS_CFG__KEY__APP_LIST                 = "app_list"
 
-RCB__APP_CFG__SECTION_PROJECT_INFO           = "project_info"
+RCB__THEROCK_CFG_NAME                        = "therock.cfg"
+
+
+RCB__APP_CFG__SECTION_APP_INFO               = "app_info"
 RCB__APP_CFG__KEY__APP_NAME                  = "APP_NAME"
 RCB__APP_CFG__KEY__APP_VERSION               = "APP_VERSION"
 RCB__APP_CFG__KEY__REPO_URL                  = "REPO_URL"
@@ -68,7 +87,7 @@ RCB__APP_CFG__KEY__ENV_VAR_WINDOWS               = "ENV_VAR_WINDOWS"
 RCB_CALLBACK__INSTALL_PYTHON_WHEEL               = "RCB_CALLBACK__INSTALL_PYTHON_WHEEL"
 RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR            = "RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR"
 
-THEROCK_SDK_SRC__ROOT_DIR                        = RCB__PROJECT_SRC_ROOT_DIR / "therock"
+THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "therock"
 THEROCK_SDK_SRC__PATCHES_ROOT_DIR                = THEROCK_SDK_SRC__ROOT_DIR / "external-builds/pytorch/patches"
 # can be different location in future if we later deploy the sdk from source dir after build
 THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
@@ -77,11 +96,11 @@ THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.c
 def get_rock_builder_root_dir():
 	return RCB__ROOT_DIR
 	
-def get_project_src_base_dir():
-	return RCB__PROJECT_SRC_ROOT_DIR
+def get_app_src_base_dir():
+	return RCB__APP_SRC_ROOT_DIR
 	
-def get_project_build_base_dir():
-	return RCB__PROJECT_BUILD_ROOT_DIR
+def get_app_build_base_dir():
+	return RCB__APP_BUILD_ROOT_DIR
 
 def get_rock_builder_config_file():
 	return RCB__CFG__FILE_NAME

@@ -11,41 +11,45 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, urlunparse, quote
 import subprocess
 import lib_python.rcb_constants as rcb_const
+from lib_python.utils import truncate_string
 
 TAG_UPSTREAM_DIFFBASE = "THEROCK_UPSTREAM_DIFFBASE"
 TAG_HIPIFY_DIFFBASE = "THEROCK_HIPIFY_DIFFBASE"
 HIPIFY_COMMIT_MESSAGE = "DO NOT SUBMIT: HIPIFY"
 
-
 class RockProjectRepo:
     def __init__(
         self,
         wheel_install_dir,
-        project_name: str,
-        project_cfg_name: str,
-        project_root_dir: Path,
-        project_src_dir: Path,
-        project_build_dir: Path,
-        project_exec_dir: Path,
-        project_repo_url:str,
-        project_version_hashtag:str,
-        project_patch_dir_base_name: str,
+        app_name: str,
+        app_cfg_name: str,
+        app_root_dir: Path,
+        app_src_dir: Path,
+        app_build_dir: Path,
+        app_exec_dir: Path,
+        app_repo_url:str,
+        app_version_hashtag:str,
+        app_patch_dir_base_name: str,
         patch_dir_root_arr: Path,
     ):
         self.wheel_install_dir = wheel_install_dir
-        self.project_name = project_name
-        self.project_cfg_name = project_cfg_name
-        self.project_src_dir = Path(project_src_dir)
-        self.project_build_dir = Path(project_build_dir)
-        self.project_exec_dir = Path(project_exec_dir)
-        self.project_repo_url = project_repo_url
-        self.project_version_hashtag = project_version_hashtag
-        self.project_patch_dir_base_name = project_patch_dir_base_name
+        self.app_name = app_name
+        self.app_cfg_name = app_cfg_name
+        self.app_src_dir = Path(app_src_dir)
+        self.app_build_dir = Path(app_build_dir)
+        self.app_exec_dir = Path(app_exec_dir)
+        self.app_repo_url = app_repo_url
+        self.app_version_hashtag = app_version_hashtag
+        self.app_patch_dir_base_name = app_patch_dir_base_name
         self.patch_dir_root_arr = patch_dir_root_arr
         self.orig_env_variables_hashtable = dict()
         self.is_posix = not any(platform.win32_ver())
-        os.environ["RCB_APP_SRC_DIR"] = project_src_dir.as_posix()
-        os.environ["RCB_APP_BUILD_DIR"] = project_build_dir.as_posix()
+        os.environ[rcb_const.RCB__ENV_VAR__APP_SRC_DIR] = app_src_dir.as_posix()
+        os.environ[rcb_const.RCB__ENV_VAR__APP_BUILD_DIR] = app_build_dir.as_posix()
+        if app_version_hashtag:
+            os.environ[rcb_const.RCB__ENV_VAR__APP_VERSION] = truncate_string(app_version_hashtag, 8)
+        else:
+            os.environ[rcb_const.RCB__ENV_VAR__APP_VERSION] = ""
 
     # private methods
     def _exec_subprocess_cmd(self, exec_cmd, exec_dir):
@@ -121,7 +125,7 @@ class RockProjectRepo:
             try:
                 for item_to_delete in cmd_arr[1:]:
                     #print("file_or_dir_to_delete: " + item_to_delete)
-                    item_to_delete = self.project_src_dir / item_to_delete
+                    item_to_delete = self.app_src_dir / item_to_delete
                     print("Deleting: " + str(item_to_delete))
                     if item_to_delete.exists():
                         if item_to_delete.is_file():
@@ -168,20 +172,20 @@ class RockProjectRepo:
                     # is not installed. But in cases that we do multiple builds for same
                     # wheel version with little changes, we need to do the uninstall first
                     # before we do the install for the package with same wheel version.
-                    self._exec_subprocess_cmd(inst_cmd, self.project_exec_dir)
+                    self._exec_subprocess_cmd(inst_cmd, self.app_exec_dir)
                     inst_cmd = "pip install " + latest_whl
-                    ret = self._exec_subprocess_cmd(inst_cmd, self.project_exec_dir)
+                    ret = self._exec_subprocess_cmd(inst_cmd, self.app_exec_dir)
                     if not ret:
-                        print("Install failed for " + self.project_cfg_name)
+                        print("Install failed for " + self.app_cfg_name)
                         print("Failed command: " + CMD_INSTALL)
                         ret = False
                 except:
                     print("Python wheel copy or install failed for project: " +
-                          self.project_cfg_name)
+                          self.app_cfg_name)
                     ret = False
             else:
                 # no wheel found
-                print("Failed to find python wheel from project: " + self.project_cfg_name)
+                print("Failed to find python wheel from project: " + self.app_cfg_name)
                 ret = False
         return ret
 
@@ -228,9 +232,9 @@ class RockProjectRepo:
                     # which would cause each of them to be run on own shell.
                     # Therefore in case of multiple commands, we need to write them
                     # first to bat-file and then execute that bat-file.
-                    os.makedirs(self.project_build_dir, exist_ok=True)
+                    os.makedirs(self.app_build_dir, exist_ok=True)
                     CMD_BUILD_file = os.path.join(
-                        self.project_build_dir, exec_phase_name + ".bat"
+                        self.app_build_dir, exec_phase_name + ".bat"
                     )
                     with open(CMD_BUILD_file, "w") as file:
                         file.write(exec_cmd)
@@ -448,12 +452,12 @@ class RockProjectRepo:
         return version_ref
 
     # repo_hashtag_to_patches_dir_name('2.7.0-rc9') -> '2.7.0'
-    def get_project_patch_dir_root(self,
+    def get_app_patch_dir_root(self,
                   patch_dir_root: Path,
-                  project_name: str,
-                  project_patch_dir_name: str) -> Path:
-        project_patch_dir_name = self.repo_hashtag_to_patches_dir_name(project_patch_dir_name)
-        return Path(patch_dir_root / project_name / project_patch_dir_name)
+                  app_name: str,
+                  app_patch_dir_name: str) -> Path:
+        app_patch_dir_name = self.repo_hashtag_to_patches_dir_name(app_patch_dir_name)
+        return Path(patch_dir_root / app_name / app_patch_dir_name)
 
     def do_env_setup(self, rocm_sdk_setup_cmd_list, prj_env_setup_cmd_list):
         env_setup_cmd_list = []
@@ -483,7 +487,7 @@ class RockProjectRepo:
                 else:
                     print(
                         "Error, Invalid environment variable key-value pair in project: "
-                        + self.project_cfg_name
+                        + self.app_cfg_name
                     )
                     print("Key: " + key_value_str)
                     sys.exit(1)
@@ -494,7 +498,7 @@ class RockProjectRepo:
         print("------ env-settings end ----------")
 
         # create build dir
-        cur_p = Path(self.project_build_dir)
+        cur_p = Path(self.app_build_dir)
         cur_p.mkdir(parents=True, exist_ok=True)
         ret = cur_p.is_dir()
         return ret
@@ -520,18 +524,18 @@ class RockProjectRepo:
         return len(exec_cmd.splitlines()) > 1
 
     def do_init(self, CMD_INIT):
-        cur_p = Path(self.project_build_dir)
+        cur_p = Path(self.app_build_dir)
         cur_p.mkdir(parents=True, exist_ok=True)
         ret = cur_p.is_dir()
         if ret:
-            ret = self._handle_command_exec("init", CMD_INIT, self.project_exec_dir)
+            ret = self._handle_command_exec("init", CMD_INIT, self.app_exec_dir)
         return ret
 
     def do_clean(self, CMD_CLEAN):
         ret = True
         # we want to return true for the clean command even if the project has not been checked out yet
-        if self.project_src_dir.is_dir() == True:
-            ret = self._handle_command_exec("clean", CMD_CLEAN, self.project_exec_dir)
+        if self.app_src_dir.is_dir() == True:
+            ret = self._handle_command_exec("clean", CMD_CLEAN, self.app_exec_dir)
         return ret
 
     def do_checkout(
@@ -545,23 +549,23 @@ class RockProjectRepo:
     ):
         ret = True
         print("do_checkout started")
-        dot_git_subdir = self.project_src_dir / ".git"
+        dot_git_subdir = self.app_src_dir / ".git"
         if dot_git_subdir.exists():
             # print(f"Not cloning repository ({dot_git_subdir} exists)")
             pass
         else:
-            print(f"Cloning repository at {self.project_version_hashtag}")
-            self.project_src_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Cloning repository at {self.app_version_hashtag}")
+            self.app_src_dir.mkdir(parents=True, exist_ok=True)
             self.exec(
-                ["git", "init", "--initial-branch=main"], cwd=self.project_src_dir
+                ["git", "init", "--initial-branch=main"], cwd=self.app_src_dir
             )
             self.exec(
                 ["git", "config", "advice.detachedHead", "false"],
-                cwd=self.project_src_dir,
+                cwd=self.app_src_dir,
             )
             self.exec(
-                ["git", "remote", "add", "origin", self.project_repo_url],
-                cwd=self.project_src_dir,
+                ["git", "remote", "add", "origin", self.app_repo_url],
+                cwd=self.app_src_dir,
             )
 
         # fetch and checkout
@@ -572,46 +576,46 @@ class RockProjectRepo:
         if repo_fetch_tags:
             # can not go to submodule fetch
             # fetch also tags when full fetch is wanted because
-            # full fetch may be wanted for projects that checkouts also tags
+            # full fetch may be wanted for apps which will checkout tags
             fetch_args_main_prj_only.extend(["--tags"])
         if repo_fetch_job_cnt:
             fetch_args.extend(["-j", str(repo_fetch_job_cnt)])
-        self.exec(["git", "reset", "--hard"], cwd=self.project_src_dir)
+        self.exec(["git", "reset", "--hard"], cwd=self.app_src_dir)
         try:
             self.exec(
                 ["git", "fetch", "--force"]
                 + fetch_args + fetch_args_main_prj_only
-                + ["origin", "tag", self.project_version_hashtag],
-                cwd=self.project_src_dir,
+                + ["origin", "tag", self.app_version_hashtag],
+                cwd=self.app_src_dir,
             )
             self.exec(
-                ["git", "checkout", self.project_version_hashtag],
-                cwd=self.project_src_dir,
+                ["git", "checkout", self.app_version_hashtag],
+                cwd=self.app_src_dir,
             )
         except:
             # no git tag available, fetch and checkout other way
             self.exec(
                 ["git", "fetch", "--force"]
                 + fetch_args + fetch_args_main_prj_only
-                + ["origin", self.project_version_hashtag],
-                cwd=self.project_src_dir,
+                + ["origin", self.app_version_hashtag],
+                cwd=self.app_src_dir,
             )
-            self.exec(["git", "checkout", "FETCH_HEAD"], cwd=self.project_src_dir)
+            self.exec(["git", "checkout", "FETCH_HEAD"], cwd=self.app_src_dir)
         if apply_patches_enabled:
             # Apply base patches to main repository. Patches to
             # submodules will be applied later. This enables patches
             # to modify submodule version to be checked out.
-            print("project_src_dir: " + str(self.project_src_dir))
+            print("app_src_dir: " + str(self.app_src_dir))
             for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-                full_patch_dir = self.get_project_patch_dir_root(cur_patch_dir_root,
-                                                            self.project_name,
-                                                            self.project_patch_dir_base_name)
+                full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+                                                            self.app_name,
+                                                            self.app_patch_dir_base_name)
                 print("full patch dir: " + str(full_patch_dir))
                 if full_patch_dir.is_dir():
                     self.apply_main_repository_patches(
-                        self.project_src_dir,
+                        self.app_src_dir,
                         full_patch_dir,
-                        self.project_name,
+                        self.app_name,
                         "base",
                     )
                     # apply patches only from the first directory that exist
@@ -620,12 +624,12 @@ class RockProjectRepo:
         # add our own git tag to help with the create patches command
         self.exec(
             ["git", "tag", "-f", TAG_UPSTREAM_DIFFBASE, "--no-sign"],
-            cwd=self.project_src_dir,
+            cwd=self.app_src_dir,
         )
         try:
             self.exec(
                 ["git", "submodule", "update", "--init", "--recursive"] + fetch_args,
-                cwd=self.project_src_dir,
+                cwd=self.app_src_dir,
             )
         except subprocess.CalledProcessError:
             print("Failed to fetch git submodules")
@@ -638,25 +642,25 @@ class RockProjectRepo:
                 "--recursive",
                 f"git tag -f {TAG_UPSTREAM_DIFFBASE} --no-sign",
             ],
-            cwd=self.project_src_dir,
+            cwd=self.app_src_dir,
             stdout_devnull=True,
         )
 
-        self.git_config_ignore_submodules(self.project_src_dir)
+        self.git_config_ignore_submodules(self.app_src_dir)
 
         if apply_patches_enabled:
             for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-                full_patch_dir = self.get_project_patch_dir_root(cur_patch_dir_root,
-                                                            self.project_name,
-                                                            self.project_patch_dir_base_name)
+                full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+                                                            self.app_name,
+                                                            self.app_patch_dir_base_name)
                 print("apply submodule patches")
                 print("full patch dir: " + str(full_patch_dir))
                 if full_patch_dir.is_dir():
                     # Apply base patches to submodules.
                     self.apply_submodule_patches(
-                        self.project_src_dir,
+                        self.app_src_dir,
                         full_patch_dir,
-                        self.project_name,
+                        self.app_name,
                         "base",
                     )
                     # apply patches only from the first directory that exist
@@ -667,10 +671,10 @@ class RockProjectRepo:
         ret = True
         print("do_hipify started")
         if CMD_HIPIFY:
-            ret = self._exec_subprocess_cmd(CMD_HIPIFY, self.project_exec_dir)
+            ret = self._exec_subprocess_cmd(CMD_HIPIFY, self.app_exec_dir)
             # Iterate over the base repository and all submodules. Because we process
             # the root repo first, it will not add submodule changes.
-            repo_dir: Path = self.project_src_dir
+            repo_dir: Path = self.app_src_dir
             all_paths = self.get_all_repositories(repo_dir)
             for module_path in all_paths:
                 status = self.list_status(module_path)
@@ -691,16 +695,16 @@ class RockProjectRepo:
         # always apply the patches from hipified directory. (even if CMD_HIPIFY was not specified in config file for project)
 
         for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-            full_patch_dir = self.get_project_patch_dir_root(cur_patch_dir_root,
-                                                        self.project_name,
-                                                        self.project_patch_dir_base_name)
+            full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+                                                        self.app_name,
+                                                        self.app_patch_dir_base_name)
             print("apply submodule patches")
             print("full patch dir: " + str(full_patch_dir))
             if full_patch_dir.is_dir():
                 self.apply_all_patches(
-                    self.project_src_dir,
+                    self.app_src_dir,
                     full_patch_dir,
-                    self.project_name,
+                    self.app_name,
                     "hipified",
                 )
                 print("do_hipify, hipified patches applied")
@@ -710,10 +714,10 @@ class RockProjectRepo:
         return ret
 
     def do_pre_config(self, CMD_PRE_CONFIG):
-        return self._handle_command_exec("pre_config", CMD_PRE_CONFIG, self.project_exec_dir)
+        return self._handle_command_exec("pre_config", CMD_PRE_CONFIG, self.app_exec_dir)
 
     def do_config(self, CMD_CONFIG):
-        return self._handle_command_exec("config", CMD_CONFIG, self.project_exec_dir)
+        return self._handle_command_exec("config", CMD_CONFIG, self.app_exec_dir)
 
     def do_CMD_CMAKE_CONFIG(self, CMD_CMAKE_CONFIG):
         ret = True
@@ -721,53 +725,53 @@ class RockProjectRepo:
             CMD_CMAKE_CONFIG = os.path.expandvars(str(CMD_CMAKE_CONFIG))
             CMD_CMAKE_CONFIG = "cmake -GNinja " + CMD_CMAKE_CONFIG
             ret = self._handle_command_exec(
-                "CMD_CMAKE_CONFIG", CMD_CMAKE_CONFIG, self.project_build_dir
+                "CMD_CMAKE_CONFIG", CMD_CMAKE_CONFIG, self.app_build_dir
             )
         return ret
 
     def do_post_config(self, CMD_POST_CONFIG):
         return self._handle_command_exec(
-            "post_config", CMD_POST_CONFIG, self.project_exec_dir
+            "post_config", CMD_POST_CONFIG, self.app_exec_dir
         )
 
     def do_cmake_build(self, CMD_CMAKE_CONFIG):
         ret = True
         if CMD_CMAKE_CONFIG:
-            CMD_BUILD = "cmake --build " + self.project_build_dir.as_posix()
+            CMD_BUILD = "cmake --build " + self.app_build_dir.as_posix()
             ret = self._handle_command_exec(
-                "cmake build", CMD_BUILD, self.project_build_dir
+                "cmake build", CMD_BUILD, self.app_build_dir
             )
         return ret
 
     def do_build(self, CMD_BUILD):
-        return self._handle_command_exec("build", CMD_BUILD, self.project_exec_dir)
+        return self._handle_command_exec("build", CMD_BUILD, self.app_exec_dir)
 
     def do_install(self, CMD_INSTALL):
-        return self._handle_command_exec("install", CMD_INSTALL, self.project_exec_dir)
+        return self._handle_command_exec("install", CMD_INSTALL, self.app_exec_dir)
 
     # do cmake install call if there is cmake config command
     def do_cmake_install(self):
-        CMD_INSTALL = "cmake --install " + self.project_build_dir.as_posix()
+        CMD_INSTALL = "cmake --install " + self.app_build_dir.as_posix()
         ret = self._handle_command_exec(
-            "cmake install", CMD_INSTALL, self.project_build_dir
+            "cmake install", CMD_INSTALL, self.app_build_dir
         )
         return ret
 
     def do_post_install(self, CMD_POST_INSTALL):
-        return self._exec_subprocess_cmd(CMD_POST_INSTALL, self.project_exec_dir)
+        return self._exec_subprocess_cmd(CMD_POST_INSTALL, self.app_exec_dir)
 
     def do_save_patches(self):
         ret = True
         # even if there are multiple patch dirs from where to patches can be applied,
         # patches are always wanted to be saved to first dir in the list
         cur_patch_dir_root = self.patch_dir_root_arr[0]
-        full_patch_dir = self.get_project_patch_dir_root(cur_patch_dir_root,
-                                                    self.project_name,
-                                                    self.project_patch_dir_base_name)
-        self.save_repo_patches(self.project_src_dir, full_patch_dir / self.project_name)
-        relative_sm_paths = self.list_submodules(self.project_src_dir, relative=True)
+        full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+                                                    self.app_name,
+                                                    self.app_patch_dir_base_name)
+        self.save_repo_patches(self.app_src_dir, full_patch_dir / self.app_name)
+        relative_sm_paths = self.list_submodules(self.app_src_dir, relative=True)
         for relative_sm_path in relative_sm_paths:
             self.save_repo_patches(
-                self.project_src_dir / relative_sm_path, full_patch_dir / relative_sm_path
+                self.app_src_dir / relative_sm_path, full_patch_dir / relative_sm_path
             )
         return ret

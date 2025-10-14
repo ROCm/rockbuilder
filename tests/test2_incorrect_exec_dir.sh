@@ -4,12 +4,19 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 cd ..
 
+if [[ -n "$VIRTUAL_ENV" ]]; then
+    echo "Virtual environment is active: $VIRTUAL_ENV"
+else
+     echo "No virtual environment is active."
+     source ./init_rcb_env.sh
+fi
+
 # these tests does not require the installation/build of rocm sdk itself
 export RCB_DISABLE_ROCM_SDK_CHECK=1
 
 BLD_DIR="build/testapp_02"
 
-TEST_APP_CFG="./tests/projects/testapp_02.cfg"
+TEST_APP_CFG="./tests/apps/testapp_02.cfg"
 
 echo "${TEST_APP_CFG}"
 
@@ -22,7 +29,7 @@ echo "SCRIPT_DIR: ${SCRIPT_DIR}"
 echo "TEST_APP_CFG: ${TEST_APP_CFG}"
 echo "BLD_DIR: ${BLD_DIR}"
 
-./rockbuilder.py --project ${TEST_APP_CFG}
+./rockbuilder.py --app ${TEST_APP_CFG}
 if [ ! $? -eq 0 ]; then
     echo "Ok, ${TEST_APP_CFG} failed as expected"
     if [[ -f ${TEST_RES_FILE1} && -f ${TEST_RES_FILE2} && -f ${TEST_RES_FILE3}  && -f ${TEST_RES_FILE4} ]]; then

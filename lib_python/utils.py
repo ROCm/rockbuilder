@@ -7,6 +7,15 @@ import configparser
 import lib_python.rcb_constants as rcb_const
 from pathlib import Path, PurePosixPath
 
+def truncate_string(s, max_b_cnt):
+    if s:
+        if len(s) > max_b_cnt:
+            return s[:max_b_cnt]
+        else:
+            return s
+    else:
+        return None
+
 def _replace_env_variables(cmd_str):
     ret = os.path.expandvars(cmd_str)
     return ret
@@ -284,28 +293,31 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
             print("Error, could not find ROCM_HOME from ROCM_SDK python wheel install.")
     return ret
 
-
-def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit_on_error:bool):
+# check_rcb_rocm_sdk_version_file is checked if we want to use rocm_sdk
+# build by therock itself, which will create this file to ensure that everything has been build.
+# Otherwise we will assume that rocm_sdk is fully installed.
+def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
+                               check_rcb_rocm_sdk_version_file: bool,
+                               exit_on_error:bool):
     ret = []
     err_happened = False
 
-    if use_rocm_sdk:
-        is_posix = _is_posix()
-        # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
-        # whether code is executed on Linux or Windows (it is later used to set env-variables)
-        NEW_PATH_ENV_DIRS = None
-        if is_posix:
-            ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
-        else:
-            ENV_VARIABLE_NAME__LIB = "LIBPATH"
-        
-        if rocm_home_root_path.exists():
+    is_posix = _is_posix()
+    # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
+    # whether code is executed on Linux or Windows (it is later used to set env-variables)
+    NEW_PATH_ENV_DIRS = None
+    if is_posix:
+        ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
+    else:
+        ENV_VARIABLE_NAME__LIB = "LIBPATH"
+
+    if rocm_home_root_path.exists():
+        rcb_rocm_sdk_src_version_fname = rocm_home_root_path / ".info/rcb_rocm_sdk_src_version"
+        if rcb_rocm_sdk_src_version_fname.exists() or not check_rcb_rocm_sdk_version_file:
             rocm_home_bin_path = rocm_home_root_path / "bin"
             rocm_home_lib_path = rocm_home_root_path / "lib"
             rocm_home_bin_path = rocm_home_bin_path.resolve()
             rocm_home_lib_path = rocm_home_lib_path.resolve()
-            rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
-            rocm_home_llvm_path = rocm_home_llvm_path.resolve()
             
             if rocm_home_bin_path.exists() and rocm_home_lib_path.exists():
                 # set ROCM_HOME if not yet set
@@ -318,7 +330,9 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                 if not _is_directory_in_env_variable_path("PATH", rocm_home_bin_path.as_posix()):
                     NEW_PATH_ENV_DIRS=rocm_home_bin_path.as_posix()
                     # print("Adding " + rocm_home_bin_path.as_posix() + " to PATH")
-                if not _is_directory_in_env_variable_path("PATH", rocm_home_llvm_path.as_posix()):
+                rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
+                rocm_home_llvm_path = rocm_home_llvm_path.resolve()
+                if rocm_home_bin_path.exists() and not _is_directory_in_env_variable_path("PATH", rocm_home_llvm_path.as_posix()):
                     # print("Adding " + rocm_home_llvm_path.as_posix() + " to PATH")
                     NEW_PATH_ENV_DIRS=NEW_PATH_ENV_DIRS + os.pathsep + rocm_home_llvm_path.as_posix()
                 if not _is_directory_in_env_variable_path(ENV_VARIABLE_NAME__LIB, rocm_home_lib_path.as_posix()):
@@ -328,10 +342,20 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                         + os.pathsep
                         + os.environ.get(ENV_VARIABLE_NAME__LIB, "")))
                 # find bitcode and put it to path
+                folder_path = None
                 for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
                     folder_path = folder_path.resolve()
-                    ret.append("RCB_ROCM_SDK_BITCODE_HOME_DIR=" + folder_path.as_posix())
+                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_BITCODE_HOME_DIR + "=" + folder_path.as_posix())
+                    print(rcb_const.RCB__ENV_VAR__ROCM_SDK_BITCODE_HOME_DIR + "=" + str(folder_path))
                     break
+                if not folder_path:
+                    err_happened = True
+                    print("")
+                    print("Error, could not find bitcode directory from ROCM_SDK:")
+                    print("    " + str(rocm_home_root_path))
+                    print("")
+                    if exit_on_error:
+                        sys.exit(1)
                 # find hipcc
                 if is_posix:
                     hipcc_exec_name = "hipcc"
@@ -341,29 +365,45 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                     hipcc_home = folder_path.parent
                     # make sure that we found bin/clang and not clang folder
                     if hipcc_home.name.lower() == "bin":
-                        ret.append("RCB_ROCM_SDK_HIPCC_BIN_DIR=" + hipcc_home.as_posix())
-                        ret.append("RCB_ROCM_SDK_HIPCC_APP=" + folder_path.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_APP + "=" + folder_path.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_APP + "=" + folder_path.as_posix())
                         hipcc_home = hipcc_home.parent
                         if hipcc_home.is_dir():
                             hipcc_home = hipcc_home.resolve()
-                            ret.append("RCB_ROCM_SDK_HIPCC_HOME_DIR=" + hipcc_home.as_posix())
+                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_HOME_DIR + "=" + hipcc_home.as_posix())
+                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_HOME_DIR + "=" + hipcc_home.as_posix())
                             break
                 # find clang
                 if is_posix:
                     clang_exec_name = "clang"
                 else:
                     clang_exec_name = "clang.exe"
+                res = False
                 for folder_path in Path(rocm_home_root_path).glob("**/" + clang_exec_name):
                     clang_home = folder_path.parent
                     # make sure that we found bin/clang and not clang folder
                     if clang_home.name.lower() == "bin":
-                        ret.append("RCB_ROCM_SDK_CLANG_BIN_DIR=" + clang_home.as_posix())
-                        ret.append("RCB_ROCM_SDK_CLANG_APP=" + folder_path.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_APP + "=" + folder_path.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_APP + "=" + folder_path.as_posix())
                         clang_home = clang_home.parent
                         if clang_home.is_dir():
+                            res = True
                             clang_home = clang_home.resolve()
-                            ret.append("RCB_ROCM_SDK_CLANG_HOME_DIR=" + clang_home.as_posix())
+                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + clang_home.as_posix())
+                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + str(clang_home))
                             break
+                if not res:
+                    err_happened = True
+                    print("")
+                    print("Error, could not find clang from ROCM_SDK directory:")
+                    print("    " + str(rocm_home_root_path))
+                    print("")
+                    if exit_on_error:
+                        sys.exit(1)
                 # check that RCB_AMDGPU_TARGETS environment variable is set.
                 # If not:
                 #   - Linux: check the gpus available and assign them to RCB_AMDGPU_TARGETS
@@ -371,8 +411,8 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
                 if not "RCB_AMDGPU_TARGETS" in os.environ:
                     gpu_targets = get_installed_gpu_list_str(rocm_home_bin_path)
                     if gpu_targets:
-                        ret.append("RCB_AMDGPU_TARGETS=" + gpu_targets)
-                        print("RCB_AMDGPU_TARGETS: " + gpu_targets)
+                        ret.append(rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS + "=" + gpu_targets)
+                        print(rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS + "=" + gpu_targets)
                     else:
                         print("Could not get the list of GPU's installed to the system")
                         err_happened = True
@@ -381,26 +421,34 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path, use_rocm_sdk:bool, exit
             else:
                 err_happened = True
                 print("")
-                print("Error, could not find directory ROCM_HOME/lib: ")
+                print("Error, could not find ROCM_HOME/bin or lib directory:")
+                print("    " + rocm_home_bin_path.as_posix())
                 print("    " + rocm_home_lib_path.as_posix())
                 if exit_on_error:
                     sys.exit(1)
         else:
             err_happened = True
             print("")
-            print("Error, " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED +
-                  " is not set to FALSE in application config file")
-            print("   or ROCM_HOME is not defined")
-            print("   or existing ROCM SDK build is not detected in directory:")
-            print(rocm_home_root_path.as_posix())
-            print("")
+            print("Error, could not find ROCM_SDK source version file:")
+            print("    " + rcb_rocm_sdk_src_version_fname.as_posix())
             if exit_on_error:
                 sys.exit(1)
-        if (not err_happened) and NEW_PATH_ENV_DIRS:
-            ret.append("PATH=" + (
-                     NEW_PATH_ENV_DIRS
-                     + os.pathsep
-                     + os.environ.get("PATH", "")))
-        if err_happened:
-            ret = None
+    else:
+        err_happened = True
+        print("")
+        print("Error, " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED +
+              " is not set to FALSE in application config file")
+        print("   or ROCM_HOME is not defined")
+        print("   or existing ROCM SDK build is not detected in directory:")
+        print(rocm_home_root_path.as_posix())
+        print("")
+        if exit_on_error:
+            sys.exit(1)
+    if (not err_happened) and NEW_PATH_ENV_DIRS:
+        ret.append("PATH=" + (
+                 NEW_PATH_ENV_DIRS
+                 + os.pathsep
+                 + os.environ.get("PATH", "")))
+    if err_happened:
+        ret = None
     return ret

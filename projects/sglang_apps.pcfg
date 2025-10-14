@@ -1,8 +1,0 @@
-[projects]
-# depends from the triton and pytorch
-project_list=
-    deps_common
-    amdsmi
-    vllm_amd
-    aiter
-    sglang

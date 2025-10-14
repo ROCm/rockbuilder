@@ -1,0 +1,34 @@
+From 31809fa4a3a4b10086370217db4bd6b000c1d365 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 15 Oct 2025 00:26:23 -0700
+Subject: [PATCH] use ROCM_VERSION_DEV in build summary printout
+
+LoadHIP.cmake sets in current builds ROCM_VERSION_DEV
+environment variable instead of ROCM_VERSION variable.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/Summary.cmake | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/cmake/Summary.cmake b/cmake/Summary.cmake
+index c33269c..c5f03fb 100644
+--- a/cmake/Summary.cmake
++++ b/cmake/Summary.cmake
+@@ -128,10 +128,10 @@ function(caffe2_print_configuration_summary)
+   endif()
+   message(STATUS "  USE_ROCM              : ${USE_ROCM}")
+   if(${USE_ROCM})
+-    message(STATUS "    ROCM_VERSION        : ${ROCM_VERSION}")
+-    message(STATUS "    USE_FLASH_ATTENTION : ${USE_FLASH_ATTENTION}")
++    message(STATUS "    ROCM_VERSION_DEV       : ${ROCM_VERSION_DEV}")
++    message(STATUS "    USE_FLASH_ATTENTION    : ${USE_FLASH_ATTENTION}")
+     message(STATUS "    USE_CK_FLASH_ATTENTION : ${USE_CK_FLASH_ATTENTION}")
+-    message(STATUS "    USE_MEM_EFF_ATTENTION : ${USE_MEM_EFF_ATTENTION}")
++    message(STATUS "    USE_MEM_EFF_ATTENTION  : ${USE_MEM_EFF_ATTENTION}")
+   endif()
+   message(STATUS "  BUILD_NVFUSER         : ${BUILD_NVFUSER}")
+   message(STATUS "  USE_EIGEN_FOR_BLAS    : ${CAFFE2_USE_EIGEN_FOR_BLAS}")
+-- 
+2.43.0
+

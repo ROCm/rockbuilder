@@ -4,12 +4,19 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 cd ..
 
+if [[ -n "$VIRTUAL_ENV" ]]; then
+    echo "Virtual environment is active: $VIRTUAL_ENV"
+else
+     echo "No virtual environment is active."
+     source ./init_rcb_env.sh
+fi
+
 # these tests does not require the installation/build of rocm sdk itself
 export RCB_DISABLE_ROCM_SDK_CHECK=1
 
 BLD_DIR="build/testapp_01"
 
-TEST_APP_CFG="./tests/projects/testapp_01.cfg"
+TEST_APP_CFG="./tests/apps/testapp_01.cfg"
 TEST_GIT_REPO_FILE=tests/repositories/test1_check_build_steps_git.tar
 
 TEST1_RES_FILE="$BLD_DIR/build_steps_clean.txt"
@@ -39,11 +46,11 @@ else
     echo "    ${TEST_GIT_REPO_FILE}"
 fi
 
-./rockbuilder.py --project ${TEST_APP_CFG} --clean
+./rockbuilder.py --app ${TEST_APP_CFG} --clean
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ${TEST_APP_CFG} --clean'"
+    echo "    './rockbuilder.py --app ${TEST_APP_CFG} --clean'"
     exit 1
 fi
 
@@ -56,19 +63,19 @@ if cmp -s "$TEST1_RES_FILE" "$TEST1_GOLDEN_FILE"; then
     TEST1_OK=1
 fi
 
-./rockbuilder.py --project ${TEST_APP_CFG} --checkout
+./rockbuilder.py --app ${TEST_APP_CFG} --checkout
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ${TEST_APP_CFG} --checkout'"
+    echo "    './rockbuilder.py --app ${TEST_APP_CFG} --checkout'"
     exit 1
 fi
 
-./rockbuilder.py --project ${TEST_APP_CFG}
+./rockbuilder.py --app ${TEST_APP_CFG}
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --project ${TEST_APP_CFG}'"
+    echo "    './rockbuilder.py --app ${TEST_APP_CFG}'"
     exit 1
 fi
 
