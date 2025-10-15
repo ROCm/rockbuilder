@@ -1,4 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+LAUNCH_DIR=$(pwd)
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+cd $SCRIPT_DIR
 
 # Check that this script is called as sourced.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -15,3 +19,4 @@ else
     pip install --upgrade pip
     pip install -r requirements.txt
 fi
+cd ${LAUNCH_DIR}
