@@ -1,0 +1,64 @@
+From e6a86ff4b63e846e7549ba9f016aef76976356d9 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Wed, 15 Oct 2025 19:37:18 -0700
+Subject: [PATCH 2/2] Add warning for unknown GPUs
+
+Printout warning message if gpu
+is not recognized.
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ v2src/util.cc | 6 +++++-
+ v3src/util.cc | 6 +++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/v2src/util.cc b/v2src/util.cc
+index a66488e..93a08f5 100644
+--- a/v2src/util.cc
++++ b/v2src/util.cc
+@@ -68,11 +68,15 @@ getGpuFromStream(hipStream_t stream) {
+ }
+ 
+ bool isArchExperimentallySupported(hipStream_t stream) {
++  bool ret;
+   auto gpu = getGpuFromStream(stream);
+   uint32_t vendor_arch = Gpu2VendorArch(gpu);
+-  return (vendor_arch == CAT32(GpuVendor::kAMD,  0x950) ||
++  ret = (vendor_arch == CAT32(GpuVendor::kAMD,  0x950) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1201));
++  if (!ret)
++    printf("isArchExperimentallySupported_v2, NO: 0x%x\n", vendor_arch);
++  return ret;
+ }
+ 
+ int getMultiProcessorCount(hipStream_t stream) {
+diff --git a/v3src/util.cc b/v3src/util.cc
+index 0ed58b6..1b54682 100644
+--- a/v3src/util.cc
++++ b/v3src/util.cc
+@@ -72,9 +72,10 @@ getGpuFromStream(hipStream_t stream) {
+ }
+ 
+ bool isArchExperimentallySupported(hipStream_t stream) {
++  bool ret;
+   auto gpu = getGpuFromStream(stream);
+   uint32_t vendor_arch = Gpu2VendorArch(gpu);
+-  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
++  ret = (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1100) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1101) ||
+@@ -82,6 +83,9 @@ bool isArchExperimentallySupported(hipStream_t stream) {
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1103) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1200) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1250));
++  if (!ret)
++    printf("isArchExperimentallySupported_v3, NO: 0x%x\n", vendor_arch);
++  return ret;
+ }
+ 
+ int getMultiProcessorCount(hipStream_t stream) {
+-- 
+2.43.0
+
