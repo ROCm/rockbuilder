@@ -194,11 +194,16 @@ def parse_build_arguments(parser):
         or ("--install" in sys.argv)
         or ("--post_install" in sys.argv)
     ):
-		# if cmd_phase argument is specified, we will execute the command even if the stamp file exist
-        args.cmd_force_exec = True
+        # if cmd_phase argument is specified, we will execute the command even if the stamp file exist
+        if ("--init" in sys.argv):
+            args.cmd_init_force_exec = True
+        else:
+            args.cmd_init_force_exec = False
+        args.cmd_any_force_exec = True
         print("checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install argument specified")
     else:
-        args.cmd_force_exec = False
+        args.cmd_init_force_exec = False
+        args.cmd_any_force_exec = False
         # print("Action not specified.(checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install)")
         # print("Using default values")
         # enable everything except clean
@@ -266,37 +271,37 @@ def do_therock(prj_builder, args):
             # It can be used to execute a script that can be used for example
             # to set an environment variable for the revision to be checked out
             prj_builder.printout("init")
-            prj_builder.init(args.cmd_force_exec)
+            prj_builder.init(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.clean:
                 prj_builder.printout("clean")
-                prj_builder.clean(args.cmd_force_exec)
+                prj_builder.clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.checkout:
                 prj_builder.printout("checkout")
-                prj_builder.checkout(args.cmd_force_exec)
+                prj_builder.checkout(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
             if args.hipify:
                 prj_builder.printout("hipify")
-                prj_builder.hipify(args.cmd_force_exec)
+                prj_builder.hipify(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.pre_config:
                 prj_builder.printout("pre_config")
-                prj_builder.pre_config(args.cmd_force_exec)
+                prj_builder.pre_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.config:
                 prj_builder.printout("config")
-                prj_builder.config(args.cmd_force_exec)
+                prj_builder.config(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.post_config:
                 prj_builder.printout("post_config")
-                prj_builder.post_config(args.cmd_force_exec)
+                prj_builder.post_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.build:
                 prj_builder.printout("build")
-                prj_builder.build(args.cmd_force_exec)
+                prj_builder.build(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.install:
                 prj_builder.printout("install")
-                prj_builder.install(args.cmd_force_exec)
+                prj_builder.install(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.post_install:
                 prj_builder.printout("post_install")
-                prj_builder.post_install(args.cmd_force_exec)
+                prj_builder.post_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled
             prj_builder.undo_env_setup()
