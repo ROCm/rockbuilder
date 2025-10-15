@@ -256,6 +256,8 @@ class RockProjectBuilder(configparser.ConfigParser):
                           searched_phase_name: str,
                           phase_name: str,
                           force_add: bool):
+        print("searched_phase_name: " + searched_phase_name)
+        print("phase_name: " + phase_name)
         if (searched_phase_name == phase_name) or force_add:
             ret = True
             fname = self._get_cmd_phase_stamp_filename(searched_phase_name)
@@ -265,28 +267,38 @@ class RockProjectBuilder(configparser.ConfigParser):
         return ret
 
     # add stamp filenames for command_phase and all other commands that would be executed after it
-    def _get_cmd_phase_stamp_filenames_for_pending_commands(self, cmd_phase_name:str):
+    def _get_cmd_phase_stamp_filenames_for_pending_commands(self,
+                        cmd_phase_name:str,
+                        cmd_init_force_exec:bool,
+                        cmd_any_force_exec:bool):
         ret = []
         force_add = False
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
-        # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
-        # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
-        # add cmake version of phase_cmd after as we do not have specific user arg command for it
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
-        force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL, cmd_phase_name, force_add)
+        if (((cmd_phase_name == rcb_const.RCB__APP_CFG__KEY__CMD_INIT) and cmd_init_force_exec) or
+            ((cmd_phase_name != rcb_const.RCB__APP_CFG__KEY__CMD_INIT) and cmd_any_force_exec)):
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INIT, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG, cmd_phase_name, force_add)
+            # add cmake version of phase_cmd after as we do not have specific user arg command for it
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD, cmd_phase_name, force_add)
+            # add cmake version of phase_cmd after as we do not have specific user arg command for it
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL, cmd_phase_name, force_add)
+            # add cmake version of phase_cmd after as we do not have specific user arg command for it
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL, cmd_phase_name, force_add)
+            force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL, cmd_phase_name, force_add)
         return ret
 
-    def _clean_pending_cmd_phases_stamp_filenames(self, cmd_phase_name):
-        fname_arr = self._get_cmd_phase_stamp_filenames_for_pending_commands(cmd_phase_name)
+    def _clean_pending_cmd_phases_stamp_filenames(self,
+                           cmd_phase_name:str,
+                           cmd_init_force_exec:bool,
+                           cmd_any_force_exec:bool):
+        fname_arr = self._get_cmd_phase_stamp_filenames_for_pending_commands(cmd_phase_name,
+                                           cmd_init_force_exec,
+                                           cmd_any_force_exec)
         for fname in fname_arr:
             try:
                 fname.unlink(missing_ok=True)
@@ -296,8 +308,15 @@ class RockProjectBuilder(configparser.ConfigParser):
                 sys.exit(1)
 
 
-    def _is_cmd_phase_exec_required(self, cmd_phase_name:str, force_exec: bool):
-        if force_exec:
+    def _is_cmd_phase_exec_required(self,
+                      cmd_phase_name:str,
+                      cmd_init_force_exec:bool,
+                      cmd_any_force_exec:bool):
+        print("cmd_phase_name: " + cmd_phase_name)
+        print("cmd_init_force_exec: " + str(cmd_init_force_exec))
+        print("cmd_any_force_exec: " + str(cmd_any_force_exec))
+        if cmd_init_force_exec or cmd_any_force_exec:
+            # exec of command phase needed
             ret = True
         else:
             # exec needed if stamp filename does not exist
@@ -305,7 +324,9 @@ class RockProjectBuilder(configparser.ConfigParser):
             ret = not fname.exists()
             #print("_is_cmd_phase_exec_required, fname: " + str(fname) + ", res: " + str(ret))
         if ret:
-            self._clean_pending_cmd_phases_stamp_filenames(cmd_phase_name)
+            self._clean_pending_cmd_phases_stamp_filenames(cmd_phase_name,
+                                     cmd_init_force_exec,
+                                     cmd_any_force_exec)
         return ret
 
     def _set_cmd_phase_done_on_success(self, res: bool, cmd_phase_name: str):
@@ -345,9 +366,9 @@ class RockProjectBuilder(configparser.ConfigParser):
         if not res:
             self.printout_error_and_terminate("undo_env_setup")
 
-    def init(self, force_exec: bool):
+    def init(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INIT
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             if self.CMD_INIT:
                 res = self.app_repo.do_init(self.CMD_INIT)
@@ -355,7 +376,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 res = True
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def clean(self, force_exec: bool):
+    def clean(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
 		# delete build directory
         shutil.rmtree(self.app_build_dir_path)
         # then create it again
@@ -364,88 +385,88 @@ class RockProjectBuilder(configparser.ConfigParser):
         # and finally run other optional clean commands
         res = self.app_repo.do_clean(self.CMD_CLEAN)
 
-    def checkout(self, force_exec: bool):
+    def checkout(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         if self.repo_url:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT
-            res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+            res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 res = self.app_repo.do_checkout(repo_fetch_depth=self.repo_depth, repo_fetch_tags=self.repo_tags)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def hipify(self, force_exec: bool):
+    def hipify(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         if self.repo_url:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY
-            res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+            res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 res = self.app_repo.do_hipify(self.CMD_HIPIFY)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def pre_config(self, force_exec: bool):
+    def pre_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_pre_config(self.CMD_PRE_CONFIG)
             # print("res: " + str(res))
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def config(self, force_exec: bool):
+    def config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
 		# cmd_config_cmake
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG
-            res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+            res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 # in case that project has cmake configure/build/install needs
                 res = self.app_repo.do_CMD_CMAKE_CONFIG(self.CMD_CMAKE_CONFIG)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_config
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_config(self.CMD_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def post_config(self, force_exec: bool):
+    def post_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_post_config(self.CMD_POST_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def build(self, force_exec: bool):
+    def build(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         # cmd_build_cmake is done only if cmake config exist
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD
-            res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+            res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 # not all app have things to build with cmake
                 res = self.app_repo.do_cmake_build(self.CMD_CMAKE_CONFIG)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_build
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_BUILD
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_build(self.CMD_BUILD)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def install(self, force_exec: bool):
+    def install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         # do cmd_install_cmake is done only if cmake config exist
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL
-            res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+            res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 res = self.app_repo.do_cmake_install()
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_install
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_install(self.CMD_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
 
-    def post_install(self, force_exec: bool):
+    def post_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL
-        res = self._is_cmd_phase_exec_required(phase_name, force_exec)
+        res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_post_install(self.CMD_POST_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
