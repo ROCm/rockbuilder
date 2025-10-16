@@ -256,8 +256,8 @@ class RockProjectBuilder(configparser.ConfigParser):
                           searched_phase_name: str,
                           phase_name: str,
                           force_add: bool):
-        print("searched_phase_name: " + searched_phase_name)
-        print("phase_name: " + phase_name)
+        #print("searched_phase_name: " + searched_phase_name)
+        #print("phase_name: " + phase_name)
         if (searched_phase_name == phase_name) or force_add:
             ret = True
             fname = self._get_cmd_phase_stamp_filename(searched_phase_name)
@@ -312,9 +312,9 @@ class RockProjectBuilder(configparser.ConfigParser):
                       cmd_phase_name:str,
                       cmd_init_force_exec:bool,
                       cmd_any_force_exec:bool):
-        print("cmd_phase_name: " + cmd_phase_name)
-        print("cmd_init_force_exec: " + str(cmd_init_force_exec))
-        print("cmd_any_force_exec: " + str(cmd_any_force_exec))
+        #print("cmd_phase_name: " + cmd_phase_name)
+        #print("cmd_init_force_exec: " + str(cmd_init_force_exec))
+        #print("cmd_any_force_exec: " + str(cmd_any_force_exec))
         if cmd_init_force_exec or cmd_any_force_exec:
             # exec of command phase needed
             ret = True

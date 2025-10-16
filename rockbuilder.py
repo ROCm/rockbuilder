@@ -194,7 +194,12 @@ def parse_build_arguments(parser):
         or ("--install" in sys.argv)
         or ("--post_install" in sys.argv)
     ):
-        # if cmd_phase argument is specified, we will execute the command even if the stamp file exist
+        # If cmd_phase argument is specified:
+        #
+        # 1) we will execute the command even if the stamp file exist.
+        # 2) we will clean all cmd-phase stamps remaining that phase.
+        #    Because init function is always called, we need to have
+        #    separate flag to indicate whether "--init" was given as a parameter.
         if ("--init" in sys.argv):
             args.cmd_init_force_exec = True
         else:
@@ -261,6 +266,7 @@ def do_therock(prj_builder, args):
             # setup first the project specific environment variables
             prj_builder.printout("start")
             prj_builder.do_env_setup()
+            exec_next_phase = False
             # print("do_env_setup done")
 
             # then do all possible commands requested for the project
@@ -272,44 +278,57 @@ def do_therock(prj_builder, args):
             # to set an environment variable for the revision to be checked out
             prj_builder.printout("init")
             prj_builder.init(args.cmd_init_force_exec, args.cmd_any_force_exec)
+            if args.cmd_init_force_exec: exec_next_phase = True
             if args.clean:
                 prj_builder.printout("clean")
                 prj_builder.clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.checkout:
+            if args.checkout or exec_next_phase:
                 prj_builder.printout("checkout")
                 prj_builder.checkout(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
-            if args.hipify:
+                #if args.cmd_any_force_exec: exec_next_phase = True
+            if args.hipify or exec_next_phase:
                 prj_builder.printout("hipify")
                 prj_builder.hipify(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.pre_config:
+                #if args.cmd_any_force_exec: exec_next_phase = True
+            if args.pre_config or exec_next_phase:
                 prj_builder.printout("pre_config")
                 prj_builder.pre_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.config:
+                if args.cmd_any_force_exec: exec_next_phase = True
+            if args.config or exec_next_phase:
                 prj_builder.printout("config")
                 prj_builder.config(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.post_config:
+                if args.cmd_any_force_exec: exec_next_phase = True
+            if args.post_config or exec_next_phase:
                 prj_builder.printout("post_config")
                 prj_builder.post_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.build:
+                if args.cmd_any_force_exec: exec_next_phase = True
+            if args.build or exec_next_phase:
                 prj_builder.printout("build")
                 prj_builder.build(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.install:
+                if args.cmd_any_force_exec: exec_next_phase = True
+            if args.install or exec_next_phase:
                 prj_builder.printout("install")
                 prj_builder.install(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.post_install:
+                if args.cmd_any_force_exec: exec_next_phase = True
+            if args.post_install or exec_next_phase:
                 prj_builder.printout("post_install")
                 prj_builder.post_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                if args.cmd_any_force_exec: exec_next_phase = True
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled
             prj_builder.undo_env_setup()
             #prj_builder.printout("done")
-            print("Operations finished ok: " +prj_builder.app_cfg_base_name)
+            print("Success: " + prj_builder.app_cfg_base_name)
             ret = True
         else:
-            print("PROP_IS_BUILD_ENABLED_WINDOWS or PROP_IS_BUILD_ENABLED_LINUX enabled for project")
+            print("Builing of project disabled in applications config file")
+            print("by one of the following properties:")
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED)
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_LINUX)
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_WINDOWS)
             prj_builder.printout("skip")
             ret = True
     return ret
