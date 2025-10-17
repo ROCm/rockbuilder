@@ -5,13 +5,13 @@ Subject: [PATCH] enable attention for experimental amd gpus by default
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
- .../src/ATen/native/transformers/hip/sdp_utils.cpp | 14 ++++++--------
+ .../src/ATen/native/transformers/cuda/sdp_utils.cpp | 14 ++++++--------
  1 file changed, 6 insertions(+), 8 deletions(-)
 
-diff --git a/aten/src/ATen/native/transformers/hip/sdp_utils.cpp b/aten/src/ATen/native/transformers/hip/sdp_utils.cpp
+diff --git a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
 index 2f815c3a..78ce774d 100644
---- a/aten/src/ATen/native/transformers/hip/sdp_utils.cpp
-+++ b/aten/src/ATen/native/transformers/hip/sdp_utils.cpp
+--- a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
++++ b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
 @@ -288,9 +288,8 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
      if (aotriton::isArchExperimentallySupported(stream)) {
        static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
