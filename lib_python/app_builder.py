@@ -10,6 +10,55 @@ from lib_python.utils import printout_list_items
 from pathlib import Path, PurePosixPath
 import lib_python.rcb_constants as rcb_const
 
+class ConfigReader(configparser.ConfigParser):
+    def __init__(
+        self,
+        cfg_path: Path
+    ):
+        super(ConfigReader, self).__init__(allow_no_value=True)
+
+        self._is_app_config = False
+        self._is_app_list_config = False
+        self.cfg_path = cfg_path
+        if self.cfg_path.exists():
+            try:
+                self.read(self.cfg_path)
+            except:
+                raise ValueError(
+                    "Could not read the configuration file: "
+                    + self.cfg_path.as_posix()
+                )
+        else:
+            raise ValueError(
+                "Could not find the app configuration file: "
+                + self.cfg_path.as_posix()
+            )
+        if self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
+            self._is_app_config = True
+        else:
+            if (self.has_section(rcb_const.RCB__APPS_CFG__SECTION_APPS) and
+                self.has_option(rcb_const.RCB__APPS_CFG__SECTION_APPS, rcb_const.RCB__APPS_CFG__KEY__APP_LIST)):
+               self._is_app_list_config = True
+
+
+    def is_app_config(self):
+        return self._is_app_config
+
+
+    def is_app_list_config(self):
+        return self._is_app_list_config
+
+
+        # app_info section is mandatory but the
+        # name, repo_url and version information is not
+        # (project could want to run pip install command for example)
+        if not self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
+            raise ValueError(
+                "Could not find the app_info from configuration file: "
+                + self.cfg_path.as_posix()
+            )
+
+
 class RockProjectBuilder(configparser.ConfigParser):
     def _to_boolean(self, value):
         if not value:
@@ -56,7 +105,7 @@ class RockProjectBuilder(configparser.ConfigParser):
         rock_builder_root_dir,
         app_src_dir: Path,
         app_cfg_base_name: str,
-        app_cfg_file_path: Path,
+        app_cfg_path: Path,
         package_output_dir,
         version_override,
     ):
@@ -65,17 +114,23 @@ class RockProjectBuilder(configparser.ConfigParser):
         self.is_posix = not any(platform.win32_ver())
         self.rock_builder_root_dir = rock_builder_root_dir
         self.app_cfg_base_name = app_cfg_base_name
-        self.app_cfg_file_path = app_cfg_file_path
+        self.app_cfg_path = app_cfg_path
         self.package_output_dir = package_output_dir
-        if self.app_cfg_file_path.exists():
-            self.read(self.app_cfg_file_path)
+        if self.app_cfg_path.exists():
+            self.read(self.app_cfg_path)
         else:
             raise ValueError(
-                "Could not find the configuration file: "
-                + self.app_cfg_file_path.as_posix()
+                "Could not find the app configuration file: "
+                + self.app_cfg_path.as_posix()
             )
-        # name, repo_url and version are not mandatory
+        # app_info section is mandatory but the
+        # name, repo_url and version information is not
         # (project could want to run pip install command for example)
+        if not self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
+            raise ValueError(
+                "Could not find the app_info from configuration file: "
+                + self.app_cfg_path.as_posix()
+            )
         if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__APP_NAME):
             self.app_name = self.get(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__APP_NAME)
         else:
@@ -218,7 +273,7 @@ class RockProjectBuilder(configparser.ConfigParser):
         print("Project build phase " + phase + ": -----")
         print("    Project_name:     " + self.app_name)
         print("    Project cfg name: " + self.app_cfg_base_name)
-        print("    Project cfg file: " + self.app_cfg_file_path.as_posix())
+        print("    Project cfg file: " + self.app_cfg_path.as_posix())
         if self.app_version:
             print("    Version:          " + self.app_version)
         print("    Source dir:       " + self.app_src_dir_path.as_posix())
@@ -472,29 +527,28 @@ class RockProjectBuilder(configparser.ConfigParser):
             self._set_cmd_phase_done_on_success(res, phase_name)
 
 class RockExternalProjectListManager(configparser.ConfigParser):
-    def __init__(self, rock_builder_root_dir: Path, app_list_name, app_cfg_name):
+    def __init__(
+        self,
+        rock_builder_root_dir: Path,
+        config_info: ConfigReader
+    ):
         # default application list to builds
         self.rock_builder_root_dir = rock_builder_root_dir
+        self.config_info = config_info
         super(RockExternalProjectListManager, self).__init__(allow_no_value=True)
-        if app_list_name:
-            app_list_name = Path(app_list_name)
-        if not app_list_name and not app_cfg_name:
-            app_list_name = rock_builder_root_dir / rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR / "core.apps"
-        if app_list_name:
-            if app_list_name.exists():
-                self.read(app_list_name)
+
+        self.prj_list = []
+        if config_info:
+            if config_info.is_app_config():
+                self.prj_list = [config_info.cfg_path]
+            elif config_info.is_app_list_config():
+                self.read(config_info.cfg_path)
                 value = self.get(rcb_const.RCB__APPS_CFG__SECTION_APPS,
                                  rcb_const.RCB__APPS_CFG__KEY__APP_LIST)
                 # convert to list of project string names
                 self.prj_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
                 )
-            else:
-                self.prj_list = []
-        elif app_cfg_name:
-            self.prj_list = [app_cfg_name]
-        else:
-            self.prj_list = []
 
     def get_external_app_list(self):
         return self.prj_list
@@ -503,9 +557,10 @@ class RockExternalProjectListManager(configparser.ConfigParser):
         self,
         app_src_dir: Path,
         app_cfg_base_name: str,
-        app_cfg_file_path: Path,
+        app_cfg_path: Path,
         package_output_dir: Path,
         version_override,
+        printout_err: bool,
     ):
         ret = None
         try:
@@ -513,10 +568,11 @@ class RockExternalProjectListManager(configparser.ConfigParser):
                 self.rock_builder_root_dir,
                 app_src_dir,
                 app_cfg_base_name,
-                app_cfg_file_path,
+                app_cfg_path,
                 package_output_dir,
                 version_override,
             )
         except ValueError as e:
-            print(str(e))
+            if printout_err:
+                print(str(e))
         return ret

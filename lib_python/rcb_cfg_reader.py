@@ -165,7 +165,7 @@ class RCBConfigReader(configparser.ConfigParser):
     def get_configured_and_existing_rocm_sdk_home(self):
         ret = None
 		
-        # use rocm sdk from the existing directory specified in the rockbuilder.init
+        # use rocm sdk from the existing directory specified in the rockbuilder.cfg file
         if self.rock_sdk_home_existing_install_dir and self.gpu_target_list:
             ret = self.rock_sdk_home_existing_install_dir
         return ret

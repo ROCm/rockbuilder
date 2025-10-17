@@ -44,121 +44,119 @@ def printout_build_env_info():
     time.sleep(1)
 
 
-# This argument parser is used to parse the project list.
-# This is needed to do first before parsing other arguments
-# because we need to add the --<project-name>-version arguments for the second parser that
-# is used to parse all possible parameters.
-def get_app_list_manager(rock_builder_home_dir: Path):
-    parser = argparse.ArgumentParser(description="Project and Project List Parser")
-
-    # Add arguments
-    parser.add_argument(
-        "--app_list",
-        type=str,
-        help="specify project list for the actions, for example: apps/pytorch_27" + rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX,
-        default=None,
-    )
-    parser.add_argument(
-        "--app",
-        type=str,
-        help="specify target for the action, for example: pytorch or apps/pytorch" + rcb_const.RCB__APP_CFG_FILE_SUFFIX,
-        default=None,
-    )
-    prj = None
-    prj_list = None
-    args, unknown = parser.parse_known_args()
-    prj_cfg_file = get_app_cfg_file_path(rock_builder_home_dir, args.app)
-    ret = app_builder.RockExternalProjectListManager(
-        rock_builder_home_dir, args.app_list, prj_cfg_file
-    )
+# if the app_name is full path to cfg file, return it
+# othetwise assume that project name is "apps/app_name.cfg"
+def get_app_cfg_path(rock_builder_home_dir: Path, fname: str):
+    ret = None
+    if fname:
+        if fname.endswith(rcb_const.RCB__APP_CFG_FILE_SUFFIX):
+            ret = Path(fname)
+        else:
+            fname_base = f"{fname}" + rcb_const.RCB__APP_CFG_FILE_SUFFIX
+            ret = (
+                Path(rock_builder_home_dir) /
+                     rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR /
+                     fname_base
+            )
+        ret = ret.resolve()
     return ret
 
-def get_app_cfg_base_name_without_extension(app_name: str):
-    ret = os.path.basename(app_name)
-    ret = os.path.splitext(ret)[0]
+
+# if the fname is full path to cfg file, return it
+# othetwise assume that project name is "apps/fname.cfg"
+def get_app_list_cfg_path(rock_builder_home_dir: Path, fname: str):
+    ret = None
+    if fname:
+        if fname.endswith(rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX):
+            ret = Path(fname)
+        else:
+            fname_base = f"{fname}" + rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX
+            ret = (
+                Path(rock_builder_home_dir) /
+                     rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR /
+                     fname_base
+            )
+        ret = ret.resolve()
     return ret
 
-# create user parameter parser
-def create_build_argument_parser(
-    rock_builder_home_dir, default_src_base_dir: Path, app_list
-):
-    # Create an ArgumentParser object
-    parser = argparse.ArgumentParser(description="ROCK Project Builders")
 
-    # Add arguments
-    parser.add_argument(
-        "--app_list",
-        type=str,
-        help="specify project list for the actions, for example: apps/pytorch" + rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX,
-        default=None,
-    )
-    parser.add_argument(
-        "--app",
-        type=str,
-        help="specify project for the action, for example: pytorch or apps/pytorch" + rcb_const.RCB__APP_CFG_FILE_SUFFIX,
-        default=None,
-    )
+def get_app_or_app_list_config(rock_builder_home_dir: Path, fname: str):
+    ret = None
+
+    cfg_path = get_app_cfg_path(rock_builder_home_dir, fname)
+    if not cfg_path or not cfg_path.exists():
+        cfg_path = get_app_list_cfg_path(rock_builder_home_dir, fname)
+    if cfg_path:
+        ret = app_builder.ConfigReader(cfg_path)
+    return ret
+
+def create_argument_parser_with_basic_options(rock_builder_home_dir,
+                                              default_src_base_dir: Path):
+    # create an argument parser object
+    parser = argparse.ArgumentParser(description="ROCKBuilder")
+
+    # add non-positional arguments requiring a "--flag"
     parser.add_argument(
         "--init",
         action="store_true",
-        help="init build environment by installing dependencies",
+        help="Execute applications init command to initialize the project. Executed by default always",
         default=False,
     )
     parser.add_argument(
-        "--clean", action="store_true", help="clean build files", default=False
+        "--clean", action="store_true", help="Execute applications clean command to remove build files", default=False
     )
     parser.add_argument(
         "--checkout",
         action="store_true",
-        help="checkout source code for the project",
+        help="Execute applications checkout command to get source files",
         default=False,
     )
     parser.add_argument(
         "--hipify",
         action="store_true",
-        help="hipify command for project",
+        help="Execute applications hipify command to modify source files after checkout",
         default=False,
     )
     parser.add_argument(
         "--pre_config",
         action="store_true",
-        help="pre-config command for project",
+        help="Execute applications pre-config command",
         default=False,
     )
     parser.add_argument(
         "--config",
         action="store_true",
-        help="config command for project",
+        help="Execute applications config command",
         default=False,
     )
     parser.add_argument(
         "--post_config",
         action="store_true",
-        help="post-config command for project",
+        help="Execute applications post-config command",
         default=False,
     )
     parser.add_argument(
-        "--build", action="store_true", help="build project", default=False
+        "--build", action="store_true", help="Execute applications build command", default=False
     )
     parser.add_argument(
-        "--install", action="store_true", help="install build project", default=False
+        "--install", action="store_true", help="Execute applications install command", default=False
     )
     parser.add_argument(
         "--post_install",
         action="store_true",
-        help="post-install command for project",
+        help="Execute applications post-install command",
         default=False,
     )
     parser.add_argument(
         "--src-dir",
         type=Path,
-        help="Directory where to checkout single project source code. Can only be used with the --app parameter.",
+        help="Specify exact directory where to checkout source code for app config is specified instead of application list.",
         default=None,
     )
     parser.add_argument(
         "--src-base-dir",
         type=Path,
-        help="Base directory where each application source code is checked out. Default is src_apps.",
+        help="Specify base directory where each application source code is checked out. Default is src_apps.",
         default=default_src_base_dir,
     )
     parser.add_argument(
@@ -167,10 +165,42 @@ def create_build_argument_parser(
         help="Directory to copy built wheels to",
         default=rock_builder_home_dir / "packages" / "wheels",
     )
+    # add positional arguments not requiring a "--flag"
+    parser.add_argument("config_file", type=str, help="Specify path to a app or app_list config file that specify which apps are build. For example: apps/pytorch.apps ")
+    return parser
+
+
+# This argument parser is used to parse the project list.
+# This is needed to do first before parsing other arguments
+# because we need to add the --<project-name>-version arguments for the second parser that
+# is used to parse all possible parameters.
+def get_app_list_manager(rock_builder_home_dir: Path, default_src_base_dir: Path):
+    ret = None
+
+    parser = create_argument_parser_with_basic_options(rock_builder_home_dir, default_src_base_dir)
+    args, unknown = parser.parse_known_args()
+    if not args.config_file:
+	    args.config_file = rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR / "core.apps"
+    cfg_info = get_app_or_app_list_config(rock_builder_home_dir, args.config_file)
+    ret = app_builder.RockExternalProjectListManager(rock_builder_home_dir,
+                                                     cfg_info)
+    return ret
+
+def get_app_cfg_base_name_without_extension(fname: str):
+    ret = os.path.basename(fname)
+    ret = os.path.splitext(ret)[0]
+    return ret
+
+# create user parameter parser
+def create_build_argument_parser(
+    rock_builder_home_dir, default_src_base_dir: Path, app_list
+):
+    parser = create_argument_parser_with_basic_options(rock_builder_home_dir, default_src_base_dir)
+    # add application version arguments 
     for ii, prj_item in enumerate(app_list):
         base_name = get_app_cfg_base_name_without_extension(prj_item)
         arg_name = "--" + base_name + "-version"
-        print("arg_name: " + arg_name)
+        # print("arg_name: " + arg_name)
         parser.add_argument(
             "--" + base_name + "-version",
             help = base_name + " version used for the operations",
@@ -232,22 +262,22 @@ def parse_build_arguments(parser):
 def printout_build_arguments(args):
     # printout arguments enabled
     print("Actions Enabled: ")
-    print("    clean:       ", args.clean)
-    print("    init:        ", args.init)
-    print("    checkout:    ", args.checkout)
-    print("    hipify:      ", args.hipify)
-    print("    pre_config:  ", args.pre_config)
-    print("    config:      ", args.config)
-    print("    post_config: ", args.post_config)
-    print("    build:       ", args.build)
-    print("    install:     ", args.install)
-    print("    post_install:", args.post_install)
-    print("Application:", args.app)
+    print("    clean:        ", args.clean)
+    print("    init:         ", args.init)
+    print("    checkout:     ", args.checkout)
+    print("    hipify:       ", args.hipify)
+    print("    pre_config:   ", args.pre_config)
+    print("    config:       ", args.config)
+    print("    post_config:  ", args.post_config)
+    print("    build:        ", args.build)
+    print("    install:      ", args.install)
+    print("    post_install: ", args.post_install)
+    print("Application: ", args.config_file)
 
 
 def get_config_reader(rock_builder_home_dir: Path,
                      rock_builder_build_dir: Path):
-    # read and set up env based on to rockbuilder.ini file if it exist
+    # read and set up env based on to rockbuilder.cfg file if it exist
     ret = None
     try:
         ret = rcb_cfg_reader.RCBConfigReader(rock_builder_home_dir,
@@ -334,24 +364,6 @@ def do_therock(prj_builder, args):
     return ret
 
 
-# if the app_name is full path to cfg file, return it
-# othetwise assume that project name is "apps/app_name.cfg"
-def get_app_cfg_file_path(rock_builder_home_dir: Path, app_name: str):
-    if app_name:
-        if app_name.endswith(rcb_const.RCB__APP_CFG_FILE_SUFFIX):
-            ret = Path(app_name)
-        else:
-            fname_base = f"{app_name}" + rcb_const.RCB__APP_CFG_FILE_SUFFIX
-            ret = (
-                Path(rock_builder_home_dir) /
-                rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR /
-                fname_base
-            )
-        ret = ret.resolve()
-    else:
-        ret = app_name
-    return ret
-
 def verify_rockbuilder_config(rcb_cfg_reader):
     if rcb_cfg_reader:
         gpu_list = rcb_cfg_reader.get_configured_gpu_list()
@@ -368,7 +380,7 @@ def verify_rockbuilder_config(rcb_cfg_reader):
             sys.exit(1)
 
 # Ensures that rocm_sdk install exist or will be installed by using
-# the method that has been saved to rockbuilder.ini config file.
+# the method that has been saved to rockbuilder.cfg config file.
 # (by using the rockbuilder_cfg.py)
 #
 # Check is disabled if env-variable 'RCB_DISABLE_ROCM_SDK_CHECK' has been defined.
@@ -406,7 +418,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
             # --> sdk not found
             # --> build rocm_sdk by using therock
             rocm_sdk_local_build_needed = True
-            prj_cfg_file = get_app_cfg_file_path(rock_builder_home_dir, "therock")
+            prj_cfg_file = get_app_cfg_path(rock_builder_home_dir, "therock")
             prj_cfg_base_name = get_app_cfg_base_name_without_extension(prj_cfg_file)
             version_override = None
             prj_builder = app_manager.get_rock_app_builder(
@@ -414,7 +426,8 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                     prj_cfg_base_name,
                     prj_cfg_file,
                     rcb_const.RCB__APP_BUILD_ROOT_DIR,
-                    version_override
+                    version_override,
+                    True
                 )
             if prj_builder:
                 app_list = ["therock"]
@@ -457,7 +470,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                 gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
                 if gpu_list_str:
                     os.environ["RCB_AMDGPU_TARGETS"] = gpu_list_str
-			# use installed rocm sdk from the location specified by the rockbuilder.ini
+			# use installed rocm sdk from the location specified by the rockbuilder.cfg
             env_var_arr = None
             rocm_home = rcb_cfg_reader.get_configured_and_existing_rocm_sdk_home()
             if rocm_home:
@@ -466,7 +479,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
             if env_var_arr:
                 os.environ["ROCM_HOME"] = rocm_home
             else:
-                print("Failed to use ROCM_SDK from location configured in rockbuilder.ini")
+                print("Failed to use ROCM_SDK from location configured in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
                 print("   ROCM_SDK location searched: " + rocm_home)
                 sys.exit(1)
 
@@ -490,7 +503,7 @@ def main():
 		# read the configure again if the configuration was only done above
         rcb_cfg_reader = get_config_reader(rock_builder_home_dir,
                                            rock_builder_build_dir)
-    app_manager = get_app_list_manager(rock_builder_home_dir)
+    app_manager = get_app_list_manager(rock_builder_home_dir, default_src_base_dir)
     verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir)    
 
     app_list = app_manager.get_external_app_list()
@@ -502,7 +515,7 @@ def main():
     args = parse_build_arguments(arg_parser)
 
     # add output dir to environment variables
-    if args.app and args.src_dir:
+    if args.src_dir:
         # single project case with optional src_dir specified
         parent_dir = args.src_dir.parent
         if parent_dir == args.src_dir:
@@ -526,17 +539,17 @@ def main():
     # small delay to allow user to see env variable printouts before the build starts
     time.sleep(1)
 
-    if not args.app:
+    if not app_manager.config_info.is_app_config():
         # process all apps specified in the core_project.pcfg
         if args.src_dir:
-            print('\nError, "--src-dir" parameter requires also to specify the project with the "--app"-parameter')
+            print('\nError, "--src-dir" parameter requires also to specify a single app.cfg file')
             print('Alternatively you could use the "--src-base-dir" parameter.')
             print("")
             sys.exit(1)
         for ii, prj_item in enumerate(app_list):
             print(f"[{ii}]: {prj_item}")
             # argparser --> Keyword for parameter "--my-project-version=xyz" = "my_app_version"
-            prj_cfg_file = get_app_cfg_file_path(rock_builder_home_dir, app_list[ii])
+            prj_cfg_file = get_app_cfg_path(rock_builder_home_dir, app_list[ii])
             prj_cfg_base_name = get_app_cfg_base_name_without_extension(prj_cfg_file)
             prj_version_keyword = prj_cfg_base_name + "_version"
             prj_version_keyword = prj_version_keyword.replace("-", "_")
@@ -549,6 +562,7 @@ def main():
                 prj_cfg_file,
                 args.output_dir,
                 version_override,
+                True
             )
             if prj_builder is None:
                 print("Error, could not get a project builder")
@@ -556,9 +570,9 @@ def main():
             else:
                 do_therock(prj_builder, args)
     else:
-        # process only a single project specified with the "--app" parameter
+        # process only a single project cfg file
         # argparser --> Keyword for parameter "--my-project-version=xyz" = "my_app_version"
-        prj_cfg_file = get_app_cfg_file_path(rock_builder_home_dir, args.app)
+        prj_cfg_file = get_app_cfg_path(rock_builder_home_dir, args.config_file)
         prj_cfg_base_name = get_app_cfg_base_name_without_extension(prj_cfg_file)
         prj_version_keyword = prj_cfg_base_name + "_version"
         prj_version_keyword = prj_version_keyword.replace("-", "_")
@@ -570,7 +584,8 @@ def main():
                 prj_cfg_base_name,
                 prj_cfg_file,
                 args.output_dir,
-                version_override
+                version_override,
+                True
             )
         else:
             # source checkout dir = "--src-base-dir" / app_name
@@ -580,6 +595,7 @@ def main():
                 prj_cfg_file,
                 args.output_dir,
                 version_override,
+                True
             )
         if prj_builder:
             do_therock(prj_builder, args)

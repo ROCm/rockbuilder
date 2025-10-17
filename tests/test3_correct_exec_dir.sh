@@ -29,7 +29,7 @@ echo "SCRIPT_DIR: ${SCRIPT_DIR}"
 echo "TEST_APP_CFG: ${TEST_APP_CFG}"
 echo "BLD_DIR: ${BLD_DIR}"
 
-./rockbuilder.py --app ${TEST_APP_CFG}
+./rockbuilder.py ${TEST_APP_CFG}
 if [ $? -eq 0 ]; then
     if [[ -f ${TEST_RES_FILE1} && -f ${TEST_RES_FILE2} && -f ${TEST_RES_FILE3}  && -f ${TEST_RES_FILE4} ]]; then
         echo "OK: ${TEST_APP_CFG}"

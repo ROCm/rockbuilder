@@ -1,7 +1,7 @@
 src_apps
 build
 packages
-rockbuilder.ini
+rockbuilder.cfg
 .venv/
 __pycache__/
 *.pyc

@@ -31,7 +31,8 @@ RCB__APP_PATCHES_ROOT_DIR                    = RCB__ROOT_DIR / RCB__APP_PATCHES_
 RCB__APP_CFG_FILE_SUFFIX                     = ".cfg"
 RCB__APP_LIST_CFG_FILE_SUFFIX                = ".apps"
 
-RCB__CFG__FILE_NAME                          = RCB__ROOT_DIR / "rockbuilder.ini"
+RCB__CFG__BASE_FILE_NAME                     = "rockbuilder.cfg"
+RCB__CFG__FILE_NAME                          = RCB__ROOT_DIR / RCB__CFG__BASE_FILE_NAME
 RCB__CFG__STAMP_FILE_NAME                    = RCB__ROOT_DIR / "rocm_sdk_wheels.done"
 
 RCB__CFG__SECTION__ROCM_SDK                  = "rocm_sdk"

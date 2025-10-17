@@ -165,7 +165,7 @@ def get_config_value_from_one_element_list(rcb_cfg, section_name, key_name):
     if len(res_list) == 1:
         ret = res_list[0]
     else:
-        print("List is allowed to have only one value in rockbuilder.ini")
+        print("List is allowed to have only one value in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
         print("    section: " + section_name)
         print("    key: " + key_name)
         sys.exit(1)

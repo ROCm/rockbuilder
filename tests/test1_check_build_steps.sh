@@ -46,11 +46,11 @@ else
     echo "    ${TEST_GIT_REPO_FILE}"
 fi
 
-./rockbuilder.py --app ${TEST_APP_CFG} --clean
+./rockbuilder.py ${TEST_APP_CFG} --clean
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --app ${TEST_APP_CFG} --clean'"
+    echo "    './rockbuilder.py ${TEST_APP_CFG} --clean'"
     exit 1
 fi
 
@@ -63,19 +63,19 @@ if cmp -s "$TEST1_RES_FILE" "$TEST1_GOLDEN_FILE"; then
     TEST1_OK=1
 fi
 
-./rockbuilder.py --app ${TEST_APP_CFG} --checkout
+./rockbuilder.py ${TEST_APP_CFG} --checkout
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --app ${TEST_APP_CFG} --checkout'"
+    echo "    './rockbuilder.py ${TEST_APP_CFG} --checkout'"
     exit 1
 fi
 
-./rockbuilder.py --app ${TEST_APP_CFG}
+./rockbuilder.py ${TEST_APP_CFG}
 if [ ! $? -eq 0 ]; then
     echo ""
     echo "Failed to execute command: "
-    echo "    './rockbuilder.py --app ${TEST_APP_CFG}'"
+    echo "    './rockbuilder.py ${TEST_APP_CFG}'"
     exit 1
 fi
 

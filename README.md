@@ -109,7 +109,7 @@ Wheels that have been build can be found from the packages/wheels directory.
 ## Checkout all pytorch_28_amd related applications (without build and install)
 
 ```bash
-python rockbuilder.py --checkout --app_list apps/pytorch_28_rocm.apps
+python rockbuilder.py --checkout apps/pytorch_28_rocm.apps
 ```
 
 Source code would be checked out to directory `src_apps`
@@ -129,13 +129,13 @@ copy the produced pytorch audio wheel to directory "test" instead of using defau
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --app pytorch_audio --output-dir test
+python rockbuilder.py pytorch_audio --output-dir test
 ```
 
 or
 
 ```bash
-python rockbuilder.py --app apps/pytorch_audio.cfg --output-dir test
+python rockbuilder.py apps/pytorch_audio.cfg --output-dir test
 ```
 
 By default this checks out pytorch audio source to directory `src_apps/pytorch_audio`:
@@ -148,7 +148,7 @@ pytorch_audio/
 ## Checkout pytorch_audio sources to custom directory
 
 ```bash
-python rockbuilder.py --checkout --app pytorch_audio --src-dir src_prj/py_audio
+python rockbuilder.py --checkout pytorch_audio --src-dir src_prj/py_audio
 ```
 
 Source code would be checked out to directory `src_prj/py_audio`:
@@ -163,7 +163,7 @@ py_audio/
 This would checkout the v2.6.0 version instead of the version specified in the pytorch_audio.cfg file
 
 ```bash
-python rockbuilder.py --checkout --app pytorch_audio --pytorch_audio-version=v2.6.0
+python rockbuilder.py --checkout pytorch_audio --pytorch_audio-version=v2.6.0
 ```
 
 ## Build only pytorch audio
@@ -171,7 +171,7 @@ python rockbuilder.py --checkout --app pytorch_audio --pytorch_audio-version=v2.
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --build --app pytorch_audio
+python rockbuilder.py --build pytorch_audio
 ```
 
 ## Install only pytorch audio
@@ -179,7 +179,7 @@ python rockbuilder.py --build --app pytorch_audio
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --install --app pytorch_audio
+python rockbuilder.py --install pytorch_audio
 ```
 
 # Environment setup
