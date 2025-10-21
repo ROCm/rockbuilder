@@ -37,7 +37,6 @@ class RCBConfigReader(configparser.ConfigParser):
                 # print("self.last_mod_time:" + str(self.last_mod_time))
                 # read the config values
                 self.read(self.fname)
-                
                 self.gpu_target_list = self.get_as_list(
                                           rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
 			                              rcb_const.RCB__CFG__KEY__GPUS)
@@ -47,15 +46,17 @@ class RCBConfigReader(configparser.ConfigParser):
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS)
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):			    
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
                     self.rock_sdk_home_therock_build_dir = get_config_value_from_one_element_list(self,
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD)
+                    self.rock_sdk_home_therock_build_dir = Path(self.rock_sdk_home_therock_build_dir).resolve().as_posix()
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME):
                     self.rock_sdk_home_existing_install_dir = get_config_value_from_one_element_list(self,
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME)
+                    self.rock_sdk_home_existing_install_dir = Path(self.rock_sdk_home_existing_install_dir).resolve().as_posix()
             except PermissionError:
                 print("No permission to read configuration file:")
                 print("    " + str(self.fname))
