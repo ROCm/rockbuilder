@@ -189,7 +189,10 @@ class RockProjectRepo:
                 ret = False
         return ret
 
-    def _handle_command_exec(self, exec_phase_name, exec_cmd, cmd_exec_dir):
+    def _handle_command_exec(self,
+                             exec_phase_name,
+                             exec_cmd,
+                             cmd_exec_dir):
         ret = True
         if exec_cmd:
             exec_cmd = os.path.expandvars(exec_cmd)
@@ -758,7 +761,10 @@ class RockProjectRepo:
         return ret
 
     def do_post_install(self, CMD_POST_INSTALL):
-        return self._exec_subprocess_cmd(CMD_POST_INSTALL, self.app_exec_dir)
+        ret = self._handle_command_exec("post_install",
+                            CMD_POST_INSTALL,
+                            self.app_exec_dir)
+        return ret
 
     def do_save_patches(self):
         ret = True

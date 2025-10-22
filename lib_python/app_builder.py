@@ -100,6 +100,20 @@ class RockProjectBuilder(configparser.ConfigParser):
         return ret
 
 
+    #return either os specific or generic version of command depending which is available.
+    #if both versions of command exist in app-config file, then the os-specific is selected.
+    def _get_cmd_phase_allowing_os_override(self, cmd_generic):
+        if self.is_posix:
+            cmd_os = cmd_generic + rcb_const.RCB__APP_CFG__CMD_PHASE_EXTENSION_LINUX
+        else:
+            cmd_os = cmd_generic + rcb_const.RCB__APP_CFG__CMD_PHASE_EXTENSION_WINDOWS
+        if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, cmd_os):
+            ret = self._get_app_info_config_value(cmd_os)
+        else:
+            ret = self._get_app_info_config_value(cmd_generic)
+        return ret
+
+
     def __init__(
         self,
         rock_builder_root_dir,
@@ -180,12 +194,12 @@ class RockProjectBuilder(configparser.ConfigParser):
         else:
             prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_WINDOWS
         if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, prop_name):
-            self.enable_on_os = self._get_app_info_config_value(prop_name)
+            self.enable_on_os = self._get_app_info_boolean_value(prop_name)
         else:
             # check only if OS specific property version is not used
             prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED
             if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, prop_name):
-                self.enable_on_os = self._get_app_info_config_value(prop_name)
+                self.enable_on_os = self._get_app_info_boolean_value(prop_name)
             else:
                 self.enable_on_os = True
 
@@ -216,28 +230,18 @@ class RockProjectBuilder(configparser.ConfigParser):
                     self.env_setup_cmd.extend(temp_env_list)
                 else:
                     self.env_setup_cmd = temp_env_list
-        self.CMD_INIT = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_INIT)
-        self.CMD_CLEAN = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN)
-        self.CMD_HIPIFY = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY)
-        self.CMD_PRE_CONFIG = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG)
-        self.CMD_CONFIG = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG)
-        self.CMD_POST_CONFIG = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG)
-
-        # here we want to check if specific CMD_BUILD_LINUX or CMD_BUILD_WINDOWS option is set
-        # otherwise we use generic "CMD_BUILD" option
-        if self.is_posix:
-            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_LINUX):
-                self.CMD_BUILD = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_LINUX)
-            else:
-                self.CMD_BUILD = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD)
-        else:
-            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_WINDOWS):
-                self.CMD_BUILD = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD_WINDOWS)
-            else:
-                self.CMD_BUILD = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD)
-        self.CMD_CMAKE_CONFIG = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG)
-        self.CMD_INSTALL = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL)
-        self.CMD_POST_INSTALL = self._get_app_info_config_value(rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL)
+        # here we want to check if specific CMD_XXX_LINUX or CMD_XXX_WINDOWS option is set
+        # otherwise we use generic "CMD_XXX" option
+        self.CMD_INIT         = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_INIT)
+        self.CMD_CLEAN        = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN)
+        self.CMD_HIPIFY       = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY)
+        self.CMD_PRE_CONFIG   = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG)
+        self.CMD_CONFIG       = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG)
+        self.CMD_POST_CONFIG  = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG)
+        self.CMD_BUILD        = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_BUILD)
+        self.CMD_CMAKE_CONFIG = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG)
+        self.CMD_INSTALL      = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL)
+        self.CMD_POST_INSTALL = self._get_cmd_phase_allowing_os_override(rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL)
 
         self.app_root_dir_path = Path(rock_builder_root_dir)
         self.app_src_dir_path = app_src_dir
