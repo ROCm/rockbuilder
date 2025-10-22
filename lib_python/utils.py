@@ -20,26 +20,35 @@ def _replace_env_variables(cmd_str):
     ret = os.path.expandvars(cmd_str)
     return ret
 
+def get_rocm_sdk_wheel_install_stamp_key():
+    ret = Path(sys.prefix).resolve().as_posix()
+    # ":" in "c:/mypath" type of string causes problem when
+    # string tried to save for a second time
+    ret = ret.replace(":", "/")
+    return ret
+
 # write stamp file used to verify whether the pip install has been done
-def _write_pip_install_stamp(fname_pip_done, python_home_dir, time_sec):
+def _write_rocm_sdk_wheel_install_stamp_key(stamp_fname,
+                         time_sec):
     ret = False
     try:
-        dir_path = fname_pip_done.parent
+        dir_path = stamp_fname.parent
         if not dir_path.is_dir():
             dir_path.mkdir(parents=True, exist_ok=True)
         config = configparser.ConfigParser()
-        if fname_pip_done.exists():
-            config.read(fname_pip_done)
+        if stamp_fname.exists():
+            config.read(stamp_fname)
         if "timestamps" not in config:
             config["timestamps"] = {}
-        config["timestamps"][python_home_dir] = str(time_sec)
-        with open(fname_pip_done, "w") as configfile:
+        stamp_key = get_rocm_sdk_wheel_install_stamp_key()
+        config["timestamps"][stamp_key] = str(time_sec)
+        with open(stamp_fname, "w") as configfile:
             config.write(configfile)
         print(
             f"Timestamp "
             + str(time_sec)
             + " written to file: "
-            + str(fname_pip_done)
+            + str(stamp_fname)
         )
         ret = True
     except FileExistsError:
@@ -199,8 +208,12 @@ def verify_env__python():
             else:
                 print("Using python from location: " + python_home_dir)
         else:
-            print("Error, init python virtual env with command:")
-            print("    source ./init_rcb_env.sh")
+            print("Error, python environment not initialized for the rockbuilder.")
+            print("Initialize python virtual env with command:")
+            if is_posix:
+                print("    source ./init_rcb_env.sh")
+            else:
+                print("    init_rcb_env.bat")
             print("Or define RCB_PYTHON_PATH with command: (not recommended)")
             if is_posix:
                 print("    export RCB_PYTHON_PATH=" + python_home_dir)
@@ -234,10 +247,30 @@ def get_python_wheel_rocm_sdk_home(path_name: str) -> Path:
         [sys.executable, "-m", "rocm_sdk", "path", f"--{path_name}"],
         cwd=Path.cwd(),
     )
-    if len(dir_str) > 0:
-        print("python_wheel_rocm_sdk_home: " + str(dir_str))
+    if dir_str and len(dir_str) > 0:
         dir_str.strip()
         ret = Path(dir_str)
+        version_file = ret / ".info/version"
+        if not version_file.exists():
+            # workaround for rocm sdk wheel install on windows
+            # where the rocm_sdk_devel wheels currently have empty dirs
+            # without symlinks on _rocm_sdk_devel directories
+            # beacause of the lack symlink support on windows
+            if dir_str.endswith("_rocm_sdk_devel"):
+                alternative_home = ret.parent
+                alternative_home = alternative_home / "_rocm_sdk_core"
+                version_file = alternative_home / ".info/version"
+                if version_file.exists():
+                    ret = alternative_home
+                    print("Workaround applied to detect rocm sdk python_wheel ROCM_HOME: " + str(ret))
+                else:
+                    print("Could not find: " + str(version_file))
+                    print("Failed to apply a workaround to detect the ROCM_HOME from rocm sdk python_wheel install")
+            else:
+               print("Could not fine _rocm_sdk_devel directory from python venv")
+               print("Failed to apply a workaround to detect a ROCM_HOME from rocm sdk python_wheel install")
+    else:
+        print("rocm_sdk path --root command failed, could not get a ROCM_HOME from rocm_sdk python wheel install")
     return ret
 
 
@@ -247,7 +280,7 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
     ret = None
     res = True
 
-    rocm_sdk_unCMD_INSTALL = (sys.executable +
+    rocm_sdk_CMD_UNINSTALL = (sys.executable +
                   " -m pip cache remove rocm_sdk --cache-dir " +
                   (rcb_const.RCB__ROOT_DIR / "pip").as_posix())
     install_deps_cmd = (
@@ -269,27 +302,35 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS)
         whl_server_url_full = whl_server_url_base + gpu_target
-        rocm_sdk_CMD_INSTALL_full = rocm_sdk_CMD_INSTALL_base + " --index-url " + whl_server_url_full
+        rocm_sdk_CMD_INSTALL_SDK = rocm_sdk_CMD_INSTALL_base + " --index-url " + whl_server_url_full
+        print("install_deps_cmd: " + install_deps_cmd)
         exec_subprocess_cmd(install_deps_cmd, rcb_const.RCB__ROOT_DIR.as_posix())
         # uninstall old
-        exec_subprocess_cmd(rocm_sdk_unCMD_INSTALL, rcb_const.RCB__ROOT_DIR.as_posix())
+        print("rocm_sdk_CMD_UNINSTALL: " + rocm_sdk_CMD_UNINSTALL)
+        exec_subprocess_cmd(rocm_sdk_CMD_UNINSTALL, rcb_const.RCB__ROOT_DIR.as_posix())
         # install rocm sdk and pytorch
-        exec_subprocess_cmd(rocm_sdk_CMD_INSTALL_full, rcb_const.RCB__ROOT_DIR.as_posix())
-    except  Exception as ex:
-        print("ROCM SDK python wheel install error with the therock.cfg:")
+        print("rocm_sdk_CMD_INSTALL_SDK: " + rocm_sdk_CMD_INSTALL_SDK)
+        exec_subprocess_cmd(rocm_sdk_CMD_INSTALL_SDK, rcb_const.RCB__ROOT_DIR.as_posix())
+        print("python wheel install commands done")
+    except Exception as ex:
+        print("ROCM SDK python wheel install error with the rockbuilder.cfg:")
         print("    " + str(ex))
         res = False
+    except:
+        print("ROCM SDK python wheel install failed")
+        res = False
     if res:
-        cfg_file_mod_time = get_last_rcb_config_file_mod_time()
-        cfg_stamp_fname = rcb_const.RCB__CFG__STAMP_FILE_NAME
-        res = _write_pip_install_stamp(cfg_stamp_fname,
-                                       sys.prefix,
-                                       cfg_file_mod_time)
+        stamp_mod_time = get_last_rcb_config_file_mod_time()
+        stamp_fname = rcb_const.RCB__CFG__STAMP_FILE_NAME
+        res = _write_rocm_sdk_wheel_install_stamp_key(stamp_fname,
+                                                      stamp_mod_time)
         if not res:
-            print("Failed to write to config stamp file: " + str(fname_pip_done))
+            print("Failed to update rocm sdk-python wheel install stamp file: " + str(stamp_fname))
     if res:
         ret = get_python_wheel_rocm_sdk_home("root")
-        if not ret:
+        if ret:
+            print("ROCM_SDK python wheel install ROCM_HOME: " + str(ret))
+        else:
             print("Error, could not find ROCM_HOME from ROCM_SDK python wheel install.")
     return ret
 

@@ -9,6 +9,7 @@ import lib_python.rcb_constants as rcb_const
 from lib_python.utils import get_python_wheel_rocm_sdk_home
 from lib_python.utils import get_config_value_from_one_element_list
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
+from lib_python.utils import get_rocm_sdk_wheel_install_stamp_key
 from lib_python.repo_management import RockProjectRepo
 from pathlib import Path, PurePosixPath
 
@@ -94,7 +95,7 @@ class RCBConfigReader(configparser.ConfigParser):
         return ret
 
     def _is_rocm_sdk_python_wheel_update_needed(self,
-                                                python_home_dir, time_sec):
+                                                time_sec):
         ret = True
         try:
             config = configparser.ConfigParser()
@@ -103,12 +104,13 @@ class RCBConfigReader(configparser.ConfigParser):
             stamp_fname = rcb_const.RCB__CFG__STAMP_FILE_NAME
             if stamp_fname.exists():
                 config.read(stamp_fname)
-                if config.has_option("timestamps", python_home_dir):
-                    time_read_str = config["timestamps"][python_home_dir]
+                stamp_key = get_rocm_sdk_wheel_install_stamp_key()
+                if config.has_option("timestamps", stamp_key):
+                    time_read_str = config["timestamps"][stamp_key]
                     if time_read_str == str(time_sec):
                         print(
                             f"Timestamp matches for "
-                            + python_home_dir
+                            + stamp_key
                             + ": "
                             + str(time_sec)
                         )
@@ -155,8 +157,7 @@ class RCBConfigReader(configparser.ConfigParser):
 
     def is_python_wheel_rocm_sdk_install_needed(self):
         ret = False
-        sdk_update_needed = self._is_rocm_sdk_python_wheel_update_needed(sys.prefix,
-                                          self.last_mod_time)
+        sdk_update_needed = self._is_rocm_sdk_python_wheel_update_needed(self.last_mod_time)
         rocm_home = get_python_wheel_rocm_sdk_home("root")
         if sdk_update_needed or (not rocm_home):
             ret = True
