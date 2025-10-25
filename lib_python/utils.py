@@ -247,6 +247,14 @@ def get_python_wheel_rocm_sdk_home(path_name: str) -> Path:
         [sys.executable, "-m", "rocm_sdk", "path", f"--{path_name}"],
         cwd=Path.cwd(),
     )
+    # workaround until fixed: https://github.com/ROCm/TheRock/issues/1906
+    # need to be called while after pip install on windows
+    if not dir_str:
+        dir_str = _capture(
+            [sys.executable, "-m", "rocm_sdk", "path", f"--{path_name}"],
+            cwd=Path.cwd(),
+        )
+    # end of workaround
     if dir_str and len(dir_str) > 0:
         dir_str.strip()
         ret = Path(dir_str)
