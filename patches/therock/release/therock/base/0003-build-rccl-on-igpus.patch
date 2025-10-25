@@ -1,7 +1,7 @@
-From 3216a65c0cdbf3e34a41cc666ba78b164439570c Mon Sep 17 00:00:00 2001
+From 317d7444f04d8b2d4d81c621a5aa7c91207e459c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 30 Sep 2025 05:56:14 +0000
-Subject: [PATCH 3/3] build rccl on igpus
+Subject: [PATCH 3/4] build rccl on igpus
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 3 insertions(+), 12 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index ed844ec..4ff5b65 100644
+index a72016c..a43e120 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
 @@ -98,20 +98,11 @@ therock_add_amdgpu_target(gfx1102 "AMD RX 7700S/Framework Laptop 16" FAMILY dgpu
@@ -37,5 +37,5 @@ index ed844ec..4ff5b65 100644
  # gfx120X family
  therock_add_amdgpu_target(gfx1200 "AMD RX 9060 / XT" FAMILY dgpu-all gfx120X-all)
 -- 
-2.34.1
+2.49.0.windows.1
 
