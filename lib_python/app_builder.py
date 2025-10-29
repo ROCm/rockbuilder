@@ -295,7 +295,7 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def printout_error_and_terminate(self, phase):
         self.printout(phase)
-        print(phase + " failed")
+        print(phase + " failed for " + self.app_name)
         sys.exit(1)
 
     # check whether operations should be skipped on current operating system
