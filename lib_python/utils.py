@@ -428,6 +428,7 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                 for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
                     folder_path = folder_path.resolve()
                     ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH + "=" + folder_path.as_posix())
+                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIP_DEVICE_LIB_PATH + "=" + folder_path.as_posix())
                     print(rcb_const.RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH + "=" + str(folder_path))
                     break
                 if not folder_path:
