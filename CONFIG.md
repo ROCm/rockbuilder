@@ -82,9 +82,10 @@ version=v2.7.0
 
 You can also specify whether to skip building the application on Linux or Windows using the following optional settings:
 
-```
-PROP_IS_BUILD_ENABLED_LINUX=1
-PROP_IS_BUILD_ENABLED_WINDOWS=1
+
+PROP_DISABLE=[YES/NO/1/0]```
+PROP_DISABLE_LINUX=[YES/NO/1/0]
+PROP_DISABLE_WINDOWS=[YES/NO/1/0]
 ```
 
 ### Environment Variables
@@ -99,14 +100,20 @@ Base environment variables are automatically specified for each application that
 
 - `ROCM_HOME`:
   The ROCm SDK install prefix directory
+- `ROCM_PATH`:
+  The ROCm SDK install prefix directory. Same value than ROCM_HOME
+- `DEVICE_LIB_PATH`:
+  Directory containing gpu specific bitcode (\*.bc) files
 - `RCB_APP_SRC_DIR`:
   The source code directory for the currently built application
 - `RCB_APP_BUILD_DIR`:
   The build directory for the currently built application
-- `RCB_ROCM_SDK_CLANG_HOME_DIR`:
-  Home directory for the clang. It location may vary depending whether the rocm_sdk used is build locally or used from the rocm_sdk python wheel.
-- `RCB_ROCM_SDK_BITCODE_HOME_DIR`:
-  Directory containing gpu specific bitcode (\*.bc) files
+- `RCB_APP_VERSION`:
+  Version or git hash code for the currently built application.
+- `CLANG_HOME_DIR`:
+  Home directory for the clang. It location may vary depending whether the rocm_sdk used is build locally or used from the rocm_sdk python wheels.
+- `HIPCC_HOME_DIR`:
+  Home directory for the hipcc. It location may vary depending whether the rocm_sdk used is build locally or used from the rocm_sdk python wheels.
 
 #### Application-Specific Environment Variables
 

@@ -11,7 +11,8 @@ import lib_python.app_builder as app_builder
 import rockbuilder_cfg as rcb_cfg_writer
 import lib_python.rcb_cfg_reader as rcb_cfg_reader
 import lib_python.rcb_constants as rcb_const
-from lib_python.utils import get_python_wheel_rocm_sdk_home
+from lib_python.utils import get_rocm_home_from_python_wheel_rocm_sdk
+from lib_python.utils import set_rocm_home_to_env_variables
 from lib_python.utils import install_rocm_sdk_from_python_wheels
 from lib_python.utils import get_rocm_sdk_env_variables
 from lib_python.utils import verify_env__python
@@ -31,11 +32,12 @@ def printout_build_env_info():
     printout_rock_builder_info()
     print("Build environment:")
     print("-----------------------------")
-    if "ROCM_HOME" in os.environ:
-        print("ROCM_HOME: " + os.environ["ROCM_HOME"])
+    if rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR in os.environ:
+        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR + ": " +
+              os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR])
     else:
-        print("ROCK_HOME: not defined")
-    if "ROCM_HOME" in os.environ:
+        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR + ": not defined")
+    if "RCB_PYTHON_PATH" in os.environ:
         print("RCB_PYTHON_PATH: " + os.environ["RCB_PYTHON_PATH"])
     else:
         print("RCB_PYTHON_PATH: not defined")
@@ -355,10 +357,10 @@ def do_therock(prj_builder, args):
             ret = True
         else:
             print("Builing of project disabled in applications config file")
-            print("by one of the following properties:")
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED)
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_LINUX)
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_WINDOWS)
+            print("by using one of the following properties:")
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE)
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_LINUX)
+            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_WINDOWS)
             prj_builder.printout("skip")
             ret = True
     return ret
@@ -408,7 +410,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
         if env_var_arr:
             print("setting rocm_home")
 			# use rocm sdk from location where the rock has been build
-            os.environ["ROCM_HOME"] = rocm_home
+            set_rocm_home_to_env_variables(rocm_home)
         else:
             print("")
             print("ROCM_SDK build by rockbuilder not found")
@@ -430,13 +432,15 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                     True
                 )
             if prj_builder:
+                # force the building of rocm sdk first
                 app_list = ["therock"]
                 arg_parser = create_build_argument_parser(rock_builder_home_dir,
                                     default_src_base_dir,
                                     app_list)
                 args = parse_build_arguments(arg_parser)
                 do_therock(prj_builder, args)
-                os.environ["ROCM_HOME"] = rocm_home
+                # set rocm home after building the rocm sdk
+                set_rocm_home_to_env_variables(rocm_home)
     else:
         rocm_sdk_wheel_server_url = rcb_cfg_reader.get_python_wheel_rocm_sdk_server_url()
         if rocm_sdk_wheel_server_url:
@@ -444,10 +448,9 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
             if inst_wheels:
                 rocm_home = install_rocm_sdk_from_python_wheels(rcb_cfg_reader)
             else:
-                rocm_home = get_python_wheel_rocm_sdk_home("root")
+                rocm_home = get_rocm_home_from_python_wheel_rocm_sdk()
             if rocm_home:
-                print("rocm_home: " + rocm_home.as_posix())
-                os.environ["ROCM_HOME"] = rocm_home.as_posix()
+                set_rocm_home_to_env_variables(rocm_home.as_posix())
                 # set target GPUs to environment variable if not set earlier
                 if not "RCB_AMDGPU_TARGETS" in os.environ:
                     # get list of gpus that are supported by the currently installed
@@ -477,7 +480,7 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                 # check whether the rocm sdk has been configured ok in this location
                 env_var_arr = get_rocm_sdk_env_variables(Path(rocm_home), False, False)
             if env_var_arr:
-                os.environ["ROCM_HOME"] = rocm_home
+                set_rocm_home_to_env_variables(rocm_home)
             else:
                 print("Failed to use ROCM_SDK from location configured in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
                 print("   ROCM_SDK location searched: " + rocm_home)

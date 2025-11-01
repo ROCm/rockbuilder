@@ -6,7 +6,7 @@ import sys
 import ast
 import subprocess
 import lib_python.rcb_constants as rcb_const
-from lib_python.utils import get_python_wheel_rocm_sdk_home
+from lib_python.utils import get_rocm_home_from_python_wheel_rocm_sdk
 from lib_python.utils import get_config_value_from_one_element_list
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
 from lib_python.utils import get_rocm_sdk_wheel_install_stamp_key
@@ -158,7 +158,7 @@ class RCBConfigReader(configparser.ConfigParser):
     def is_python_wheel_rocm_sdk_install_needed(self):
         ret = False
         sdk_update_needed = self._is_rocm_sdk_python_wheel_update_needed(self.last_mod_time)
-        rocm_home = get_python_wheel_rocm_sdk_home("root")
+        rocm_home = get_rocm_home_from_python_wheel_rocm_sdk()
         if sdk_update_needed or (not rocm_home):
             ret = True
         return ret

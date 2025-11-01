@@ -59,6 +59,38 @@ def _write_rocm_sdk_wheel_install_stamp_key(stamp_fname,
         print(f"Error writing to file: {e}")
     return ret
 
+# rocm_home is special as it defines also other variables
+def set_rocm_home_to_env_variables(rocm_home: str):
+    print("setting ROCM_HOME: " + rocm_home)
+    if rocm_home is not None:
+        if rocm_home:
+            # non-empty string ""
+            os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR] = rocm_home
+            os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_PATH_DIR] = rocm_home
+            cur_dir = Path(rocm_home) / "bin"
+            if cur_dir.is_dir():
+                os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_BIN_DIR] = cur_dir.as_posix()
+            cur_dir = Path(rocm_home) / "lib64"
+            if cur_dir.is_dir():
+                os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_LIB_DIR] = cur_dir.as_posix()
+            else:
+                cur_dir = Path(rocm_home) / "lib"
+                if cur_dir.is_dir():
+                    os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_LIB_DIR] = cur_dir.as_posix()
+        else:
+			# empty string specified, remove env variables if they exist
+            if rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR in os.environ:
+                del os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR]
+            if rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_BIN_DIR in os.environ:
+                del os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_BIN_DIR]
+            if rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_LIB_DIR in os.environ:
+                del os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_LIB_DIR]
+            if rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_PATH_DIR in os.environ:
+                del os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_PATH_DIR]
+    else:
+        print("Error, failed to set ROCM_HOME, env_variable is not defined")
+        sys.exit()
+
 # check whether specified directory is included in the specified environment variable
 def _is_directory_in_env_variable_path(env_variable, directory):
     """
@@ -241,8 +273,9 @@ def _capture(args: list[str | Path], cwd: Path) -> str:
 
 
 # this works only for rocm sdk's installed as a pip wheel which have rocm_sdk tool
-def get_python_wheel_rocm_sdk_home(path_name: str) -> Path:
+def get_rocm_home_from_python_wheel_rocm_sdk() -> Path:
     ret = None
+    path_name = "root"
     dir_str = _capture(
         [sys.executable, "-m", "rocm_sdk", "path", f"--{path_name}"],
         cwd=Path.cwd(),
@@ -270,7 +303,7 @@ def get_python_wheel_rocm_sdk_home(path_name: str) -> Path:
                 version_file = alternative_home / ".info/version"
                 if version_file.exists():
                     ret = alternative_home
-                    print("Workaround applied to detect rocm sdk python_wheel ROCM_HOME: " + str(ret))
+                    print("Workaround applied to detect ROCM_HOME from the rocm sdk python wheels: " + str(ret))
                 else:
                     print("Could not find: " + str(version_file))
                     print("Failed to apply a workaround to detect the ROCM_HOME from rocm sdk python_wheel install")
@@ -335,7 +368,7 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
         if not res:
             print("Failed to update rocm sdk-python wheel install stamp file: " + str(stamp_fname))
     if res:
-        ret = get_python_wheel_rocm_sdk_home("root")
+        ret = get_rocm_home_from_python_wheel_rocm_sdk()
         if ret:
             print("ROCM_SDK python wheel install ROCM_HOME: " + str(ret))
         else:
@@ -394,8 +427,8 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                 folder_path = None
                 for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
                     folder_path = folder_path.resolve()
-                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_BITCODE_HOME_DIR + "=" + folder_path.as_posix())
-                    print(rcb_const.RCB__ENV_VAR__ROCM_SDK_BITCODE_HOME_DIR + "=" + str(folder_path))
+                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH + "=" + folder_path.as_posix())
+                    print(rcb_const.RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH + "=" + str(folder_path))
                     break
                 if not folder_path:
                     err_happened = True
@@ -415,13 +448,20 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                     # make sure that we found bin/clang and not clang folder
                     if hipcc_home.name.lower() == "bin":
                         ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
-                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_APP + "=" + folder_path.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + folder_path.as_posix())
                         print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
-                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_APP + "=" + folder_path.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + folder_path.as_posix())
                         hipcc_home = hipcc_home.parent
                         if hipcc_home.is_dir():
                             hipcc_home = hipcc_home.resolve()
                             ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_HOME_DIR + "=" + hipcc_home.as_posix())
+                            hipcc_libdir = hipcc_home / "lib64"
+                            if hipcc_libdir.is_dir():
+                                ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_LIB_DIR + "=" + hipcc_libdir.as_posix())
+                            else:
+                                hipcc_libdir = hipcc_home / "lib"
+                                if hipcc_libdir.is_dir():
+                                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_LIB_DIR + "=" + hipcc_libdir.as_posix())
                             print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_HOME_DIR + "=" + hipcc_home.as_posix())
                             break
                 # find clang
@@ -435,14 +475,21 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                     # make sure that we found bin/clang and not clang folder
                     if clang_home.name.lower() == "bin":
                         ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
-                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_APP + "=" + folder_path.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_EXEC + "=" + folder_path.as_posix())
                         print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
-                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_APP + "=" + folder_path.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_EXEC + "=" + folder_path.as_posix())
                         clang_home = clang_home.parent
                         if clang_home.is_dir():
                             res = True
                             clang_home = clang_home.resolve()
                             ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + clang_home.as_posix())
+                            clang_libdir = clang_home / "lib64"
+                            if clang_libdir.is_dir():
+                                ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_LIB_DIR + "=" + clang_libdir.as_posix())
+                            else:
+                                clang_libdir = clang_home / "lib"
+                                if clang_libdir.is_dir():
+                                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_LIB_DIR + "=" + clang_libdir.as_posix())
                             print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + str(clang_home))
                             break
                 if not res:

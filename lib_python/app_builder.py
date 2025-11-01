@@ -190,16 +190,16 @@ class RockProjectBuilder(configparser.ConfigParser):
 
         # environment setup can have common and os-specific sections that needs to be appended together
         if self.is_posix:
-            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_LINUX
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_LINUX
         else:
-            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED_WINDOWS
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_WINDOWS
         if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, prop_name):
-            self.enable_on_os = self._get_app_info_boolean_value(prop_name)
+            self.enable_on_os = not self._get_app_info_boolean_value(prop_name)
         else:
             # check only if OS specific property version is not used
-            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_IS_BUILD_ENABLED
+            prop_name = rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE
             if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, prop_name):
-                self.enable_on_os = self._get_app_info_boolean_value(prop_name)
+                self.enable_on_os = not self._get_app_info_boolean_value(prop_name)
             else:
                 self.enable_on_os = True
 
