@@ -1,0 +1,47 @@
+From 3efcad0b76fb5d4637136b27c29186476624dd7a Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Wed, 5 Nov 2025 04:58:28 -0800
+Subject: [PATCH] add MAX_JOBS environment variable for cpu count
+
+MAX_JOBS can be used to limit the amount of CPU cores
+used for building. Helps for not running out of memory
+on systems where there is not enought memory.
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ v3src/CMakeLists.txt | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/v3src/CMakeLists.txt b/v3src/CMakeLists.txt
+index 6053d33..b13341e 100644
+--- a/v3src/CMakeLists.txt
++++ b/v3src/CMakeLists.txt
+@@ -12,6 +12,17 @@ set(AOTRITON_KERNEL_STORAGE_V2_DIR "${AOTRITON_V2_BUILD_DIR}/aotriton.images")
+ execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${AOTRITON_V2_BUILD_DIR}")
+ execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${AOTRITON_KERNEL_STORAGE_V2_DIR}")
+ 
++if(DEFINED ENV{MAX_JOBS})
++  set(MAX_JOBS "$ENV{MAX_JOBS}")
++else()
++  cmake_host_system_information(RESULT MAX_JOBS QUERY NUMBER_OF_PHYSICAL_CORES)
++  if(MAX_JOBS LESS 2) # In case of failures.
++    set(MAX_JOBS 2)
++  endif()
++endif()
++
++set_property(GLOBAL PROPERTY JOB_POOLS MAX_JOB_CNT__HSACO=${MAX_JOBS})
++
+ execute_process(COMMAND ${CMAKE_COMMAND}
+   -E env VIRTUAL_ENV=${VENV_DIR}
+   "${VENV_BIN_PYTHON}" -m v3python.gpu_targets
+@@ -153,6 +164,7 @@ if(NOT AOTRITON_NOIMAGE_MODE)
+       "--timeout" "${AOTRITON_GPU_BUILD_TIMEOUT}"
+       ${HSACO_COMPILE_OPTION}
+       DEPENDS aotriton_venv_triton
++      JOB_POOL MAX_JOB_CNT__HSACO
+     )
+     # DO NOT USE list(APPEND). It is quadratic growth
+     file(APPEND "${AOTRITON_HSACO_RECORD}" "${HSACO}" "\n")
+-- 
+2.43.0
+
