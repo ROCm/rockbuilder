@@ -187,7 +187,7 @@ class GpuSelectionList(BaseSelectionList):
         super().__init__(
             stdscr,
             rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
-            f"Select target GPUs for the build", True
+            f"Select AMD GPUs Used (Each of the selected GPU will increase build time)", True
         )
 
     # Override the default selection logic because selection logic depends from the SDK selected
@@ -213,7 +213,7 @@ class SDKSelectionList(BaseSelectionList):
         super().__init__(
             stdscr,
             rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-            f"Select ROCM SDK used for the build", False
+            f"Select ROCM SDK Used by the RockBuilder", False
         )
 
         def_sel = True
@@ -223,7 +223,7 @@ class SDKSelectionList(BaseSelectionList):
             # add rocm home to list of SDK's to select
             self.item_list.append(
                 SelectionItem(
-                    "Use ROCm SDK from ROCM_HOME: "
+                    "ROCm SDK Specified by ROCM_HOME: "
                     + rocm_home.as_posix(),
                     rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
                     rocm_home.as_posix(),
@@ -236,7 +236,7 @@ class SDKSelectionList(BaseSelectionList):
             # add an option/selection to use the rocm sdk that has been build locally
             self.item_list.append(
                 SelectionItem(
-                    "Use existing ROCm SDK: " + rocm_home.as_posix(),
+                    "Existing ROCm SDK Build: " + rocm_home.as_posix(),
                     rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
                     rocm_home.as_posix(),
                     def_sel,
@@ -248,7 +248,7 @@ class SDKSelectionList(BaseSelectionList):
             the_rock_sdk_root_dir = rcb_const.THEROCK_SDK__ROCM_HOME_BUILD_DIR
             self.item_list.append(
                 SelectionItem(
-                    "Build ROCm SDK: " + the_rock_sdk_root_dir.as_posix(),
+                    "New ROCm SDK Build: " + the_rock_sdk_root_dir.as_posix(),
                     rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD,
                     the_rock_sdk_root_dir.as_posix(),
                     def_sel,
@@ -258,7 +258,7 @@ class SDKSelectionList(BaseSelectionList):
         # add an option/selection to use the rocm sdk that will be installed from the python wheel
         self.item_list.append(
             SelectionItem(
-                "Install ROCm SDK Python Wheels: " + whl_server_base_url,
+                "ROCm SDK from Python Wheels Install: " + whl_server_base_url,
                 rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS,
                 whl_server_base_url,
                 def_sel,
@@ -374,8 +374,8 @@ class UiManager:
         self.gpu_build_target_list.append(SelectionItem("780M iGPU (gfx1103)", key_name_gpus, "gfx1103", False))
         self.gpu_build_target_list.append(SelectionItem("890M iGPU/Strix Point (gfx1150)", key_name_gpus, "gfx1150", False))
         self.gpu_build_target_list.append(SelectionItem("8040S/8050S/8060S iGPU/Strix Halo (gfx1151)", key_name_gpus, "gfx1151", False))
-        self.gpu_build_target_list.append(SelectionItem("RX 9060 (gfx1200)", key_name_gpus, "gfx1200", False))
-        self.gpu_build_target_list.append(SelectionItem("RX 9070 (gfx1201)", key_name_gpus, "gfx1201", False))
+        self.gpu_build_target_list.append(SelectionItem("RX 9060/RX 9060 XT (gfx1200)", key_name_gpus, "gfx1200", False))
+        self.gpu_build_target_list.append(SelectionItem("RX 9070/RX 9070 XT (gfx1201)", key_name_gpus, "gfx1201", False))
 
         self.sdk_list = SDKSelectionList(stdscr)
         self.gpu_list = GpuSelectionList(stdscr)

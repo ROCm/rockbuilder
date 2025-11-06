@@ -1,66 +1,129 @@
 # RockBuilder
 
-RockBuilder provides a configuration file based way of building one or multiple external applications on top of the existing ROCM core installation.
+Rockbuilder provides an easy way to integrate AI applications to AMD's ROCM SDK.
 
-RockBuilder supports both the Linux and Windows but some of the applications build may be operating system-specific.
+It is a configuration file based method of building one or multiple external applications on top of the ROCM SDK installation.
 
-## Applications Build
+Rockbuilder can either use the ROCM SDK install, build it from the source or install it from the pythoin wheels for the selected AMD GPUs.
 
-RockBuilder will build the list of applications that are listed in the in the application list configuration file:
-
-```
-apps/core.apps
-```
-
-For each application build there is a application specific configuration file which will then specify the application name, version, source code checkout address and required configure, build and install commands.
-
-At the moment RockBuilder will build by default a following list of applications in Linux and Windows:
-
-- pytorch (apps/pytorch.cfg)
-- pytorch vision (apps/pytorch_vision.cfg)
-- pytorch audio (apps/pytorch_audio.cfg)
-- torch migraphx (apps/torch_migraphx.cfg)
-
-Configuration file format is specified in [CONFIG.md](CONFIG.md) document.
+RockBuilder supports both the Linux and Windows for building the applications.
 
 # Usage
 
-Below are described the steps required for setting up the RockBuilder environment
-and how to use it either to build all applications or to use it for just to execute some smaller task.
+## Download RockBuilder
 
-## Build everything by using TheRock ROCm build
-
-First build the TheRock base system by following the instructions in
-[README.md](../../README.md#building-from-source).
-Then build the RockBuilder applications from the rockbuilder directory.
-
-Example commands to build and test on Linux:
-
-```bash
-cd rockbuilder
-source ./init_rcb_env.sh
-python rockbuilder.py
-cd examples
-export ROCM_HOME=src_apps/therock/build/dist/rocm
-export LD_LIBRARY_PATH=${ROCM_HOME}/lib:${ROCM_HOME}/lib/llvm/lib
-python torch_gpu_hello_world.py
-python torch_vision_hello_world.py
-python torch_audio_hello_world.py
+```
+git checkout https://github.com/roCm/rockbuilder
 ```
 
-Example commands to build and test on Windows by using the 'x64 Native MSVC command prompt':
+## ROCM SDK and Target GPU Configuration
 
-```bash
-cd c:\rockbuilder
+Initialize and activate the python virtual environment with all python dependencies that the rockbuilder will need on Linux terminal prompt:
+
+```
+cd rockbuilder
+source ./init_rcb_env.sh
+```
+
+On Windows x86_64 visual studio command prompt must be opened to execute a similar type of command: 
+
+```
+cd rockbuilder
 init_rcb_env.bat
-set PYTORCH_ROCM_ARCH=gfx1201
-python rockbuilder.py
-set PATH=c:/rockbuilder/src_apps/the_rock/build/dist/rocm/bin;c:/TheRock/build/dist/rocm/lib;%PATH%
-cd examples
-python torch_gpu_hello_world.py
-python torch_vision_hello_world.py
-python torch_audio_hello_world.py
+```
 
+Here the init_rcb_env script will check if the python virtual environment is active. If not it will initialize and activate one to **.venv-directory** and install there all the python applications that rockbuilder will need.
+
+After the python virtual environment has been activated, you can start the rockbuilder.
+
+```
+python rockbuilder.py
+```
+
+On the first run the rockbuilder will notice that the rockbuilder.cfg configuration file does not yet exist and will therefore show the rockbuilder configuration view to select the ROCM SDK install method and target GPUs.
+
+[![build_rocm_sdk](docs/pics/readme/cfg_new_build_25pct.png)](docs/pics/readme/cfg_new_build_60pct.png)
+
+Selection of GPUs depends from the ROCM_SDK install type. When ROCM_SDK is selected to be build, all of the supported AMD GPUs are shown. If the ROCM SDK is instead selected to be installed from the python wheels, the list of GPUs is little different because some of the GPUs does not yet have python wheels and in some cases support for multiple similar generation GPUs have been build to same python wheel package:
+
+[![build_rocm_sdk](docs/pics/readme/cfg_python_wheel_25pct.png)](docs/pics/readme/cfg_python_wheel_60pct.png)
+
+After you make the selections and press enter to confirm them, ROCM SDK configuration is saved to rockbuilder.cfg file.
+
+rockbuilder will then use the configuration file to check whether it needs to build or install the ROCM SDK for the selected target GPUs to your system before starting to use it to build other applications. Note that the building of ROCM SDK may provide more customization than install but the build process itself will last from one hour to hours dependending from your computer. 
+
+## ## Building an Application Set
+
+In many cases there is multiple applications that needs to be build to achieve some functionality. This is handled by the rockbuilder by listing all of the related applications with their correct versions in the **.apps-file.**
+
+Example usage to build the pytorch nightly and all of it's dependencies: 
+
+```
+./rockbuilder.py apps/pytorch_nightly.apps
+```
+
+This will download, configure and build all applications that are specified in the **pytorch_nightly.apps** file.
+
+```apps/pytorch_nightly.apps
+[apps]
+app_list=
+    deps_common
+    pytorch_aotriton_nightly
+    triton_pytorch_nightly
+    pytorch_nightly
+    pytorch_vision_nightly
+    pytorch_torchcodec_nightly
+    pytorch_audio_nightly
+```
+
+Applications are build and installed in the order specified in this file. Each of the application build will be installed to currently active python virtual environment. If there is some other libraries and executables build by the cmake, they will be installed to the configured rocm-sdk.
+
+Python wheels that are build will also be copied to directory **packages/wheels** under rockbuilder.
+
+## Building Applications One By One
+
+Instead of building a set of applications it would be also possible to build them one by one as a single applications in right dependency order.
+
+```
+./rockbuilder.py apps/deps_common.cfg
+./rockbuilder.py apps/pytorch_aotriton_nightly.cfg
+./rockbuilder.py apps/triton_pytorch_nightly.cfg
+./rockbuilder.py apps/pytorch_nightly.cfg
+./rockbuilder.py apps/pytorch_vision_nightly.cfg
+./rockbuilder.py apps/pytorch_torchcodec_nightly.cfg
+./rockbuilder.py apps/pytorch_audio_nightly.cfg
+```
+
+Each of these cfg-files provides an application specific configuration. Configuration files specify the application name, version, source code checkout address and required configure, build and install commands.
+
+Configuration file format is specified in [CONFIG.md](CONFIG.md) document.
+
+## Testing the Applications Build
+
+Rockbuilder has simple example applications to verify that the pytorch build itself has succeeded. Here we assume that tests are run from another new terminal window and therefore we will activate the python virtual environment firts. If it is already active, we could skip this command:
+
+```
+source ./init_rcb_env.sh 
+```
+
+Thenpython examples/torch_gpu_hello_world.py  we will execute the example application itself:
+
+```
+python examples/torch_gpu_hello_world.py 
+```
+
+If success, this application should print out following type of text to terminal.
+
+```
+Pytorch version: 2.8.0
+ROCM HIP version: 7.1.25441-b9b1250
+cuda device count: 2
+default cuda device name: AMD Radeon Pro W7900 Dual Slot
+device type: cuda
+Tensor training running on cuda: True
+Running simple model training test
+    tensor([0., 1., 2.], device='cuda:0')
+Hello World, test executed succesfully
 ```
 
 Example output from test apps in Windows when using the AMD Radeon W7900 GPU:
@@ -84,79 +147,53 @@ pytorch vision version: 0.22.0
 (.venv) D:\rockbuilder\examples>python torch_audio_hello_world.py
 pytorch version: 2.7.0
 pytorch audio version: 2.7.0
-
 ```
 
-## Build everything by using TheRock ROCm install
+You can also test the flash-attention support from the pytorch with this example application:
 
-1. First build the TheRock base system by following the instructions in
-   [README.md](../../README.md#building-from-source).
-   Then build the RockBuilder apps from the
-   rockbuilder directory. Example:
+```
+python examples/torch_attention_check.py
+```
+
+# Other Rockbuilder Usage Examples
+
+Rockbuilder can also take optional build arguments.
+
+## Checkout Only the Source Code
+
+This will show how to checkout the source code for the pytorch 2.8 related applications without building them.  Source code would be checked out to directory `src_apps`
 
 ```bash
-cd rockbuilder
-source ./init_rcb_env.sh
-python rockbuilder.py
-cd examples
-python torch_gpu_hello_world.py
-python torch_vision_hello_world.py
-python torch_audio_hello_world.py
+python rockbuilder.py --checkout apps/pytorch_28_amd.apps
 ```
 
-Wheels that have been build can be found from the packages/wheels directory.
+Source code for each project would be checked out under the di
 
-## Checkout all pytorch_28_amd related applications (without build and install)
+## Checkout Source Code to Custom Directory
 
 ```bash
-python rockbuilder.py --checkout apps/pytorch_28_rocm.apps
+python rockbuilder.py --checkout --src-base-dir custom_src_location apps/pytorch_28_amd.apps
 ```
 
-Source code would be checked out to directory `src_apps`
+Source code for each project would be checked out under the directory `custom_src_location` instead of using the src_apps.
 
-## Checkout all applications to custom directory
-
-```bash
-python rockbuilder.py --checkout --src-base-dir src_prj
-```
-
-Source code for each project would be checked out under the directory `src_prj`
-
-## Checkout and build only pytorch_audio
+## Build and Install Python Wheel to Custom Directory
 
 In this example we build and install only the pytorch audio and
 copy the produced pytorch audio wheel to directory "test" instead of using default "packages/wheels"
-Note that pytorch audio requires that pytorch has been built and installed first.
-
-```bash
-python rockbuilder.py pytorch_audio --output-dir test
-```
-
-or
+Note that pytorch audio requires that pytorch itself has been built and installed first.
 
 ```bash
 python rockbuilder.py apps/pytorch_audio.cfg --output-dir test
 ```
 
-By default this checks out pytorch audio source to directory `src_apps/pytorch_audio`:
+## Checkout Single Application Source Code to Custom directory
 
 ```bash
-$ ls src_apps/
-pytorch_audio/
-```
-
-## Checkout pytorch_audio sources to custom directory
-
-```bash
-python rockbuilder.py --checkout pytorch_audio --src-dir src_prj/py_audio
+python rockbuilder.py --checkout apps/pytorch_audio.cfg --src-dir src_prj/py_audio
 ```
 
 Source code would be checked out to directory `src_prj/py_audio`:
-
-```bash
-$ ls src_prj/
-py_audio/
-```
 
 ## Checkout custom pytorch_audio version
 
@@ -166,62 +203,12 @@ This would checkout the v2.6.0 version instead of the version specified in the p
 python rockbuilder.py --checkout pytorch_audio --pytorch_audio-version=v2.6.0
 ```
 
-## Build only pytorch audio
+## Execute only the Install Phase for Previously build Pytorch audio
 
 Note that pytorch audio requires that pytorch has been built and installed first.
 
 ```bash
-python rockbuilder.py --build pytorch_audio
-```
-
-## Install only pytorch audio
-
-Note that pytorch audio requires that pytorch has been built and installed first.
-
-```bash
-python rockbuilder.py --install pytorch_audio
-```
-
-# Environment setup
-
-Rockbuilder requires the existing ROCM environment and Python installation.
-
-## ROCM Environment
-
-If ROCM_HOME environment variable is defined, then the ROCM environment is
-used from that directory.
-
-If ROCM_HOME is not defined, RockBuilder will try to find it from the directory
-
-```
-  src_apps/Therock/build/dist/rocm
-```
-
-## Python Environment
-
-Rockbuilder expects by default that Python venv is activated as it is the
-recommended way to use and install python applications that are required by the
-RockBuilder. Applications that are build by the RockBuilder will also be installed
-to the python environment that is used as they may be required by other applications
-that are later build by the rockbuilder.
-
-Recommended python version should be same than what is used to build TheRock and
-can be for example python 3.11, 3.12 or 3.13.
-
-You can either create a new python venv or use the one already done and used for TheRock build.
-
-```bash
-cd rockbuilder
-source ./init_rcb_env.sh
-```
-
-By default the RockBuilder will refuse to run if you are trying to use a real
-python virtual environment instead of using a virtual env. You can change that behaviour
-by setting the RCB_PYTHON_PATH environment variable that will point to python directory.
-In Linux this can be set for example in a following way:
-
-```bash
-export RCB_PYTHON_PATH=/usr/bin
+python rockbuilder.py --install apps/pytorch_audio.cfg
 ```
 
 # Adding a new application to RockBuilder
@@ -246,7 +233,6 @@ app_list=
     pytorch
     pytorch_vision
     pytorch_audio
-    torch_migraphx
 ```
 
 ## Project specific configuration files
@@ -255,21 +241,19 @@ apps/pytorch.cfg is an example from the project configuration file.
 
 Project configuration file specifies actions that RockBuilder executes for the project:
 
+- inut
 - checkout
 - clean
+- pre-configure
 - configure
+- post-configure
 - build
 - install
+- post-install
 
-By default the RockBuilder executes checkout, configure, build and install actions for the project but user
-can override this for example by specifying single command. For example:
+By default the RockBuilder executes init, checkout, pre-configure, configure, post-configure, build, install and post-install phases for the application. This can be changed
+by specifying the command phase that is wanted to execute. For example:
 
 ```bash
-python rockbuilder.py --checkout
+python rockbuilder.py --checkout apps/pytorch.cfg
 ```
-
-There can be separate action commands for posix based systems(Linux) and windows-based systems.
-
-If optional action parameter is specified (for example --build), RockBuilder does not yet
-check whether other actions would be needed to be executed before that.
-This is expected to be changed in the future.
