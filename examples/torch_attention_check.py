@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -131,10 +132,14 @@ def benchmark_sdb_backend(device:str, dtype):
 
 
 def main():
+	# disable pytorch warning about experimental rocm gpus for aotriton provided flash attention
+    os.environ["TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL"]="1"
     dtype = torch.float16
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
+    for i in range(torch.cuda.device_count()):
+        print(f"Device name[{i}]: {torch.cuda.get_device_name(i)}")
     benchmark_sdb_backend(device, dtype)
 
 if __name__ == "__main__":
