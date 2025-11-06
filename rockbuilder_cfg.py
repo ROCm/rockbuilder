@@ -137,28 +137,31 @@ class BaseSelectionList:
 
     def show(self, indx_cursor, indx_first_item, indx_first_row):
         index_base = indx_first_row
-        self.stdscr.addstr(index_base, 0, self.title)
-        # display the list of item_list for the user to choose from
-        index_base = index_base + 2
-        for ii, gpu_item in enumerate(self.item_list):
-            if indx_first_item + ii == indx_cursor:
-                if gpu_item.is_selected():
-                    self.stdscr.addstr(
-                        index_base + ii, 0, f"> [X] {gpu_item.name}"
-                    )  # cursor + selected
+        try:
+            self.stdscr.addstr(index_base, 0, self.title)
+            # display the list of item_list for the user to choose from
+            index_base = index_base + 2
+            for ii, gpu_item in enumerate(self.item_list):
+                if indx_first_item + ii == indx_cursor:
+                    if gpu_item.is_selected():
+                        self.stdscr.addstr(
+                            index_base + ii, 0, f"> [X] {gpu_item.name}"
+                        )  # cursor + selected
+                    else:
+                        self.stdscr.addstr(
+                            index_base + ii, 0, f"> [ ] {gpu_item.name}"
+                        )  # cursor + not selected
                 else:
-                    self.stdscr.addstr(
-                        index_base + ii, 0, f"> [ ] {gpu_item.name}"
-                    )  # cursor + not selected
-            else:
-                if gpu_item.is_selected():
-                    self.stdscr.addstr(
-                        index_base + ii, 0, f"  [X] {gpu_item.name}"
-                    )  # selected
-                else:
-                    self.stdscr.addstr(
-                        index_base + ii, 0, f"  [ ] {gpu_item.name}"
-                    )  # not selected
+                    if gpu_item.is_selected():
+                        self.stdscr.addstr(
+                            index_base + ii, 0, f"  [X] {gpu_item.name}"
+                        )  # selected
+                    else:
+                        self.stdscr.addstr(
+                            index_base + ii, 0, f"  [ ] {gpu_item.name}"
+                        )  # not selected
+        except curses.error:
+            print("Terminal is too small. Please increase the size that all text will fit.")
 
     # get config selections
     #
@@ -391,12 +394,15 @@ class UiManager:
             list_mngr.show(indx_cursor)
             total_item_cnt = list_mngr.get_total_selection_list_item_cnt()
             last_row_indx = list_mngr.get_last_row_indx()
-            self.stdscr.addstr(
-                last_row_indx,
-                0,
-                f"Keys: Up, Down, Space, Enter and Esc",
-            )
-            self.stdscr.refresh()
+            try:
+                self.stdscr.addstr(
+                    last_row_indx,
+                    0,
+                    f"Keys: Up, Down, Space, Enter and Esc",
+                )
+                self.stdscr.refresh()
+            except curses.error:
+                print("Terminal is too small. Please increase the size that all text will fit.")
             # Get user input for navigation or selection
             key = self.stdscr.getch()
             if key == curses.KEY_UP:
