@@ -1,7 +1,7 @@
 From 3efcad0b76fb5d4637136b27c29186476624dd7a Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
 Date: Wed, 5 Nov 2025 04:58:28 -0800
-Subject: [PATCH] add MAX_JOBS environment variable for cpu count
+Subject: [PATCH 1/2] add MAX_JOBS environment variable for cpu count
 
 MAX_JOBS can be used to limit the amount of CPU cores
 used for building. Helps for not running out of memory
