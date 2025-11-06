@@ -1,7 +1,7 @@
 From 0f6462f7df5d2b22c180e1bb02190a89fc64435f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
 Date: Wed, 5 Nov 2025 09:28:03 -0800
-Subject: [PATCH 2/2] add gfx1103 iGPU support
+Subject: [PATCH 2/3] add gfx1103 iGPU support
 
 - add gfx1103 iGPU support
 - gfx1102 was missing from the is_rdna method
