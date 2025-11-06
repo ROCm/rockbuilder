@@ -1,0 +1,58 @@
+From ef1e0757d24df22dafc698117ba777db89215dcc Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Thu, 30 Oct 2025 17:10:33 -0700
+Subject: [PATCH 2/2] printout stacktrace on error case
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ c10/hip/HIPMiscFunctions.cpp | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/c10/hip/HIPMiscFunctions.cpp b/c10/hip/HIPMiscFunctions.cpp
+index ebdcd3a0705..e1916c654f5 100644
+--- a/c10/hip/HIPMiscFunctions.cpp
++++ b/c10/hip/HIPMiscFunctions.cpp
+@@ -3,9 +3,24 @@
+ #include <c10/util/env.h>
+ #include <hip/hip_runtime.h>
+ #include <string>
++#include <ostream>
++#include <iostream>
++#include <execinfo.h>
+ 
+ namespace c10::hip {
+ 
++void print_stack_trace() {
++    const int max_frames = 64;
++    void* callstack[max_frames];
++    int frames = backtrace(callstack, max_frames);
++    char** symbols = backtrace_symbols(callstack, frames);
++
++    for (int i = 0; i < frames; ++i) {
++        std::cout << symbols[i] << std::endl;
++    }
++    free(symbols); // Free the memory allocated by backtrace_symbols
++}
++
+ // Explain common HIP errors
+ // NOLINTNEXTLINE(bugprone-exception-escape,-warnings-as-errors)
+ std::string get_hip_error_help(hipError_t error) noexcept {
+@@ -16,6 +31,7 @@ std::string get_hip_error_help(hipError_t error) noexcept {
+           "\nGPU device may be out of range, do you have enough GPUs?");
+       break;
+     default:
++      print_stack_trace();
+       help_text.append("\nSearch for `")
+           .append(hipGetErrorName(error))
+           .append(
+@@ -34,6 +50,7 @@ const char* get_hip_check_suffix() noexcept {
+   if (blocking_enabled) {
+     return "";
+   } else {
++    print_stack_trace();
+     return "\nHIP kernel errors might be asynchronously reported at some"
+            " other API call, so the stacktrace below might be incorrect."
+            "\nFor debugging consider passing AMD_SERIALIZE_KERNEL=3";
+-- 
+2.43.0
+
