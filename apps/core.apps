@@ -1,6 +1,7 @@
 [apps]
 app_list=
     deps_common
+    pytorch_aotriton_0_11b
     triton_34_amd
     pytorch_28_amd
     pytorch_vision_23
