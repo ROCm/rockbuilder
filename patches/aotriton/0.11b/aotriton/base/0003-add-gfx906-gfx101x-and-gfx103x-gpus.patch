@@ -1,0 +1,173 @@
+From abc6cacb8d0ee11a245f58db9c5d067b16a05717 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 7 Nov 2025 11:04:44 -0800
+Subject: [PATCH 3/3] add gfx906, gfx101x and gfx103x gpus
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ CMakeLists.txt          |  2 +-
+ include/aotriton/util.h |  6 ++++++
+ v3python/compile.py     |  4 ++--
+ v3python/gpu_targets.py | 24 ++++++++++++++++++++++++
+ v3src/util.cc           | 12 ++++++++++++
+ 5 files changed, 45 insertions(+), 3 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d1fad34..5bd1386 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -75,7 +75,7 @@ option(AOTRITON_INHERIT_SYSTEM_SITE_TRITON "Use system site packages and verify
+ # No plan to support network based pip install
+ set(AOTRITON_USE_LOCAL_TRITON_WHEEL "" CACHE STRING "Substitute install from third_party/triton with install from local pip wheel package.")
+ set(AOTRITON_GPU_BUILD_TIMEOUT "8.0" CACHE STRING "GPU kernel compiler times out after X minutes. 0 for indefinite. Highly recommended if AOTRITON_BUILD_FOR_TUNING=On.")
+-set(AOTRITON_TARGET_ARCH "gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1102;gfx1103;gfx1151;gfx1150;gfx1201;gfx1200" CACHE STRING "Target GPU Architecture. Select all GPUs within the given list")
++set(AOTRITON_TARGET_ARCH "gfx906;gfx90a;gfx942;gfx950;gfx1030;gfx1031;gfx1032;gfx1034;gfx1035;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1200;gfx1201" CACHE STRING "Target GPU Architecture. Select all GPUs within the given list")
+ set(TARGET_GPUS "OBSOLETE" CACHE STRING "OBSOLETE. To select only one GPU, use AOTRITON_TARGET_ARCH or AOTRITON_OVERRIDE_TARGET_GPUS.")
+ set(AOTRITON_OVERRIDE_TARGET_GPUS "" CACHE STRING "Override AOTRITON_TARGET_ARCH, and only build for GPUs within this list.")
+ 
+diff --git a/include/aotriton/util.h b/include/aotriton/util.h
+index accc2c8..c1c6a2f 100644
+--- a/include/aotriton/util.h
++++ b/include/aotriton/util.h
+@@ -52,10 +52,16 @@ enum AOTRITON_API GpuVendor : uint16_t {
+ // More bits for potential non-PCI architectures
+ enum AOTRITON_API Gpu : uint64_t {
+   GPU_ARCH_UNKNOWN = 0,
++  GPU_AMD_ARCH_GFX906_MOD0  = TRICAT(GpuVendor::kAMD,  0x906, 0),
+   GPU_AMD_ARCH_GFX90A_MOD0  = TRICAT(GpuVendor::kAMD,  0x90a, 0),
+   GPU_AMD_ARCH_GFX942_MOD0  = TRICAT(GpuVendor::kAMD,  0x942, 0),
+   GPU_AMD_ARCH_GFX942_MOD1  = TRICAT(GpuVendor::kAMD,  0x942, 1),
+   GPU_AMD_ARCH_GFX942_MOD2  = TRICAT(GpuVendor::kAMD,  0x942, 2),
++  GPU_AMD_ARCH_GFX1030_MOD0 = TRICAT(GpuVendor::kAMD, 0x1030, 0),
++  GPU_AMD_ARCH_GFX1031_MOD0 = TRICAT(GpuVendor::kAMD, 0x1031, 0),
++  GPU_AMD_ARCH_GFX1032_MOD0 = TRICAT(GpuVendor::kAMD, 0x1032, 0),
++  GPU_AMD_ARCH_GFX1034_MOD0 = TRICAT(GpuVendor::kAMD, 0x1034, 0),
++  GPU_AMD_ARCH_GFX1035_MOD0 = TRICAT(GpuVendor::kAMD, 0x1035, 0),
+   GPU_AMD_ARCH_GFX1100_MOD0 = TRICAT(GpuVendor::kAMD, 0x1100, 0),
+   GPU_AMD_ARCH_GFX1101_MOD0 = TRICAT(GpuVendor::kAMD, 0x1101, 0),
+   GPU_AMD_ARCH_GFX1102_MOD0 = TRICAT(GpuVendor::kAMD, 0x1102, 0),
+diff --git a/v3python/compile.py b/v3python/compile.py
+index 0dcd4de..f0e80a1 100644
+--- a/v3python/compile.py
++++ b/v3python/compile.py
+@@ -14,8 +14,8 @@ import json
+ 
+ from triton.backends.compiler import GPUTarget
+ 
+-KNOWN_TARGETS_64 = ['gfx90a', 'gfx942', 'gfx950']
+-KNOWN_TARGETS_32 = ['gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1201', 'gfx1200', 'gfx1151', 'gfx1150', 'gfx1250']
++KNOWN_TARGETS_64 = ['gfx906', 'gfx90a', 'gfx942', 'gfx950']
++KNOWN_TARGETS_32 = ['gfx1030', 'gfx1031', 'gfx1032', 'gfx1034', 'gfx1035', 'gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1150', 'gfx1151', 'gfx1200', 'gfx1201', 'gfx1250']
+ 
+ KNOWN_TARGETS = {
+   arch : GPUTarget('hip', arch, 64) for arch in KNOWN_TARGETS_64
+diff --git a/v3python/gpu_targets.py b/v3python/gpu_targets.py
+index a9387da..f6aaa7f 100644
+--- a/v3python/gpu_targets.py
++++ b/v3python/gpu_targets.py
+@@ -4,11 +4,17 @@
+ from collections import defaultdict
+ 
+ AOTRITON_SUPPORTED_GPUS = (
++    'gfx906_mod0',
+     'gfx90a_mod0',
+     'gfx942_mod0',
+     # 'gfx942_mod1',
+     # 'gfx942_mod2',
+     'gfx950_mod0',
++    'gfx1030_mod0',
++    'gfx1031_mod0',
++    'gfx1032_mod0',
++    'gfx1034_mod0',
++    'gfx1035_mod0',
+     'gfx1100_mod0',
+     'gfx1101_mod0',
+     'gfx1102_mod0',
+@@ -33,9 +39,15 @@ AOTRITON_TUNING_DATABASE_REUSE = {
+ }
+ 
+ AOTRITON_ARCH_TO_PACK = {
++    'gfx906'    : 'gfx906',
+     'gfx90a'    : 'gfx90a',
+     'gfx942'    : 'gfx942',
+     'gfx950'    : 'gfx950',
++    'gfx1030'   : 'gfx10xx',
++    'gfx1031'   : 'gfx10xx',
++    'gfx1032'   : 'gfx10xx',
++    'gfx1034'   : 'gfx10xx',
++    'gfx1035'   : 'gfx10xx',
+     'gfx1100'   : 'gfx11xx',
+     'gfx1101'   : 'gfx11xx',
+     'gfx1102'   : 'gfx11xx',
+@@ -52,9 +64,15 @@ AOTRITON_ARCH_TO_DIRECTORY = {
+ }
+ 
+ AOTRITON_ARCH_WARPSIZE = {
++    'gfx906'     : 64,
+     'gfx90a'     : 64,
+     'gfx942'     : 64,
+     'gfx950'     : 64,
++    'gfx1030'    : 32,
++    'gfx1031'    : 32,
++    'gfx1032'    : 32,
++    'gfx1034'    : 32,
++    'gfx1035'    : 32,
+     'gfx1100'    : 32,
+     'gfx1101'    : 32,
+     'gfx1102'    : 32,
+@@ -67,9 +85,15 @@ AOTRITON_ARCH_WARPSIZE = {
+ }
+ 
+ AOTRITON_ARCH_PRODUCTION_LINE = {
++    'gfx906'     : 'CDNA',
+     'gfx90a'     : 'CDNA',
+     'gfx942'     : 'CDNA',
+     'gfx950'     : 'CDNA',
++    'gfx1030'    : 'RDNA',
++    'gfx1031'    : 'RDNA',
++    'gfx1032'    : 'RDNA',
++    'gfx1034'    : 'RDNA',
++    'gfx1035'    : 'RDNA',
+     'gfx1100'    : 'RDNA',
+     'gfx1101'    : 'RDNA',
+     'gfx1102'    : 'RDNA',
+diff --git a/v3src/util.cc b/v3src/util.cc
+index 0ed58b6..fc227a7 100644
+--- a/v3src/util.cc
++++ b/v3src/util.cc
+@@ -46,8 +46,14 @@ private:
+ };
+ 
+ std::unordered_map<std::string, GpuClassifier> LazyGpu::string_to_classifier = {
++  { "gfx906", DummyClassifier<GPU_AMD_ARCH_GFX906_MOD0 >() },
+   { "gfx90a", DummyClassifier<GPU_AMD_ARCH_GFX90A_MOD0 >() },
+   { "gfx942", DummyClassifier<GPU_AMD_ARCH_GFX942_MOD0 >() },
++  {"gfx1030", DummyClassifier<GPU_AMD_ARCH_GFX1030_MOD0>() },
++  {"gfx1031", DummyClassifier<GPU_AMD_ARCH_GFX1031_MOD0>() },
++  {"gfx1032", DummyClassifier<GPU_AMD_ARCH_GFX1032_MOD0>() },
++  {"gfx1034", DummyClassifier<GPU_AMD_ARCH_GFX1034_MOD0>() },
++  {"gfx1035", DummyClassifier<GPU_AMD_ARCH_GFX1035_MOD0>() },
+   {"gfx1100", DummyClassifier<GPU_AMD_ARCH_GFX1100_MOD0>() },
+   {"gfx1101", DummyClassifier<GPU_AMD_ARCH_GFX1101_MOD0>() },
+   {"gfx1102", DummyClassifier<GPU_AMD_ARCH_GFX1102_MOD0>() },
+@@ -76,11 +82,17 @@ bool isArchExperimentallySupported(hipStream_t stream) {
+   uint32_t vendor_arch = Gpu2VendorArch(gpu);
+   return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1031) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1032) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1034) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1035) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1100) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1101) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1102) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1103) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1200) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1201) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1250));
+ }
+ 
+-- 
+2.43.0
+
