@@ -596,14 +596,18 @@ class RockProjectRepo:
                 cwd=self.app_src_dir,
             )
         except:
-            # no git tag available, fetch and checkout other way
-            self.exec(
-                ["git", "fetch", "--force"]
-                + fetch_args + fetch_args_main_prj_only
-                + ["origin", self.app_version_hashtag],
-                cwd=self.app_src_dir,
-            )
-            self.exec(["git", "checkout", "FETCH_HEAD"], cwd=self.app_src_dir)
+            try:
+                # no git tag available, fetch and checkout other way
+                self.exec(
+                    ["git", "fetch", "--force"]
+                    + fetch_args + fetch_args_main_prj_only
+                    + ["origin", self.app_version_hashtag],
+                    cwd=self.app_src_dir,
+                )
+                self.exec(["git", "checkout", "FETCH_HEAD"], cwd=self.app_src_dir)
+            except:
+                print("Failed to checkout source code.")
+                sys.exit(1)
         if apply_patches_enabled:
             # Apply base patches to main repository. Patches to
             # submodules will be applied later. This enables patches
