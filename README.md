@@ -13,7 +13,7 @@ RockBuilder supports both the Linux and Windows for building the applications.
 ## Download RockBuilder
 
 ```
-git checkout https://github.com/roCm/rockbuilder
+git clone https://github.com/roCm/rockbuilder
 ```
 
 ## ROCM SDK and Target GPU Configuration
