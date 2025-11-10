@@ -48,11 +48,11 @@ python rockbuilder.py
 
 On the first run, RockBuilder will detect that the `rockbuilder.cfg` configuration file does not exist and will display the configuration interface so you can select the desired ROCm SDK installation method and target GPUs.
 
-[![build_rocm_sdk](docs/pics/readme/cfg_new_build_25pct.png)](docs/pics/readme/cfg_new_build_60pct.png){ width=100% }
+[![build_rocm_sdk](docs/pics/readme/cfg_new_build_25pct.png)](docs/pics/readme/cfg_new_build_60pct.png)
 
 The available GPU options depend on the selected ROCm SDK installation type. When building the ROCm SDK from source, all supported AMD GPUs are listed. However, if you choose to install the ROCm SDK from Python wheels, the list may differ: some GPUs do not yet have wheel packages, and in some cases, support for multiple similar GPUs is combined into a single Python wheel package.
 
-[![build_rocm_sdk](docs/pics/readme/cfg_python_wheel_25pct.png)](docs/pics/readme/cfg_python_wheel_60pct.png){ width=100% }
+[![build_rocm_sdk](docs/pics/readme/cfg_python_wheel_25pct.png)](docs/pics/readme/cfg_python_wheel_60pct.png)
 
 After you make your selections and press **Enter** to confirm, the ROCm SDK configuration is saved to the `rockbuilder.cfg` file.
 
