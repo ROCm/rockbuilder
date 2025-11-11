@@ -14,8 +14,6 @@ RockBuilder can use:
 
 RockBuilder supports both Linux and Windows for building the applications.
 
-# Usage
-
 ## Download RockBuilder
 
 ```
@@ -169,11 +167,11 @@ You can also test the flash-attention support in PyTorch with the following exam
 python examples/torch_attention_check.py
 ```
 
-# Other RockBuilder Usage Examples
+## Other RockBuilder Usage Examples
 
 RockBuilder also supports optional build arguments as follows:
 
-## Checkout Only the Source Code
+### Checkout Only the Source Code
 
 This command checks out the source code for the PyTorch 2.8–related applications without building them. The source code will be checked out to the `src_apps` directory.
 
@@ -181,7 +179,7 @@ This command checks out the source code for the PyTorch 2.8–related applicatio
 python rockbuilder.py --checkout apps/pytorch_28_amd.apps
 ```
 
-## Checkout Source Code to a Custom Directory
+### Checkout Source Code to a Custom Directory
 
 This command checks out the source code for each project to the `custom_src_location` directory instead of the default `src_apps` directory.
 
@@ -189,7 +187,7 @@ This command checks out the source code for each project to the `custom_src_loca
 python rockbuilder.py --checkout --src-base-dir custom_src_location apps/pytorch_28_amd.apps
 ```
 
-## Build and Install Python Wheel to a Custom Directory
+### Build and Install Python Wheel to a Custom Directory
 
 This command builds and installs only PyTorch Audio and copies the produced PyTorch Audio wheel to the `test` directory instead of the default `packages/wheels` directory.
 
@@ -199,7 +197,7 @@ This command builds and installs only PyTorch Audio and copies the produced PyTo
 python rockbuilder.py apps/pytorch_audio.cfg --output-dir test
 ```
 
-## Checkout the Source Code of a Single Application to a Custom Directory
+### Checkout the Source Code of a Single Application to a Custom Directory
 
 This command checks out the source code of a single application to the `src_prj/py_audio` directory.
 
@@ -207,7 +205,7 @@ This command checks out the source code of a single application to the `src_prj/
 python rockbuilder.py --checkout apps/pytorch_audio.cfg --src-dir src_prj/py_audio
 ```
 
-## Checkout a Custom Version
+### Checkout a Custom Version
 
 This command checks out the source code of PyTorch Audio version `2.6.0` instead of the version specified in the `pytorch_audio.cfg` file.
 
@@ -215,7 +213,7 @@ This command checks out the source code of PyTorch Audio version `2.6.0` instead
 python rockbuilder.py --checkout pytorch_audio --pytorch_audio-version=v2.6.0
 ```
 
-## Execute Only the Install Phase
+### Execute Only the Install Phase
 
 This command executes only the install phase for a previously built PyTorch Audio.
 
@@ -225,11 +223,11 @@ This command executes only the install phase for a previously built PyTorch Audi
 python rockbuilder.py --install apps/pytorch_audio.cfg
 ```
 
-# Add a New Application to RockBuilder
+## Add a New Application to RockBuilder
 
 RockBuilder uses two types of configuration files stored under the applications directory.
 
-## Project List Configuration Files
+### Project List Configuration Files
 
 `apps/core.apps` is an example of project list configuration file.
 
@@ -245,7 +243,7 @@ app_list=
     pytorch_audio
 ```
 
-## Project Specific Configuration Files
+### Project Specific Configuration Files
 
 `apps/pytorch.cfg` is an example of a project-specific configuration file.
 
