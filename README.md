@@ -227,13 +227,9 @@ python rockbuilder.py --install apps/pytorch_audio.cfg
 
 RockBuilder uses two types of configuration files stored under the applications directory.
 
-### Project List Configuration Files
+### Application Set Configuration File
 
-`apps/core.apps` is an example of project list configuration file.
-
-Project list configuration files define a set of applications built by RockBuilder. Currently, RockBuilder is hardcoded to use `apps/core.apps` to determine the application list, but in the future, this functionality could be extended to support multiple project lists.
-
-Example `core.apps` file:
+`apps/core.apps` is an example of an application set configuration file, listing applications that RockBuilder can build:
 
 ```bash
 [apps]
@@ -243,11 +239,9 @@ app_list=
     pytorch_audio
 ```
 
-### Project Specific Configuration Files
+### Application Configuration File
 
-`apps/pytorch.cfg` is an example of a project-specific configuration file.
-
-A project configuration file defines the actions that RockBuilder executes for the project, including:
+`apps/pytorch.cfg` is an example of an application configuration file, defining the actions that RockBuilder executes for a specific project, including:
 
 - inut
 - checkout
