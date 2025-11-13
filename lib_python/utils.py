@@ -281,35 +281,47 @@ def get_rocm_home_from_python_wheel_rocm_sdk() -> Path:
         cwd=Path.cwd(),
     )
     # workaround until fixed: https://github.com/ROCm/TheRock/issues/1906
-    # need to be called while after pip install on windows
+    # rocm_sdk needs to be called twice after pip install on windows
     if not dir_str:
         dir_str = _capture(
             [sys.executable, "-m", "rocm_sdk", "path", f"--{path_name}"],
             cwd=Path.cwd(),
         )
-    # end of workaround
+    # end of first workaround
     if dir_str and len(dir_str) > 0:
         dir_str.strip()
         ret = Path(dir_str)
-        version_file = ret / ".info/version"
-        if not version_file.exists():
-            # workaround for rocm sdk wheel install on windows
-            # where the rocm_sdk_devel wheels currently have empty dirs
-            # without symlinks on _rocm_sdk_devel directories
-            # beacause of the lack symlink support on windows
-            if dir_str.endswith("_rocm_sdk_devel"):
-                alternative_home = ret.parent
-                alternative_home = alternative_home / "_rocm_sdk_core"
-                version_file = alternative_home / ".info/version"
-                if version_file.exists():
-                    ret = alternative_home
-                    print("Workaround applied to detect ROCM_HOME from the rocm sdk python wheels: " + str(ret))
-                else:
-                    print("Could not find: " + str(version_file))
-                    print("Failed to apply a workaround to detect the ROCM_HOME from rocm sdk python_wheel install")
+        if dir_str.endswith("_rocm_sdk_core"):
+            version_file = ret / ".info/version"
+            if version_file.exists():
+                print("ROCM_HOME detected from the rocm sdk python wheels: ")
+                print("    " + str(ret))
             else:
-               print("Could not fine _rocm_sdk_devel directory from python venv")
-               print("Failed to apply a workaround to detect a ROCM_HOME from rocm sdk python_wheel install")
+                ret = None
+                print("Could not find: " + str(version_file))
+                print("Failed to apply a workaround to detect the ROCM_HOME from rocm sdk python_wheel install")
+		# Workarounds for two different problems here with _rocm_sdk_devel
+        # 1) On Windoes the the rocm_sdk_devel wheels currently have empty dirs
+        # _rocm_sdk_devel directories because windows does not support symlinks
+        # that would be used to point to files on _rocm_sdk_core from _rocm_sdk_devel
+        # 2) Even on Linux the triton 3.5 fails to find llvm amd mlir if _rocm_sdk_devel is used
+        # instead of _rocm_sdk_core
+        elif dir_str.endswith("_rocm_sdk_devel"):
+            alternative_home = ret.parent
+            alternative_home = alternative_home / "_rocm_sdk_core"
+            version_file = alternative_home / ".info/version"
+            if version_file.exists():
+                ret = alternative_home
+                print("Workaround applied to detect ROCM_HOME from the rocm sdk python wheels:")
+                print("    " + str(ret))
+            else:
+                ret = None
+                print("Could not find: " + str(version_file))
+                print("Failed to apply a workaround to detect the ROCM_HOME from rocm sdk python_wheel install")
+        else:
+            ret = None
+            print("Could not fine _rocm_sdk_devel directory from python venv")
+            print("Failed to apply a workaround to detect a ROCM_HOME from rocm sdk python_wheel install")
     else:
         print("rocm_sdk path --root command failed, could not get a ROCM_HOME from rocm_sdk python wheel install")
     return ret
