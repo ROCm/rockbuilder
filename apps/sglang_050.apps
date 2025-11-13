@@ -2,7 +2,6 @@
 # depends from the triton and pytorch
 app_list=
     deps_common
-    amdsmi
     vllm_amd
     aiter
     sglang

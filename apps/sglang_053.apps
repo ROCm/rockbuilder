@@ -1,0 +1,10 @@
+[apps]
+# depends from the triton and pytorch
+app_list=
+    deps_common
+    vllm
+    aiter
+    yalantinglibs
+    mooncake
+    fast-hadamard-transform
+    sglang_053
