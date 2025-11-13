@@ -1,4 +1,4 @@
-From d11e81f21142b37abed4ea734933020bb588df28 Mon Sep 17 00:00:00 2001
+From 9d70b15efb3219c8bcf5590831ee6789482191ea Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 1/4] helper scripts to init and config therock
@@ -111,5 +111,5 @@ index 0000000..9e07727
 +pip install "dvc[s3]"
 +python ./build_tools/fetch_sources.py
 -- 
-2.49.0.windows.1
+2.41.3
 

@@ -1,4 +1,4 @@
-From 914f060e7e1d23c4e66eaf772050aba25ff4f145 Mon Sep 17 00:00:00 2001
+From 337dc3f06b08541e09f94bb66933d0c15bcc0688 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
 Subject: [PATCH 2/4] rccl add more amd gpus
@@ -12,16 +12,16 @@ Subject: [PATCH 2/4] rccl add more amd gpus
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- .../rccl/0001-rccl-add-more-amd-gpus.patch    | 67 +++++++++++++++++++
- 1 file changed, 67 insertions(+)
+ .../rccl/0001-rccl-add-more-amd-gpus.patch    | 66 +++++++++++++++++++
+ 1 file changed, 66 insertions(+)
  create mode 100644 patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
 
 diff --git a/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
 new file mode 100644
-index 0000000..d539791
+index 0000000..7d8ea14
 --- /dev/null
 +++ b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,66 @@
 +From da85566834579cfff0a2ab91b2d9a419c944fde7 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 22 Sep 2025 01:25:44 -0700
@@ -47,7 +47,7 @@ index 0000000..d539791
 +@@ -26,7 +26,8 @@
 +   { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
 + #endif
-+ 
++
 +-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1200__) || defined(__gfx1201__)
 ++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
 ++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__)
@@ -60,7 +60,7 @@ index 0000000..d539791
 ++++ b/src/include/rccl_float8.h
 +@@ -41,7 +41,11 @@ typedef struct
 + } rccl_bfloat8;
-+ 
++
 + // __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
 +-#elif HIP_VERSION >= 60300000 && !(defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1030__))
 ++#elif HIP_VERSION >= 60300000 && \
@@ -68,16 +68,16 @@ index 0000000..d539791
 ++       defined(__gfx1150__) || defined(__gfx1151__) || \
 ++       defined(__gfx1030__) || defined(__gfx1031__) || defined(__gfx1032__) || defined(__gfx1034__) || \
 ++       defined(__gfx1035__) || defined(__gfx1036__) )
-+ 
++
 + #include <hip/hip_fp8.h>
-+ 
++
 +diff --git a/tools/JitterBench/Common.hpp b/tools/JitterBench/Common.hpp
 +index bad12a1b..7489e18f 100644
 +--- a/tools/JitterBench/Common.hpp
 ++++ b/tools/JitterBench/Common.hpp
 +@@ -43,7 +43,9 @@ THE SOFTWARE.
 + #endif
-+ 
++
 + // Macro for collecting HW_REG_HW_ID
 +-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__NVCC__)
 ++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
@@ -86,9 +86,8 @@ index 0000000..d539791
 + #define GetHwId(val) \
 +   val = 0
 + #else
-+-- 
++--
 +2.43.0
-+
 -- 
-2.49.0.windows.1
+2.41.3
 
