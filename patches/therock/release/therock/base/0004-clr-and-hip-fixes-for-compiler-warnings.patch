@@ -1,4 +1,4 @@
-From 0846f1c8ab014ed0ad6f9bd1f01c691dbaf1f4bd Mon Sep 17 00:00:00 2001
+From ea8be5ff1ef4752589618ebdd079cc08ed723f97 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
 Subject: [PATCH 4/4] clr and hip fixes for compiler warnings
@@ -21,16 +21,16 @@ include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...r-and-hip-fix-various-build-warnings.patch | 187 ++++++++++++++++++
- 1 file changed, 187 insertions(+)
+ ...r-and-hip-fix-various-build-warnings.patch | 188 ++++++++++++++++++
+ 1 file changed, 188 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 new file mode 100644
-index 0000000..e781615
+index 0000000..73c499b
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,188 @@
 +From 5179496efaa930eb7b266d9ae7476ef819ff02a7 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Tue, 7 Oct 2025 23:31:11 +0000
@@ -69,9 +69,9 @@ index 0000000..e781615
 +--- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 ++++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 +@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
-+
++ 
 + #define __forceinline__ inline __attribute__((always_inline))
-+
++ 
 +-#if __HIP_NO_IMAGE_SUPPORT
 ++#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
 + #define __hip_img_chk__                                                                            \
@@ -93,43 +93,43 @@ index 0000000..e781615
 ++  hipError_t OpenHandle(ihipIpcEventHandle_t* handle) override;
 ++  hipError_t synchronize() override;
 ++  hipError_t query() override;
-+
++ 
 +-  hipError_t streamWait(hip::Stream* stream, uint flags);
 ++  hipError_t streamWait(hip::Stream* stream, uint flags) override;
-+
++ 
 +   hipError_t recordCommand(amd::Command*& command, amd::HostQueue* queue, uint32_t flags = 0,
 +                            bool batch_flush = true) override;
 +-  hipError_t enqueueRecordCommand(hip::Stream* stream, amd::Command* command);
 ++  hipError_t enqueueRecordCommand(hip::Stream* stream, amd::Command* command) override;
 + };
-+
-+
++ 
++ 
 +diff --git a/projects/clr/hipamd/src/hip_graph_internal.hpp b/projects/clr/hipamd/src/hip_graph_internal.hpp
 +index 0d212e3..a0d22e2 100644
 +--- a/projects/clr/hipamd/src/hip_graph_internal.hpp
 ++++ b/projects/clr/hipamd/src/hip_graph_internal.hpp
 +@@ -2689,7 +2689,7 @@ class hipGraphExternalSemSignalNode : public GraphNode {
-+
++ 
 +   GraphNode* clone() const override { return new hipGraphExternalSemSignalNode(*this); }
-+
++ 
 +-  hipError_t CreateCommand(hip::Stream* stream) {
 ++  hipError_t CreateCommand(hip::Stream* stream) override {
 +     hipError_t status = GraphNode::CreateCommand(stream);
 +     if (status != hipSuccess) {
 +       return status;
 +@@ -2742,7 +2742,7 @@ class hipGraphExternalSemWaitNode : public GraphNode {
-+
++ 
 +   GraphNode* clone() const override { return new hipGraphExternalSemWaitNode(*this); }
-+
++ 
 +-  hipError_t CreateCommand(hip::Stream* stream) {
 ++  hipError_t CreateCommand(hip::Stream* stream) override {
 +     hipError_t status = GraphNode::CreateCommand(stream);
 +     if (status != hipSuccess) {
 +       return status;
 +@@ -2794,7 +2794,7 @@ class hipGraphBatchMemOpNode : public GraphNode {
-+
++ 
 +   GraphNode* clone() const override { return new hipGraphBatchMemOpNode(*this); }
-+
++ 
 +-  hipError_t CreateCommand(hip::Stream* stream) {
 ++  hipError_t CreateCommand(hip::Stream* stream) override {
 +     hipError_t status = GraphNode::CreateCommand(stream);
@@ -155,7 +155,7 @@ index 0000000..e781615
 +@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
 +     f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
 +   f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
-+
++ 
 +-  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
 ++  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
 +   # Generating the method for the API args filling
@@ -168,7 +168,7 @@ index 0000000..e781615
 +@@ -502,7 +502,7 @@ class OneMemoryArgCommand : public Command {
 +     memory_->retain();
 +   }
-+
++ 
 +-  virtual void releaseResources() {
 ++  virtual void releaseResources() override {
 +     memory_->release();
@@ -176,7 +176,7 @@ index 0000000..e781615
 +     Command::releaseResources();
 +@@ -510,14 +510,14 @@ class OneMemoryArgCommand : public Command {
 +   }
-+
++ 
 +   //! Release all pinned memory for this command
 +-  virtual void ReleasePinnedMemory() {
 ++  virtual void ReleasePinnedMemory() override {
@@ -188,7 +188,7 @@ index 0000000..e781615
 +   //! Release all pinned memory for this command
 +-  virtual bool IsMemoryPinned() const { return !pinned_memory_.empty(); }
 ++  virtual bool IsMemoryPinned() const override { return !pinned_memory_.empty(); }
-+
++ 
 +   //! Adds pinned memory, used in this command for later release
 +   virtual void AddPinnedMemory(Memory* pinned) override { pinned_memory_.push_back(pinned); }
 +diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
@@ -198,7 +198,7 @@ index 0000000..e781615
 +@@ -62,7 +62,7 @@ THE SOFTWARE.
 + #define HIP_INTERNAL_EXPORTED_API
 + #endif
-+
++ 
 +-#if __HIP_DEVICE_COMPILE__ == 0
 ++#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
 + // 32-bit Atomics
@@ -211,13 +211,14 @@ index 0000000..e781615
 +@@ -135,4 +135,5 @@ typedef enum hipLibraryOption_e {
 + #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
 + #endif
-+
++ 
 +-#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
 +\ No newline at end of file
 ++#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
 ++
-+--
++-- 
 +2.43.0
++
 -- 
-2.41.3
+2.49.0.windows.1
 
