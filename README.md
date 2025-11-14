@@ -1,6 +1,10 @@
 # RockBuilder
 
-RockBuilder is a configuration-based build system that simplifies the process of integrating and building one or multiple AI applications on top of AMD’s ROCm SDK.
+RockBuilder is a configuration-based build system that simplifies the process of integrating and building one or multiple AI applications on top of AMD’s ROCm SDK. 
+
+[TheRock](https://github.com/ROCm/TheRock) provides the official ROCm images, while RockBuilder supports building additional applications on top of the ROCm SDK that are not tightly integrated with TheRock. RockBuilder is mainly targeted at developers and users who want to add support for building or using these additional applications.
+
+> **Note:** RockBuilder currently supports all stable ROCm versions from TheRock where applicable.
 
 RockBuilder can use:
 
@@ -13,6 +17,8 @@ RockBuilder can use:
     - Installed from Python wheels.
 
 RockBuilder supports both Linux and Windows for building the applications.
+
+>**Note:** Windows support is still less tested compared to Linux. You may encounter issues that haven’t been fully validated yet.
 
 ## Download RockBuilder
 
