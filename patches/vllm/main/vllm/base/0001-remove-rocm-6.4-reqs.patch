@@ -1,6 +1,6 @@
-From aa474a89a00ae818a2d57cc5fe9de25632e141c6 Mon Sep 17 00:00:00 2001
+From 7ec68505c3f8abd0881b22c0eaa6566f48429d0d Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
-Date: Wed, 12 Nov 2025 17:37:39 -0800
+Date: Mon, 17 Nov 2025 01:55:17 -0800
 Subject: [PATCH 1/2] remove rocm 6.4 reqs
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
@@ -23,7 +23,7 @@ index a250ab656..79b9ddc94 100644
      "jinja2",
  ]
 diff --git a/requirements/rocm-build.txt b/requirements/rocm-build.txt
-index 51f58e57a..35cf01ebb 100644
+index b977e80be..35cf01ebb 100644
 --- a/requirements/rocm-build.txt
 +++ b/requirements/rocm-build.txt
 @@ -2,16 +2,16 @@
@@ -46,7 +46,7 @@ index 51f58e57a..35cf01ebb 100644
  setuptools-scm>=8
  wheel
  jinja2>=3.1.6
--amdsmi==6.2.4
+-amdsmi==6.4.3
 +amdsmi
  timm>=1.0.17
 -- 
