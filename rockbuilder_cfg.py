@@ -48,11 +48,19 @@ def get_local_rocm_sdk_path_if_available():
 
 
 class SelectionItem:
-    def __init__(self, name, key, value, selected):
+    def __init__(self,
+                 name,
+                 key,
+                 value,
+                 selected,
+                 extra_key=None,
+                 extra_val=None):
         self.name = name
         self.key = key
         self.value = value
         self.selected = selected
+        self.extra_key=extra_key
+        self.extra_val=extra_val
 
     def is_selected(self):
         return self.selected
@@ -178,6 +186,8 @@ class BaseSelectionList:
                     val_arr = []
                 val_arr.append(item.get_value())
                 selection_dict[item.get_key()] = val_arr
+                if item.extra_key and item.extra_val:
+                    selection_dict[item.extra_key] = item.extra_val
         section = self.get_config_header()
         return ConfigSelection(section, selection_dict)
 
@@ -259,9 +269,11 @@ class SDKSelectionList(BaseSelectionList):
         self.item_list.append(
             SelectionItem(
                 "ROCm SDK from Python Wheels Install: " + whl_server_base_url,
-                rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS,
+                rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER,
                 whl_server_base_url,
                 def_sel,
+                rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION,
+                rcb_const.RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION
             )
         )
 
@@ -430,7 +442,7 @@ class UiManager:
 
     def handle_item_selected(self, sender, item, selected):
         key = item.get_key()
-        if key == rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS:
+        if key == rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER:
             self.stdscr.clear()
             self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
             self.gpu_list.set_multi_selection(False)
@@ -479,12 +491,14 @@ def process_therock_rocm_sdk_python_wheel_install(saved_cfg):
 def process_config_selections(saved_cfg):
     if saved_cfg:
         if saved_cfg.has_section(rcb_const.RCB__CFG__SECTION__ROCM_SDK):
-            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK, rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
+            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
                 res = process_therock_rocm_sdk_build()
                 if not res:
                     print("ROCM SDK build failed")
                     sys.exit()
-            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK, rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS):
+            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER):
                 res = process_therock_rocm_sdk_python_wheel_install(saved_cfg)
                 if not res:
                     print("ROCM SDK install from python wheels failed")

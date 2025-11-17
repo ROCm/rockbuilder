@@ -39,13 +39,13 @@ class RCBConfigReader(configparser.ConfigParser):
                 # read the config values
                 self.read(self.fname)
                 self.gpu_target_list = self.get_as_list(
-                                          rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
-			                              rcb_const.RCB__CFG__KEY__GPUS)
+                                   rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
+                                   rcb_const.RCB__CFG__KEY__GPUS)
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS):
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER):
                     self.rock_sdk_whl_url = get_config_value_from_one_element_list(self,
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS)
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER)
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
                     self.rock_sdk_home_therock_build_dir = get_config_value_from_one_element_list(self,
