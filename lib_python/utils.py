@@ -192,24 +192,36 @@ def get_installed_gpu_list_str(exec_dir: Path) -> str:
     return ret
 
 
-def get_config_value_as_list(rcb_cfg, section_name, key_name):
+def get_config_value(rcb_cfg, section_name, key_name):
+    ret = None
     # we get values as a string reporesenting a list of strings
-    ret = rcb_cfg.get(section_name, key_name)
-    # convert it to real python list object
-    ret = ast.literal_eval(ret)
-    # ret = ret.split(", ")
+    if rcb_cfg.has_option(section_name, key_name):
+        ret = rcb_cfg.get(section_name, key_name)
+    return ret
+
+
+def get_config_list_value_as_python_list(rcb_cfg, section_name, key_name):
+    ret = None
+    # we get values as a string reporesenting a list of strings
+    if rcb_cfg.has_option(section_name, key_name):
+        ret = rcb_cfg.get(section_name, key_name)
+        # convert it to real python list object
+        ret = ast.literal_eval(ret)
+        # ret = ret.split(", ")    return ret
     return ret
 
 
 def get_config_value_from_one_element_list(rcb_cfg, section_name, key_name):
-    res_list = get_config_value_as_list(rcb_cfg, section_name, key_name)
-    if len(res_list) == 1:
-        ret = res_list[0]
-    else:
-        print("List is allowed to have only one value in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
-        print("    section: " + section_name)
-        print("    key: " + key_name)
-        sys.exit(1)
+    ret = None
+    res_list = get_config_list_value_as_python_list(rcb_cfg, section_name, key_name)
+    if res_list:
+        if len(res_list) == 1:
+            ret = res_list[0]
+        else:
+            print("List is allowed to have only one value in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
+            print("    section: " + section_name)
+            print("    key: " + key_name)
+            sys.exit(1)
     return ret
     
 def _is_posix():
@@ -321,28 +333,42 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
     ret = None
     res = True
 
-    rocm_sdk_CMD_UNINSTALL = (sys.executable +
-                  " -m pip cache remove rocm_sdk --cache-dir " +
-                  (rcb_const.RCB__ROOT_DIR / "pip").as_posix())
-    install_deps_cmd = (
-        sys.executable +
-        " -m pip install setuptools --cache-dir " +
-        (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
-    )
-    rocm_sdk_CMD_INSTALL_base = (
-        sys.executable +
-        " -m pip install rocm[libraries,devel] --force-reinstall --cache-dir " +
-        (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
-    )
-    
     try:
+        whl_server_url_base = get_config_value_from_one_element_list(rcb_cfg,
+                                   rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER)
+        if not whl_server_url_base:
+            print("Error, invalid rockbuilder.cfg")
+            print("    delete rockbuilder.cfg to reconfigure it")
+            sys.exit(1)
+        whl_version = get_config_value(rcb_cfg,
+                                   rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION)
         gpu_target = get_config_value_from_one_element_list(rcb_cfg,
                                    rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
                                    rcb_const.RCB__CFG__KEY__GPUS)
-        whl_server_url_base = get_config_value_from_one_element_list(rcb_cfg,
-                                   rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_PYTHON_WHEELS)
         whl_server_url_full = whl_server_url_base + gpu_target
+
+        rocm_sdk_CMD_UNINSTALL = (sys.executable +
+            " -m pip cache remove rocm_sdk --cache-dir " +
+            (rcb_const.RCB__ROOT_DIR / "pip").as_posix())
+        install_deps_cmd = (
+            sys.executable +
+            " -m pip install setuptools --cache-dir " +
+            (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
+        )
+        rocm_sdk_CMD_INSTALL_base = (
+            sys.executable +
+            " -m pip install rocm[libraries,devel] --force-reinstall --cache-dir " +
+            (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
+        )
+        if whl_version:
+            rocm_sdk_CMD_INSTALL_base = (
+                sys.executable +
+                " -m pip install rocm[libraries,devel]==" + whl_version + " --force-reinstall --cache-dir " +
+                (rcb_const.RCB__ROOT_DIR / "pip").as_posix()
+            )
+            #print("rocm_sdk_CMD_INSTALL_base: " + rocm_sdk_CMD_INSTALL_base)
         rocm_sdk_CMD_INSTALL_SDK = rocm_sdk_CMD_INSTALL_base + " --index-url " + whl_server_url_full
         print("install_deps_cmd: " + install_deps_cmd)
         exec_subprocess_cmd(install_deps_cmd, rcb_const.RCB__ROOT_DIR.as_posix())
