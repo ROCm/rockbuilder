@@ -479,11 +479,15 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
             if rocm_home:
                 # check whether the rocm sdk has been configured ok in this location
                 env_var_arr = get_rocm_sdk_env_variables(Path(rocm_home), False, False)
-            if env_var_arr:
-                set_rocm_home_to_env_variables(rocm_home)
+                if env_var_arr:
+                    set_rocm_home_to_env_variables(rocm_home)
+                else:
+                    print("Failed to use ROCM_SDK from location configured in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
+                    print("   ROCM_SDK location searched: " + rocm_home)
+                    sys.exit(1)
             else:
-                print("Failed to use ROCM_SDK from location configured in " + rcb_const.RCB__CFG__BASE_FILE_NAME)
-                print("   ROCM_SDK location searched: " + rocm_home)
+                print("Could not read ROCM_HOME from configuration file: ")
+                print("    " + rcb_const.RCB__CFG__BASE_FILE_NAME)
                 sys.exit(1)
 
 

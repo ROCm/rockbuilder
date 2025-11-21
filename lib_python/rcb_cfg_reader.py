@@ -46,6 +46,11 @@ class RCBConfigReader(configparser.ConfigParser):
                     self.rock_sdk_whl_url = get_config_value_from_one_element_list(self,
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER)
+                elif self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED):
+                    self.rock_sdk_whl_url = get_config_value_from_one_element_list(self,
+                                   rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                                   rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED)
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
                     self.rock_sdk_home_therock_build_dir = get_config_value_from_one_element_list(self,
