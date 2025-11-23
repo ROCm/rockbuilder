@@ -1,7 +1,7 @@
 From 4225f1210c5773ebdd418d382b30c85ed57014d7 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sun, 23 Nov 2025 01:29:28 -0800
-Subject: [PATCH 5/5] install newer cmake via pip
+Subject: [PATCH 5/6] install newer cmake via pip
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

@@ -12,16 +12,18 @@ else
 fi
 
 ./rockbuilder.py apps/therock.cfg
-if [ ! $? -eq 0 ]; then
+RES=$?
+if [ ! $RES -eq 0 ]; then
     echo ""
-    echo "Failed to build therock"
+    echo "Failed to build therock, err: $RES"
     exit 1
 fi
 
 ./rockbuilder.py apps/pytorch_28_amd.apps
-if [ ! $? -eq 0 ]; then
+RES=$?
+if [ ! $RES -eq 0 ]; then
     echo ""
-    echo "Failed to build apps/pytorch_28_amd.apps"
+    echo "Failed to build apps/pytorch_28_amd.apps, err: $RES"
     exit 1
 fi
 

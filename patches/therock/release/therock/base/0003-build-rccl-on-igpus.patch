@@ -1,7 +1,7 @@
 From f490ad253222f45b3b030b851d43b1daf9f3040e Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 30 Sep 2025 05:56:14 +0000
-Subject: [PATCH 3/5] build rccl on igpus
+Subject: [PATCH 3/6] build rccl on igpus
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
