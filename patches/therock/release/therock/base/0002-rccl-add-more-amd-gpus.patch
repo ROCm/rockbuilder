@@ -1,7 +1,7 @@
-From b0f4d37465a32753842de364e58ecaf0dbb9be5f Mon Sep 17 00:00:00 2001
+From d08f5795eebdfe38abc023e450a490ac9b21d5b9 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 2/6] rccl add more amd gpus
+Subject: [PATCH 2/4] rccl add more amd gpus
 
 - disable trace_hwreg assembly command
   s_getreg_b32 HW_REG_HW_ID for gpus and igpus's that
