@@ -1,0 +1,32 @@
+From b1aa83aa50ecc1ab8452ee6347da81a5da8661c9 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@pilppa.org>
+Date: Tue, 25 Nov 2025 02:39:30 -0800
+Subject: [PATCH 5/5] set LLVM_DEFAULT_TARGET_TRIPLE if specified
+
+- set target triple when compiling the amd-llvm
+  if environment variable
+  ROCM_SDK_TARGET_TRIPLE has been set.
+  This fixes building on Mageia Linux.
+
+Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+---
+ compiler/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
+index e90608a..d92e883 100644
+--- a/compiler/CMakeLists.txt
++++ b/compiler/CMakeLists.txt
+@@ -10,6 +10,9 @@ if(THEROCK_ENABLE_COMPILER)
+   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+     list(APPEND _extra_llvm_cmake_args "-DLLVM_ENABLE_PEDANTIC=OFF")
+   endif()
++  if(DEFINED ENV{ROCM_SDK_TARGET_TRIPLE})
++    list(APPEND _extra_llvm_cmake_args "-DLLVM_DEFAULT_TARGET_TRIPLE=$ENV{ROCM_SDK_TARGET_TRIPLE}")
++  endif()
+ 
+   # If the compiler is not pristine (i.e. has patches), then there will be a
+   # ".amd-llvm.smrev" file present which must be used instead of the auto
+-- 
+2.41.3
+
