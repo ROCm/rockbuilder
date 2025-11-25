@@ -1,7 +1,7 @@
-From 317d7444f04d8b2d4d81c621a5aa7c91207e459c Mon Sep 17 00:00:00 2001
+From 3cdd09c45e41c3af6616369d3571941761a388fd Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 30 Sep 2025 05:56:14 +0000
-Subject: [PATCH 3/4] build rccl on igpus
+Subject: [PATCH 3/5] build rccl on igpus
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -37,5 +37,5 @@ index a72016c..a43e120 100644
  # gfx120X family
  therock_add_amdgpu_target(gfx1200 "AMD RX 9060 / XT" FAMILY dgpu-all gfx120X-all)
 -- 
-2.49.0.windows.1
+2.41.3
 

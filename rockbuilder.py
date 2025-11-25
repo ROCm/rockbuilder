@@ -381,6 +381,33 @@ def verify_rockbuilder_config(rcb_cfg_reader):
             print("ROCM SDK and target GPU configure failed.")
             sys.exit(1)
 
+def check_distro_specific_environment_variables():
+    is_posix = not any(platform.win32_ver())
+    if is_posix:
+        distro_info = {}
+        os_release_path = '/etc/os-release'
+        if os.path.exists(os_release_path):
+            try:
+                with open(os_release_path, 'r') as cur_file:
+                    for cur_line in cur_file:
+                        cur_line = cur_line.strip()
+                        if cur_line and '=' in cur_line:
+                            cur_key, cur_val = cur_line.split('=', 1)
+                            # remove quotes from the value if present
+                            cur_val = cur_val.strip('"\'')
+                            distro_info[cur_key] = cur_val
+            except IOError as e:
+                print(f"Error reading {os_release_path}: {e}")
+        else:
+            print(f"File not found: {os_release_path}")
+    else:
+        distro_info["ID"] = "windows"
+    if "ID" in distro_info:
+        distro = distro_info["ID"]
+        if distro == "mageia":
+            if "ROCM_SDK_TARGET_TRIPLE" not in os.environ:
+                os.environ["ROCM_SDK_TARGET_TRIPLE"] = "x86_64-mageia-linux"
+
 # Ensures that rocm_sdk install exist or will be installed by using
 # the method that has been saved to rockbuilder.cfg config file.
 # (by using the rockbuilder_cfg.py)
@@ -391,6 +418,7 @@ def verify_rockbuilder_config(rcb_cfg_reader):
 # - rocm_sdk from the therock sources
 # - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
 def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
+    check_distro_specific_environment_variables()
     if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
         return
     default_src_base_dir = rcb_const.get_app_src_base_dir()
