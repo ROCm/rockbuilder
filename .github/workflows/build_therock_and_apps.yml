@@ -1,0 +1,42 @@
+name: build_therock_and_apps.yml
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'applications'
+        required: true
+        default: 'apps/pytorch_29_amd.apps'
+        type: choice
+        options:
+        - apps/pytorch_27_amd.apps
+        - apps/pytorch_28_amd.apps
+        - apps/pytorch_29_amd.apps
+
+jobs:
+  run-job-build-apps:
+    runs-on: azure-linux-scale-rocm
+    #runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-24.04] # manylinux builds target Linux environments
+        python_version: ['3.12'] # Specify Python 3.13
+        gpu_version: ['gfx942']
+    steps:
+      - name: checkout_rcb
+        uses: actions/checkout@v4
+
+      - name: cp_rockbuilder_config
+        run: cp ./.github/build_files/configs/rockbuilder_${{ matrix.gpu_version }}_therock_localbuild.cfg ./rockbuilder.cfg
+
+      - name: chmod+x_ubuntu_setup.sh
+        run: chmod +x ./.github/build_files/ubuntu_setup.sh
+
+      - name: run_ubuntu_setup.sh
+        run: ./.github/build_files/ubuntu_setup.sh
+
+      - name: chmod+x_build_script
+        run: chmod +x ./.github/build_files/init_and_build_apps.sh
+
+      - name: run_build_script
+        run: ./.github/build_files/init_and_build_apps.sh ${{ matrix.python_version }} ${{ matrix.gpu_version }}

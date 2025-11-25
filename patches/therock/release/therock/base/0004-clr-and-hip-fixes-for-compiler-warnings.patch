@@ -1,4 +1,4 @@
-From ea8be5ff1ef4752589618ebdd079cc08ed723f97 Mon Sep 17 00:00:00 2001
+From f9e590770adaaa9d3e62ef6be060b7af5e485926 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
 Subject: [PATCH 4/4] clr and hip fixes for compiler warnings
@@ -27,7 +27,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 new file mode 100644
-index 0000000..73c499b
+index 00000000..73c499b8
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 @@ -0,0 +1,188 @@
@@ -220,5 +220,5 @@ index 0000000..73c499b
 +2.43.0
 +
 -- 
-2.49.0.windows.1
+2.43.0
 
