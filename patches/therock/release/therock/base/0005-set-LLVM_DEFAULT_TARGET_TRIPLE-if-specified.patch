@@ -1,20 +1,20 @@
-From b1aa83aa50ecc1ab8452ee6347da81a5da8661c9 Mon Sep 17 00:00:00 2001
-From: Mika Laitio <lamikr@pilppa.org>
-Date: Tue, 25 Nov 2025 02:39:30 -0800
+From ba2ca1a466df99dff6c9bd899069a68d634448fc Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 27 Nov 2025 03:52:07 +0000
 Subject: [PATCH 5/5] set LLVM_DEFAULT_TARGET_TRIPLE if specified
 
-- set target triple when compiling the amd-llvm
-  if environment variable
-  ROCM_SDK_TARGET_TRIPLE has been set.
-  This fixes building on Mageia Linux.
+Set target triple when compiling the amd-llvm
+if environment variable
+ROCM_SDK_TARGET_TRIPLE has been set.
+This fixes the building of TheRock on Mageia Linux.
 
-Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  compiler/CMakeLists.txt | 3 +++
  1 file changed, 3 insertions(+)
 
 diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
-index e90608a..d92e883 100644
+index 9a71d3ca..9ba524bf 100644
 --- a/compiler/CMakeLists.txt
 +++ b/compiler/CMakeLists.txt
 @@ -10,6 +10,9 @@ if(THEROCK_ENABLE_COMPILER)
@@ -25,8 +25,8 @@ index e90608a..d92e883 100644
 +    list(APPEND _extra_llvm_cmake_args "-DLLVM_DEFAULT_TARGET_TRIPLE=$ENV{ROCM_SDK_TARGET_TRIPLE}")
 +  endif()
  
-   # If the compiler is not pristine (i.e. has patches), then there will be a
-   # ".amd-llvm.smrev" file present which must be used instead of the auto
+   # Building Flang is very memory-intensive on systems with many cores. Allow
+   # users to specify the level of concurrency for these tasks so they can
 -- 
-2.41.3
+2.43.0
 
