@@ -1,27 +1,27 @@
-From 941d390015d572ec43f35f7f37de97df789e9a5f Mon Sep 17 00:00:00 2001
+From 8e2903cb5ebc653c4d45795b3419d8fe62e0955d Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 1/5] helper scripts to init and config therock
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- rcb_build.bat  |  8 ++++++++
- rcb_build.sh   |  4 ++++
- rcb_config.bat |  8 ++++++++
- rcb_config.sh  |  4 ++++
- rcb_init.bat   | 24 ++++++++++++++++++++++++
- rcb_init.sh    |  7 +++++++
- 6 files changed, 55 insertions(+)
+ rcb_build.bat      |  8 ++++++++
+ rcb_build.sh       |  4 ++++
+ rcb_config.bat     |  8 ++++++++
+ rcb_config.sh      |  4 ++++
+ rcb_pre_config.bat | 25 +++++++++++++++++++++++++
+ rcb_pre_config.sh  |  8 ++++++++
+ 6 files changed, 57 insertions(+)
  create mode 100644 rcb_build.bat
  create mode 100644 rcb_build.sh
  create mode 100644 rcb_config.bat
  create mode 100755 rcb_config.sh
- create mode 100644 rcb_init.bat
- create mode 100755 rcb_init.sh
+ create mode 100644 rcb_pre_config.bat
+ create mode 100755 rcb_pre_config.sh
 
 diff --git a/rcb_build.bat b/rcb_build.bat
 new file mode 100644
-index 0000000..a2fd930
+index 00000000..a2fd930c
 --- /dev/null
 +++ b/rcb_build.bat
 @@ -0,0 +1,8 @@
@@ -35,7 +35,7 @@ index 0000000..a2fd930
 +cmake --build build
 diff --git a/rcb_build.sh b/rcb_build.sh
 new file mode 100644
-index 0000000..90e6e40
+index 00000000..90e6e405
 --- /dev/null
 +++ b/rcb_build.sh
 @@ -0,0 +1,4 @@
@@ -45,7 +45,7 @@ index 0000000..90e6e40
 +cmake --build build
 diff --git a/rcb_config.bat b/rcb_config.bat
 new file mode 100644
-index 0000000..39e807c
+index 00000000..39e807ca
 --- /dev/null
 +++ b/rcb_config.bat
 @@ -0,0 +1,8 @@
@@ -59,7 +59,7 @@ index 0000000..39e807c
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.sh b/rcb_config.sh
 new file mode 100755
-index 0000000..09526f7
+index 00000000..09526f7a
 --- /dev/null
 +++ b/rcb_config.sh
 @@ -0,0 +1,4 @@
@@ -67,12 +67,12 @@ index 0000000..09526f7
 +
 +source ./.venv/bin/activate
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
-diff --git a/rcb_init.bat b/rcb_init.bat
+diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
 new file mode 100644
-index 0000000..cd7dd93
+index 00000000..fe442c22
 --- /dev/null
-+++ b/rcb_init.bat
-@@ -0,0 +1,24 @@
++++ b/rcb_pre_config.bat
+@@ -0,0 +1,25 @@
 +set "VENV_NAME=.venv"
 +set "SCRIPT_DIR=%~dp0"
 +
@@ -97,12 +97,13 @@ index 0000000..cd7dd93
 +)
 +pip install "dvc[s3]"
 +python ./build_tools/fetch_sources.py
-diff --git a/rcb_init.sh b/rcb_init.sh
++pip install -r ./requirements-external.txt
+diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
 new file mode 100755
-index 0000000..9e07727
+index 00000000..7d798ecc
 --- /dev/null
-+++ b/rcb_init.sh
-@@ -0,0 +1,7 @@
++++ b/rcb_pre_config.sh
+@@ -0,0 +1,8 @@
 +#!/bin/bash
 +
 +python3 -m venv ./.venv && source ./.venv/bin/activate
@@ -110,6 +111,7 @@ index 0000000..9e07727
 +pip install -r ./requirements.txt
 +pip install "dvc[s3]"
 +python ./build_tools/fetch_sources.py
++pip install -r ./requirements-external.txt
 -- 
-2.41.3
+2.43.0
 
