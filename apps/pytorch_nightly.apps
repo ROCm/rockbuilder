@@ -2,7 +2,7 @@
 app_list=
     deps_common
     pytorch_aotriton_nightly
-    triton_pytorch_nightly
+    triton_nightly
     pytorch_nightly
     pytorch_vision_nightly
     pytorch_torchcodec_nightly

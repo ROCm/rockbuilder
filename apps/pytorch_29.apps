@@ -1,7 +1,7 @@
 [apps]
 app_list=
     deps_common
-    triton_pytorch_29
+    triton_35
     pytorch_29
     pytorch_vision_25
     pytorch_audio_29
