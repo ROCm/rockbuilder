@@ -470,14 +470,14 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                     hipcc_exec_name = "hipcc"
                 else:
                     hipcc_exec_name = "hipcc.bat"
-                for folder_path in Path(rocm_home_root_path).glob("**/" + hipcc_exec_name):
-                    hipcc_home = folder_path.parent
+                for exec_path in Path(rocm_home_root_path).glob("**/" + hipcc_exec_name):
+                    hipcc_home = exec_path.parent
                     # make sure that we found bin/clang and not clang folder
                     if hipcc_home.name.lower() == "bin":
                         ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
-                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + folder_path.as_posix())
+                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + exec_path.as_posix())
                         print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_BIN_DIR + "=" + hipcc_home.as_posix())
-                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + folder_path.as_posix())
+                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_HIPCC_EXEC + "=" + exec_path.as_posix())
                         hipcc_home = hipcc_home.parent
                         if hipcc_home.is_dir():
                             hipcc_home = hipcc_home.resolve()
@@ -493,36 +493,60 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                             break
                 # find clang
                 if is_posix:
-                    clang_exec_name = "clang"
+                    clang_cc_exec_name = "clang"
+                    clang_cxx_exec_name = "clang++"
+                    clang_cl_exec_name = None
                 else:
-                    clang_exec_name = "clang.exe"
+                    clang_cc_exec_name = "clang.exe"
+                    clang_cxx_exec_name = "clang++.exe"
+                    # clang-cl exist on windows to provide a clang style wrapper for microsoft's own msvc compiler
+                    clang_cl_exec_name = "clang-cl.exe"
                 res = False
-                for folder_path in Path(rocm_home_root_path).glob("**/" + clang_exec_name):
-                    clang_home = folder_path.parent
-                    # make sure that we found bin/clang and not clang folder
+                for exec_path in Path(rocm_home_root_path).glob("**/" + clang_cxx_exec_name):
+                    clang_home = exec_path.parent
+                    # make sure that we found bin/clang++ and not clang++ folder
                     if clang_home.name.lower() == "bin":
-                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
-                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_EXEC + "=" + folder_path.as_posix())
-                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
-                        print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_EXEC + "=" + folder_path.as_posix())
-                        clang_home = clang_home.parent
-                        if clang_home.is_dir():
-                            res = True
-                            clang_home = clang_home.resolve()
-                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + clang_home.as_posix())
-                            clang_libdir = clang_home / "lib64"
-                            if clang_libdir.is_dir():
-                                ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_LIB_DIR + "=" + clang_libdir.as_posix())
+                        clang_cc_exec = clang_home / clang_cc_exec_name
+                        if os.path.isfile(clang_cc_exec.as_posix()):
+                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
+                            #clang
+                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CC_EXEC + "=" + clang_cc_exec.as_posix())
+                            #clang++
+                            ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CXX_EXEC + "=" + exec_path.as_posix())
+                            #clang-cl on windows
+                            clang_cl_exec = None
+                            if clang_cl_exec_name:
+                                clang_cl_exec = clang_home / clang_cl_exec_name
+                                if os.path.isfile(clang_cl_exec.as_posix()):
+                                    ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CL_EXEC + "=" + clang_cl_exec.as_posix())
+                                else:
+                                    print("Error, could not find: " + clang_cl_exec_name)
+                                    break
                             else:
-                                clang_libdir = clang_home / "lib"
+                                clang_cl_exec = None
+                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_BIN_DIR + "=" + clang_home.as_posix())
+                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CC_EXEC + "=" + clang_cc_exec.as_posix())
+                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CXX_EXEC + "=" + exec_path.as_posix())
+                            if clang_cl_exec:
+                                print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_CL_EXEC + "=" + clang_cl_exec.as_posix())
+                            clang_home = clang_home.parent
+                            if clang_home.is_dir():
+                                res = True
+                                clang_home = clang_home.resolve()
+                                ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + clang_home.as_posix())
+                                clang_libdir = clang_home / "lib64"
                                 if clang_libdir.is_dir():
                                     ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_LIB_DIR + "=" + clang_libdir.as_posix())
-                            print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + str(clang_home))
-                            break
+                                else:
+                                    clang_libdir = clang_home / "lib"
+                                    if clang_libdir.is_dir():
+                                        ret.append(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_LIB_DIR + "=" + clang_libdir.as_posix())
+                                print(rcb_const.RCB__ENV_VAR__ROCM_SDK_CLANG_HOME_DIR + "=" + str(clang_home))
+                                break
                 if not res:
                     err_happened = True
                     print("")
-                    print("Error, could not find clang from ROCM_SDK directory:")
+                    print("Error, could not find clang or clang++ from ROCM_SDK directory:")
                     print("    " + str(rocm_home_root_path))
                     print("")
                     if exit_on_error:
