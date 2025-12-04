@@ -118,8 +118,53 @@ class RockProjectRepo:
         print(ret)
         return ret
 
-    def _handle_RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR(self, delete_cmd):
-        print("RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR: " + delete_cmd)
+    def _handle_subprocess_exec_RCB_CALLBACK__RESET_APP_SRC_REPOSITORY(self, repo_path, command):
+        ret = True
+        try:
+            result = subprocess.run(
+                command,
+                cwd=repo_path,
+                shell=True,
+                check=True,         # CalledProcessError if the command fails
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True           # Decode output as text (str)
+            )
+            print(f"{command} success: {repo_path}")
+        except subprocess.CalledProcessError as e:
+            print(f"{command} failed with return code {e.returncode}")
+            print("STDOUT:", e.stdout)
+            print("STDERR:", e.stderr)
+            ret = False
+        except FileNotFoundError:
+            # This catches if 'git' itself isn't found in the system's PATH
+            print("Error: 'git' executable not found. Make sure Git is installed and in your system's PATH.")
+            ret = False
+        return ret
+
+
+    def _handle_RCB_CALLBACK__RESET_APP_SRC_REPOSITORY(self, repo_path):
+        ret = True
+        print(rcb_const.RCB_CALLBACK__RESET_APP_SRC_REPOSITORY + ": " + str(repo_path))
+        if os.path.isdir(repo_path):
+            cmd_arr = [
+			    "git reset --hard",
+			    "git clean -xfd",
+			    "git submodule foreach --recursive 'git reset --hard'",
+			    "git submodule foreach --recursive 'git clean -xfd'"
+			]
+            for cmd in cmd_arr:
+                ret = self._handle_subprocess_exec_RCB_CALLBACK__RESET_APP_SRC_REPOSITORY(repo_path, cmd)
+                if not ret:
+                    break
+        else:
+            print(f"Error: Repository path not found: '{repo_path}'")
+            ret = False
+        return ret
+
+    def _handle_RCB_CALLBACK__DELETE_APP_SRC_SUBDIR(self, delete_cmd):
+        ret = True
+        print(delete_cmd)
         cmd_arr = delete_cmd.split()
         if len(cmd_arr) > 1:
             try:
@@ -134,10 +179,11 @@ class RockProjectRepo:
                             shutil.rmtree(item_to_delete)
             except PermissionError:
                 print(f"Error: Permission denied to delete: {item_to_delete}")
-                sys.exit(1)
+                ret = False
             except OSError as e:
                 print(f"Error deleting: {item_to_delete}")
-                sys.exit(1)
+                ret = False
+        return ret
 
     # 1) search the latest wheel file from certain directory
     # 2) copy wheel to packages/wheel directory
@@ -211,7 +257,8 @@ class RockProjectRepo:
         while ((ret == True) and
                (exec_cmd is not None) and
                ((exec_cmd.startswith(rcb_const.RCB_CALLBACK__INSTALL_PYTHON_WHEEL)) or
-                (exec_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR)))):
+                (exec_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_APP_SRC_SUBDIR)) or
+                (exec_cmd.startswith(rcb_const.RCB_CALLBACK__RESET_APP_SRC_REPOSITORY)))):
             line_arr = exec_cmd.splitlines(True)
             special_cmd = line_arr[0]
             # then concat rest of the lines for next command to be executed
@@ -221,8 +268,11 @@ class RockProjectRepo:
                 exec_cmd = None
             if special_cmd.startswith(rcb_const.RCB_CALLBACK__INSTALL_PYTHON_WHEEL):
                 ret = self._handle_RCB_CALLBACK__INSTALL_PYTHON_WHEEL(special_cmd)
-            if special_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR):
-                ret = self._handle_RCB_CALLBACK__DELETE_FROM_APP_SRC_DIR(special_cmd)
+            elif special_cmd.startswith(rcb_const.RCB_CALLBACK__DELETE_APP_SRC_SUBDIR):
+                ret = self._handle_RCB_CALLBACK__DELETE_APP_SRC_SUBDIR(special_cmd)
+            elif special_cmd.startswith(rcb_const.RCB_CALLBACK__RESET_APP_SRC_REPOSITORY):
+                ret = self._handle_RCB_CALLBACK__RESET_APP_SRC_REPOSITORY(self.app_src_dir)
+
         # then handle regular command or multiple commands
         if (ret == True) and (exec_cmd is not None):
             is_multiline = self.is_multiline_text(exec_cmd)
