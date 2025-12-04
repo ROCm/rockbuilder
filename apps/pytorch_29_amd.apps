@@ -1,0 +1,7 @@
+[apps]
+app_list=
+    deps_common
+    triton_35
+    pytorch_29_amd
+    pytorch_vision_25
+    pytorch_audio_29
