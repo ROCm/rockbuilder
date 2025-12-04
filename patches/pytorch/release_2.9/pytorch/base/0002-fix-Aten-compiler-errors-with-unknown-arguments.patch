@@ -1,0 +1,56 @@
+From 7307592bb650cbe6ab2a202a71d37512341ae8e3 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 3 Dec 2025 23:46:02 +0000
+Subject: [PATCH] fix Aten compiler errors with unknown arguments
+
+clang++/amdclang++ provided by therock 7.10 and 7.11
+failed to build pytorch for error:
+
+clang++: error: unknown argument: '-amdgpu-coerce-illegal-types=1'
+
+Fix by checking whether the currently used compiler supports these
+flags. Flag is supported by the clang versions that are provided
+by the rocm versions newer than 7.2.0
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aten/src/ATen/CMakeLists.txt | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/aten/src/ATen/CMakeLists.txt b/aten/src/ATen/CMakeLists.txt
+index 6c095680733..cf567eede6d 100644
+--- a/aten/src/ATen/CMakeLists.txt
++++ b/aten/src/ATen/CMakeLists.txt
+@@ -301,14 +301,25 @@ IF(USE_FBGEMM_GENAI)
+ 
+       # Add additional HIPCC compiler flags for performance
+       set(FBGEMM_GENAI_EXTRA_HIPCC_FLAGS
+-        -mllvm
+-        -amdgpu-coerce-illegal-types=1
+-        -mllvm
+-        -enable-post-misched=0
++	-mllvm
++	-enable-post-misched=0
+         -mllvm
+         -greedy-reverse-local-assignment=1
+         -fhip-new-launch-api)
+ 
++      # check whether amdgpu-coerce-illegal-types flag is supported by currently used clang
++      # clang versions provided by rocm_sdk < 7.2 supports this flag
++      message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
++      include(CheckCXXCompilerFlag)
++      set(LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG "-mllvm -amdgpu-coerce-illegal-types")
++      check_cxx_compiler_flag("${LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG}" LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG_SUPPORTED)
++      if(LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG_SUPPORTED)
++          message(STATUS "Compiler supports ${LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG}. Enabling option.")
++	  string(APPEND FBGEMM_GENAI_EXTRA_HIPCC_FLAGS "-mllvm -amdgpu-coerce-illegal-types=1")
++      else()
++          message(STATUS "Compiler does not support ${LLVM_AMDGPU_COERCE_ILLEGAL_TYPES_FLAG}. Option not enabled.")
++      endif()
++
+       hip_add_library(
+         fbgemm_genai STATIC
+         ${fbgemm_genai_native_rocm_hip}
+-- 
+2.52.0
+
