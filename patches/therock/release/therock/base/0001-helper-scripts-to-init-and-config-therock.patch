@@ -1,19 +1,19 @@
-From 8e2903cb5ebc653c4d45795b3419d8fe62e0955d Mon Sep 17 00:00:00 2001
+From 888eb093ac1cee77c4559a8f74a16eb9f3904324 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 1/5] helper scripts to init and config therock
+Subject: [PATCH 1/4] helper scripts to init, config and build therock
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.bat      |  8 ++++++++
- rcb_build.sh       |  4 ++++
+ rcb_build.sh       | 13 +++++++++++++
  rcb_config.bat     |  8 ++++++++
- rcb_config.sh      |  4 ++++
- rcb_pre_config.bat | 25 +++++++++++++++++++++++++
- rcb_pre_config.sh  |  8 ++++++++
- 6 files changed, 57 insertions(+)
+ rcb_config.sh      | 12 ++++++++++++
+ rcb_pre_config.bat | 26 ++++++++++++++++++++++++++
+ rcb_pre_config.sh  | 15 +++++++++++++++
+ 6 files changed, 82 insertions(+)
  create mode 100644 rcb_build.bat
- create mode 100644 rcb_build.sh
+ create mode 100755 rcb_build.sh
  create mode 100644 rcb_config.bat
  create mode 100755 rcb_config.sh
  create mode 100644 rcb_pre_config.bat
@@ -34,15 +34,24 @@ index 00000000..a2fd930c
 +call "%VENV_NAME%\Scripts\activate.bat"
 +cmake --build build
 diff --git a/rcb_build.sh b/rcb_build.sh
-new file mode 100644
-index 00000000..90e6e405
+new file mode 100755
+index 00000000..df28a910
 --- /dev/null
 +++ b/rcb_build.sh
-@@ -0,0 +1,4 @@
-+#!/bin/bash
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
 +
++export CUR_DIR=$PWD
++echo "rcb_build.sh current directory: $CUR_DIR"
 +source ./.venv/bin/activate
++echo "rcb_build.sh python activated"
++CMAKE_VERSION_OUTPUT=$(cmake --version)
++echo "rcb_build.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
++echo "rcb_build.sh therock cmake build command started"
 +cmake --build build
++RES=$?
++echo "rcb_build.sh therock cmake build command done, res: $RES"
++
 diff --git a/rcb_config.bat b/rcb_config.bat
 new file mode 100644
 index 00000000..39e807ca
@@ -59,20 +68,28 @@ index 00000000..39e807ca
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.sh b/rcb_config.sh
 new file mode 100755
-index 00000000..09526f7a
+index 00000000..0ace5dc7
 --- /dev/null
 +++ b/rcb_config.sh
-@@ -0,0 +1,4 @@
-+#!/bin/bash
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
 +
++export CUR_DIR=$PWD
++echo "rcb_config.sh current directory: $CUR_DIR"
 +source ./.venv/bin/activate
++echo "rcb_config.sh python activated"
++CMAKE_VERSION_OUTPUT=$(cmake --version)
++echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
++echo "rcb_config.sh therock cmake config command started"
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
++RES=$?
++echo "rcb_config.sh therock cmake config command done, res: $RES"
 diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
 new file mode 100644
-index 00000000..fe442c22
+index 00000000..09a68f89
 --- /dev/null
 +++ b/rcb_pre_config.bat
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +set "VENV_NAME=.venv"
 +set "SCRIPT_DIR=%~dp0"
 +
@@ -90,6 +107,8 @@ index 00000000..fe442c22
 +    python.exe -m pip install --upgrade pip
 +    pip install -r requirements.txt
 +    pip install windows-curses
++    pip install "dvc[s3]"
++    pip install "cmake>=3.28.0,<4.0.0"
 +    echo Python virtual environment created and enabled: "%VENV_NAME%"
 +) else (
 +    call "%VENV_NAME%\Scripts\activate.bat"
@@ -97,21 +116,27 @@ index 00000000..fe442c22
 +)
 +pip install "dvc[s3]"
 +python ./build_tools/fetch_sources.py
-+pip install -r ./requirements-external.txt
 diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
 new file mode 100755
-index 00000000..7d798ecc
+index 00000000..4347c43f
 --- /dev/null
 +++ b/rcb_pre_config.sh
-@@ -0,0 +1,8 @@
-+#!/bin/bash
+@@ -0,0 +1,15 @@
++#!/usr/bin/env bash
 +
++export CUR_DIR=$PWD
++echo "rcb_init.sh current directory: $CUR_DIR"
 +python3 -m venv ./.venv && source ./.venv/bin/activate
++echo "rcb_init.sh python activated"
 +pip install --upgrade pip
 +pip install -r ./requirements.txt
 +pip install "dvc[s3]"
++pip install "cmake>=3.28.0,<4.0.0"
++CMAKE_VERSION_OUTPUT=$(cmake --version)
++echo "rcb_init.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
++echo "rcb_init.sh therock source fetch started"
 +python ./build_tools/fetch_sources.py
-+pip install -r ./requirements-external.txt
++echo "rcb_init.sh therock source fetch done"
 -- 
 2.43.0
 
