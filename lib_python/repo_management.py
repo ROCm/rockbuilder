@@ -56,7 +56,7 @@ class RockProjectRepo:
         ret = True
         if exec_cmd is not None:
             exec_dir = self._replace_env_variables(exec_dir)
-            print("exec_cmd: " + exec_cmd)
+            print("exec_cmd: " + exec_cmd + ", exec_dir: " + exec_dir)
             # capture_output=True --> can print output after process exist, not possible to see the output during the build time
             # capture_output=False --> can print output only during build time
             # result = subprocess.run(exec_cmd, shell=True, capture_output=True, text=True)
@@ -89,7 +89,7 @@ class RockProjectRepo:
                 if result.stdout:
                     print(result.stdout)
             else:
-                print("Operation failed")
+                print("Batch file operation failed")
                 if result.stderr:
                     print(f"Error2: {result.stderr}")
         return ret
