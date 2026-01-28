@@ -1,0 +1,76 @@
+From 87a91d8e074bac0cb4f287513c1f4a8ea5c86669 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@pilppa.org>
+Date: Sun, 7 Sep 2025 19:28:23 -0700
+Subject: [PATCH 2/2] prioritize lib64 over lib
+
+fixes linking errors on systems which have 32 bit version
+of ffmpeg installed on /usr/lib and 64 bit on /usr/lib64
+
+Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+---
+ setup.py | 28 ++++++++++++++++++++++++----
+ 1 file changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/setup.py b/setup.py
+index 1d7f301..16a4a91 100644
+--- a/setup.py
++++ b/setup.py
+@@ -388,13 +388,34 @@ def make_video_decoders_extensions():
+         print(f"{build_without_extensions_msg} Couldn't find ffmpeg binary.")
+         return []
+ 
++    def get_ffmpeg_library_dir(ffmpeg_root, multiarch_tag, fname_base):
++        ret = None
++        lib_name_arr = [fname_base + ".so", fname_base + ".a"]
++        # prioritize lib64 over lib because on 64 bit systems the binaries build are most likely
++        # wanted to be 64 bit but on some systems there may also be both the 64 bit and 32 bit
++        # version of ffmpeg libraries installed (as a dependencies of steam for example)
++        lib_dir_arr = [os.path.join(ffmpeg_root, "lib64"), os.path.join(ffmpeg_root, "lib")]
++        for lib_dir in lib_dir_arr:
++            if multiarch_tag:
++                candidate_dir_arr = [lib_dir, os.path.join(lib_dir, platform_tag)]
++            else:
++                candidate_dir_arr = [lib_dir]
++            for candidate_dir in candidate_dir_arr:
++                if ret:
++                    break
++                for lib_name in lib_name_arr:
++                    full_file_path = os.path.join(candidate_dir, lib_name)
++                    if os.path.exists(full_file_path):
++                        ret = candidate_dir_arr
++                        break
++        return ret
++
+     def find_ffmpeg_libraries():
+-        ffmpeg_libraries = {"libavcodec", "libavformat", "libavutil", "libswresample", "libswscale"}
++        ffmpeg_libraries = ["libavcodec", "libavformat", "libavutil", "libswresample", "libswscale"]
+ 
+         ffmpeg_bin = os.path.dirname(ffmpeg_exe)
+         ffmpeg_root = os.path.dirname(ffmpeg_bin)
+         ffmpeg_include_dir = os.path.join(ffmpeg_root, "include")
+-        ffmpeg_library_dir = os.path.join(ffmpeg_root, "lib")
+ 
+         gcc = os.environ.get("CC", shutil.which("gcc"))
+         platform_tag = subprocess.run([gcc, "-print-multiarch"], stdout=subprocess.PIPE)
+@@ -403,10 +424,8 @@ def make_video_decoders_extensions():
+         if platform_tag:
+             # Most probably a Debian-based distribution
+             ffmpeg_include_dir = [ffmpeg_include_dir, os.path.join(ffmpeg_include_dir, platform_tag)]
+-            ffmpeg_library_dir = [ffmpeg_library_dir, os.path.join(ffmpeg_library_dir, platform_tag)]
+         else:
+             ffmpeg_include_dir = [ffmpeg_include_dir]
+-            ffmpeg_library_dir = [ffmpeg_library_dir]
+ 
+         for library in ffmpeg_libraries:
+             library_found = False
+@@ -418,6 +437,7 @@ def make_video_decoders_extensions():
+                 print(f"{build_without_extensions_msg}")
+                 print(f"{library} header files were not found.")
+                 return None, None
++        ffmpeg_library_dir = get_ffmpeg_library_dir(ffmpeg_root, platform_tag, ffmpeg_libraries[0])
+ 
+         return ffmpeg_include_dir, ffmpeg_library_dir
+ 
+-- 
+2.41.3
+
