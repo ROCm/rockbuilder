@@ -446,24 +446,26 @@ class RockProjectRepo:
                 cwd=repo_path,
             )
 
-    def apply_repo_patches(self, repo_path: Path, patches_path: Path):
+    def apply_repo_patches(self, repo_path: Path, patch_dir: Path):
         """Applies patches to a repository from the given patches directory."""
-        patch_files = list(patches_path.glob("*.patch"))
-        print("repo_path: " + str(repo_path) + ", patches_path: " + str(patches_path))
-        if not patch_files:
-            return
-        patch_files.sort(key=lambda p: p.name)
-        self.exec(
-            [
-                "git",
-                "am",
-                "--ignore-whitespace",
-                "--committer-date-is-author-date",
-                "--no-gpg-sign",
-            ]
-            + patch_files,
-            cwd=repo_path,
-        )
+        patch_cnt = 0
+        patch_files = list(patch_dir.glob("*.patch"))
+        print("repo_dir: " + str(repo_path) + ", patch_dir: " + str(patch_dir))
+        if patch_files:
+            patch_cnt = len(patch_files)
+            patch_files.sort(key=lambda p: p.name)
+            self.exec(
+                [
+                    "git",
+                    "am",
+                    "--ignore-whitespace",
+                    "--committer-date-is-author-date",
+                    "--no-gpg-sign",
+                ]
+                + patch_files,
+                cwd=repo_path,
+            )
+        print(f"patch count: {patch_cnt}")
 
 
     def apply_main_repository_patches(
