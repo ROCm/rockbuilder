@@ -5,3 +5,4 @@ app_list=
     pytorch_29
     pytorch_vision_25
     pytorch_audio_29
+    pytorch_torchcodec_0_09_1
