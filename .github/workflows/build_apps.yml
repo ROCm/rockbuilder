@@ -88,7 +88,7 @@ jobs:
     name: rockbuilder_${{ inputs.app_cfg_name }}__${{ inputs.amdgpu_family }}__py_${{ inputs.python_version }}
     runs-on: ${{ github.repository_owner == 'ROCm' && 'azure-linux-scale-rocm' || 'ubuntu-24.04' }}
     container:
-      image: ghcr.io/rocm/therock_build_manylinux_x86_64@sha256:6e8242d347af7e0c43c82d5031a3ac67b669f24898ea8dc2f1d5b7e4798b66bd
+      image: ghcr.io/rocm/therock_build_manylinux_x86_64@sha256:db2b63f938941dde2abc80b734e64b45b9995a282896d513a0f3525d4591d6cb
     env:
       OUTPUT_DIR: ${{ github.workspace }}/output
       PACKAGE_DIST_DIR: ${{ github.workspace }}/output/packages/dist
@@ -112,6 +112,12 @@ jobs:
         run: |
           ls -la
           ls -la .github/utils/
+          ls -la /opt/
+          ls -la /opt/python
+          ls -la /opt/python-shared
+          ls -la /opt/python-shared/cp312-cp312
+          ls -la /opt/python-shared/cp312-cp312/bin
+          ls -la /opt/python-shared/cp312-cp312/lib
 
       - name: get_cp_python_base_name
         run: |
@@ -121,8 +127,8 @@ jobs:
       - name: add_shared_python_cp_version_dir_to_path
         run: |
           python_dir="/opt/python-shared/${{ env.cp_version }}"
-          if ! [ -x "${python_dir}/bin/python" ]; then
-            echo "ERROR: Could not find python: ${python_dir}"
+          if ! [ -x "${python_dir}/bin/python3" ]; then
+            echo "ERROR: Could not find python3: ${python_dir}/bin/python3"
             exit 1
           fi
           echo "python_dir: ${python_dir}"
