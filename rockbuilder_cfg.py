@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 # curses works both on linux and windows
-#   linux: pip install curses
-#   windows: pip install windows-curses
+#   linux: pip3 install curses
+#   windows: pip3 install windows-curses
 import configparser
 import curses
 import os
