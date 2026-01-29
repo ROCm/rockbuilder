@@ -20,7 +20,7 @@ HIPIFY_COMMIT_MESSAGE = "DO NOT SUBMIT: HIPIFY"
 class RockProjectRepo:
     def __init__(
         self,
-        wheel_install_dir,
+        wheel_install_base_dir: Path,
         app_name: str,
         app_cfg_name: str,
         app_root_dir: Path,
@@ -32,7 +32,7 @@ class RockProjectRepo:
         app_patch_dir_base_name: str,
         patch_dir_root_arr: Path,
     ):
-        self.wheel_install_dir = wheel_install_dir
+        self.wheel_install_base_dir = wheel_install_base_dir
         self.app_name = app_name
         self.app_cfg_name = app_cfg_name
         self.app_src_dir = Path(app_src_dir)
@@ -191,11 +191,14 @@ class RockProjectRepo:
     def _handle_RCB_CALLBACK__INSTALL_PYTHON_WHEEL(self, CMD_INSTALL):
         ret = True
         CMD_INSTALL_arr = CMD_INSTALL.split()
+        # wheels will be installed to appname specific subfolder under base install dir
+        wheel_install_target_dir = self.wheel_install_base_dir / self.app_name
         print("len(CMD_INSTALL_arr): " + str(len(CMD_INSTALL_arr)))
         if len(CMD_INSTALL_arr) == 2:
             wheel_search_path = CMD_INSTALL_arr[1]
             wheel_search_path = self._replace_env_variables(wheel_search_path)
             print("wheel_search_path: " + wheel_search_path)
+            print("wheel_install_dir: " + wheel_install_target_dir.resolve().as_posix())
             # 1) search the wheel
             latest_whl = self._get_latest_file(wheel_search_path, "*.whl")
             if latest_whl:
@@ -203,12 +206,12 @@ class RockProjectRepo:
                 try:
                     print("latest_whl: " + latest_whl)
                     # 2) copy wheel
-                    ret = self.wheel_install_dir.is_dir()
+                    ret = wheel_install_target_dir.is_dir()
                     if not ret:
-                        self.wheel_install_dir.mkdir(parents=True, exist_ok=True)
-                    ret = self.wheel_install_dir.is_dir()
+                        wheel_install_target_dir.mkdir(parents=True, exist_ok=True)
+                    ret = wheel_install_target_dir.is_dir()
                     if ret:
-                        shutil.copy2(latest_whl, self.wheel_install_dir)
+                        shutil.copy2(latest_whl, wheel_install_target_dir)
                     # 3) install wheel
                     os.environ["PIP_BREAK_SYSTEM_PACKAGES"] = "1"
                     # res = subprocess.call([ "pip", "install", latest_whl])
