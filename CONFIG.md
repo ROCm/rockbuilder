@@ -151,17 +151,17 @@ Each command can be a single command or a sequence of commands.
 Example:
 
 ```
-CMD_INIT = python -m pip install -r ./requirements.txt
-CMD_CLEAN = python setup.py clean
-CMD_HIPIFY = python tools/amd_build/build_amd.py
-CMD_BUILD = python setup.py bdist_wheel
+CMD_INIT = python3 -m pip install -r ./requirements.txt
+CMD_CLEAN = python3 setup.py clean
+CMD_HIPIFY = python3 tools/amd_build/build_amd.py
+CMD_BUILD = python3 setup.py bdist_wheel
 ```
 
 Example of a sequence of commands:
 
 ```
 CMD_INSTALL = cd ${ROCM_HOME}/share/amd_smi
-              pip install .
+              pip3 install .
 ```
 
 #### Command Execution Directory

@@ -22,9 +22,9 @@ if DEFINED VIRTUAL_ENV (
         )
         echo Activating python virtual environment: "%VENV_NAME%"
         call "%VENV_NAME%\Scripts\activate.bat"
-        python.exe -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install windows-curses
+        python.exe -m pip3 install --upgrade pip
+        pip3 install -r requirements.txt
+        pip3 install windows-curses
         echo Python virtual environment created and enabled: "%VENV_NAME%"
     ) else (
         call "%VENV_NAME%\Scripts\activate.bat"
