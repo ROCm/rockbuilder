@@ -361,7 +361,7 @@ class UiManager:
             SelectionItem("gfx103X-dgpu", key_name_gpus, "gfx103X-dgpu", False)
         )
         self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx110X-dgpu", key_name_gpus, "gfx110X-dgpu", False)
+            SelectionItem("gfx110X-all", key_name_gpus, "gfx110X-all", False)
         )
         self.gpu_pip_wheel_list.append(SelectionItem("gfx1150", key_name_gpus, "gfx1150", False))
         self.gpu_pip_wheel_list.append(SelectionItem("gfx1151", key_name_gpus, "gfx1151", False))
