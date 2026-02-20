@@ -583,11 +583,15 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
     else:
         err_happened = True
         print("")
-        print("Error, " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED +
+        if exit_on_error:
+            print("Error, " + rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED +
               " is not set to FALSE in application config file")
-        print("   or ROCM_HOME is not defined")
-        print("   or existing ROCM SDK build is not detected in directory:")
-        print(rocm_home_root_path.as_posix())
+            print("   or ROCM_HOME is not defined")
+            print("   or existing ROCM SDK build is not detected in directory:")
+            print("   " + rocm_home_root_path.as_posix())
+        else:
+            print("Warning, ROCM SDK build is not detected in directory:")
+            print("    " + rocm_home_root_path.as_posix())
         print("")
         if exit_on_error:
             sys.exit(1)

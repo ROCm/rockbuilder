@@ -304,9 +304,9 @@ class RockProjectRepo:
                     ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
             else:
                 # execute just a single command
-                print("------ " + exec_phase_name + " start ----------")
-                self._exec_subprocess_cmd("env", cmd_exec_dir)
-                print("------ " + exec_phase_name + " end ----------")
+                #print("------ " + exec_phase_name + " start ----------")
+                #self._exec_subprocess_cmd("env", cmd_exec_dir)
+                #print("------ " + exec_phase_name + " end ----------")
                 time.sleep(1)
                 ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
         return ret
@@ -549,11 +549,11 @@ class RockProjectRepo:
                     )
                     print("Key: " + key_value_str)
                     sys.exit(1)
+            #print("------ env-settings start ----------")
+            #self._exec_subprocess_cmd("env", ".")
+            #print("------ env-settings end ----------")
         else:
             print("No environment settings specified")
-        print("------ env-settings start ----------")
-        self._exec_subprocess_cmd("env", ".")
-        print("------ env-settings end ----------")
 
         # create build dir
         cur_p = Path(self.app_build_dir)

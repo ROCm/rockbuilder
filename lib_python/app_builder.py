@@ -274,10 +274,10 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     # printout project builder specific info for logging and debug purposes
     def printout(self, phase):
-        print("Project build phase " + phase + ": -----")
-        print("    Project_name:     " + self.app_name)
-        print("    Project cfg name: " + self.app_cfg_base_name)
-        print("    Project cfg file: " + self.app_cfg_path.as_posix())
+        print("Project_name: " + self.app_name)
+        print("    Exec phase:       " + phase)
+        print("    Cfg name:         " + self.app_cfg_base_name)
+        print("    Cfg file:         " + self.app_cfg_path.as_posix())
         if self.app_version:
             print("    Version:          " + self.app_version)
         print("    Source dir:       " + self.app_src_dir_path.as_posix())
@@ -408,10 +408,13 @@ class RockProjectBuilder(configparser.ConfigParser):
             if "ROCM_HOME" in os.environ:
                 rocm_home_root_path = Path(os.environ["ROCM_HOME"])
                 rocm_home_root_path = rocm_home_root_path.resolve()
-                rocm_sdk_setup_cmd_list = get_rocm_sdk_env_variables(rocm_home_root_path,
+                if self.use_rocm_sdk:
+                    rocm_sdk_setup_cmd_list = get_rocm_sdk_env_variables(rocm_home_root_path,
                                                                      False,
                                                                      True)
-                printout_list_items(rocm_sdk_setup_cmd_list)
+                    printout_list_items(rocm_sdk_setup_cmd_list)
+                else:
+                    rocm_sdk_setup_cmd_list = []
             else:
                 print("Failed to setup env for rockbuilder project")
                 print("    ROCM_HOME not defined")
