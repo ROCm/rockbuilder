@@ -1,17 +1,17 @@
-From 888eb093ac1cee77c4559a8f74a16eb9f3904324 Mon Sep 17 00:00:00 2001
+From cd398a6c65dd609ac37f294df104d556c36a2760 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 1/4] helper scripts to init, config and build therock
+Subject: [PATCH 1/5] helper scripts to init, config and build therock
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.bat      |  8 ++++++++
  rcb_build.sh       | 13 +++++++++++++
  rcb_config.bat     |  8 ++++++++
- rcb_config.sh      | 12 ++++++++++++
+ rcb_config.sh      | 13 +++++++++++++
  rcb_pre_config.bat | 26 ++++++++++++++++++++++++++
- rcb_pre_config.sh  | 15 +++++++++++++++
- 6 files changed, 82 insertions(+)
+ rcb_pre_config.sh  | 17 +++++++++++++++++
+ 6 files changed, 85 insertions(+)
  create mode 100644 rcb_build.bat
  create mode 100755 rcb_build.sh
  create mode 100644 rcb_config.bat
@@ -21,7 +21,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/rcb_build.bat b/rcb_build.bat
 new file mode 100644
-index 00000000..a2fd930c
+index 0000000..a2fd930
 --- /dev/null
 +++ b/rcb_build.bat
 @@ -0,0 +1,8 @@
@@ -35,7 +35,7 @@ index 00000000..a2fd930c
 +cmake --build build
 diff --git a/rcb_build.sh b/rcb_build.sh
 new file mode 100755
-index 00000000..df28a910
+index 0000000..b4073cf
 --- /dev/null
 +++ b/rcb_build.sh
 @@ -0,0 +1,13 @@
@@ -50,11 +50,11 @@ index 00000000..df28a910
 +echo "rcb_build.sh therock cmake build command started"
 +cmake --build build
 +RES=$?
-+echo "rcb_build.sh therock cmake build command done, res: $RES"
-+
++echo "rcb_build.sh, res: $RES"
++exit $RES
 diff --git a/rcb_config.bat b/rcb_config.bat
 new file mode 100644
-index 00000000..39e807ca
+index 0000000..39e807c
 --- /dev/null
 +++ b/rcb_config.bat
 @@ -0,0 +1,8 @@
@@ -68,10 +68,10 @@ index 00000000..39e807ca
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.sh b/rcb_config.sh
 new file mode 100755
-index 00000000..0ace5dc7
+index 0000000..ed7e5b7
 --- /dev/null
 +++ b/rcb_config.sh
-@@ -0,0 +1,12 @@
+@@ -0,0 +1,13 @@
 +#!/usr/bin/env bash
 +
 +export CUR_DIR=$PWD
@@ -83,10 +83,11 @@ index 00000000..0ace5dc7
 +echo "rcb_config.sh therock cmake config command started"
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
 +RES=$?
-+echo "rcb_config.sh therock cmake config command done, res: $RES"
++echo "rcb_config.sh, res: $RES"
++exit $RES
 diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
 new file mode 100644
-index 00000000..09a68f89
+index 0000000..09a68f8
 --- /dev/null
 +++ b/rcb_pre_config.bat
 @@ -0,0 +1,26 @@
@@ -118,10 +119,10 @@ index 00000000..09a68f89
 +python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
 new file mode 100755
-index 00000000..4347c43f
+index 0000000..5bafa89
 --- /dev/null
 +++ b/rcb_pre_config.sh
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,17 @@
 +#!/usr/bin/env bash
 +
 +export CUR_DIR=$PWD
@@ -136,7 +137,9 @@ index 00000000..4347c43f
 +echo "rcb_init.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
 +echo "rcb_init.sh therock source fetch started"
 +python ./build_tools/fetch_sources.py
-+echo "rcb_init.sh therock source fetch done"
++RES=$?
++echo "rcb_pre_config.sh, res: $RES"
++exit $RES
 -- 
-2.43.0
+2.52.0
 

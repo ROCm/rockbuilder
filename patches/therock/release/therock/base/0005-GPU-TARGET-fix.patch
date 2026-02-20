@@ -1,0 +1,34 @@
+From 8ffc88ecffff00908b46cac40f7a89b8fc2eca76 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Thu, 19 Feb 2026 08:08:59 -0800
+Subject: [PATCH 5/5] GPU TARGET fix
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ cmake/therock_amdgpu_targets.cmake | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index f175298..af95e95 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -223,6 +223,17 @@ function(therock_validate_amdgpu_targets)
+   set(_explicit_selections)
+   get_property(_available_families GLOBAL PROPERTY THEROCK_AMDGPU_TARGET_FAMILIES)
+   list(REMOVE_DUPLICATES _available_families)
++
++  if(DEFINED THEROCK_AMDGPU_TARGETS AND NOT "${THEROCK_AMDGPU_TARGETS}" STREQUAL "")
++    if(NOT DEFINED THEROCK_AMDGPU_FAMILIES OR "${THEROCK_AMDGPU_FAMILIES}" STREQUAL "")
++      set(THEROCK_AMDGPU_FAMILIES ${THEROCK_AMDGPU_TARGETS})
++      set(THEROCK_AMDGPU_FAMILIES ${THEROCK_AMDGPU_TARGETS})
++      set(THEROCK_AMDGPU_TARGETS "")
++      message("THEROCK_AMDGPU_FAMILIES not specified, setting it to: ${THEROCK_AMDGPU_TARGETS}")
++    endif()
++  endif()
++  message("THEROCK_AMDGPU_TARGETS: ${THEROCK_AMDGPU_TARGETS}")
++  message("THEROCK_AMDGPU_FAMILIES: ${THEROCK_AMDGPU_FAMILIES}")
+   get_property(_available_targets GLOBAL PROPERTY THEROCK_AMDGPU_TARGETS)
+
+   # Expand per-arch families (THEROCK_AMDGPU_FAMILIES -> THEROCK_AMDGPU_TARGETS).
+--
+2.52.0

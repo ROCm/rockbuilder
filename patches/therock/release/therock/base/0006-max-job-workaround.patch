@@ -1,0 +1,25 @@
+From 9e00b4ece1276e68ff972f56e020c32502b2faea Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Thu, 19 Feb 2026 08:09:17 -0800
+Subject: [PATCH 6/6] max job workaround
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ rcb_config.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rcb_config.sh b/rcb_config.sh
+index ed7e5b7..1a5b6ce 100755
+--- a/rcb_config.sh
++++ b/rcb_config.sh
+@@ -7,7 +7,7 @@ echo "rcb_config.sh python activated"
+ CMAKE_VERSION_OUTPUT=$(cmake --version)
+ echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
+ echo "rcb_config.sh therock cmake config command started"
+-cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
++cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} -DFLANG_PARALLEL_COMPILE_JOBS=8 -DFLANG_PARALLEL_COMPILE_JOBS=12 -DLLVM_PARALLEL_LINK_JOBS=6 .
+ RES=$?
+ echo "rcb_config.sh, res: $RES"
+ exit $RES
+--
+2.52.0

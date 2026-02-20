@@ -1,7 +1,7 @@
-From b69eacbc7a92b9e7cdbec330240b1bf000927ae0 Mon Sep 17 00:00:00 2001
+From 6832f2fecd73415b34a96c37688a782842a8b5ba Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
-Subject: [PATCH 4/5] clr and hip fixes for compiler warnings
+Subject: [PATCH 3/5] clr and hip fixes for compiler warnings
 
 Fix warnings that are showed when building for example
 the clr project itself or other projects like miopen
@@ -25,24 +25,24 @@ include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...r-and-hip-fix-various-build-warnings.patch | 101 ++++++++++++++++++
- 1 file changed, 101 insertions(+)
+ ...r-and-hip-fix-various-build-warnings.patch | 87 +++++++++++++++++++
+ 1 file changed, 87 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
 new file mode 100644
-index 00000000..6677a93a
+index 0000000..a141dae
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0009-clr-and-hip-fix-various-build-warnings.patch
-@@ -0,0 +1,101 @@
-+From 5b8e9b11a090f073f3f748072ebc0e39dc408246 Mon Sep 17 00:00:00 2001
+@@ -0,0 +1,87 @@
++From 63f7ac0bbfcd002ee4580255ff1149d23249d5e3 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 1 Dec 2025 09:06:00 +0000
 +Subject: [PATCH] clr and hip fixes for compiler warnings
 +
 +Fix warnings that are showed when building for example
 +the clr project itself or other projects like miopen
-+    
++
 +Examples from the fixed warnings:
 +
 +therock/rocm-systems/projects/clr/hipamd/src/hip_event.hpp:223:14:
@@ -63,14 +63,13 @@ index 00000000..6677a93a
 +Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
 + projects/clr/hipamd/include/hip/amd_detail/host_defines.h | 2 +-
-+ projects/clr/hipamd/src/hip_mempool.cpp                   | 2 +-
 + projects/clr/hipamd/src/hip_prof_gen.py                   | 2 +-
 + projects/hip/include/hip/hip_common.h                     | 2 +-
 + projects/hip/include/hip/linker_types.h                   | 3 ++-
-+ 5 files changed, 6 insertions(+), 5 deletions(-)
++ 4 files changed, 5 insertions(+), 4 deletions(-)
 +
 +diff --git a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
-+index 8081966cf7..2a5712bdb6 100644
++index 8081966..2a5712b 100644
 +--- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 ++++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 +@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
@@ -82,21 +81,8 @@ index 00000000..6677a93a
 + #define __hip_img_chk__                                                                            \
 +   __attribute__((unavailable("The image/texture API not supported on the device")))
 + #else
-+diff --git a/projects/clr/hipamd/src/hip_mempool.cpp b/projects/clr/hipamd/src/hip_mempool.cpp
-+index f80c564389..4a10c0e151 100644
-+--- a/projects/clr/hipamd/src/hip_mempool.cpp
-++++ b/projects/clr/hipamd/src/hip_mempool.cpp
-+@@ -32,7 +32,7 @@ namespace {
-+ inline bool IsMemPoolValid(MemoryPool* mem_pool) {
-+   bool result = false;
-+   for (auto it : g_devices) {
-+-    if (result = it->IsMemoryPoolValid(mem_pool) == true) {
-++    if ((result = it->IsMemoryPoolValid(mem_pool)) == true) {
-+       break;
-+     }
-+   }
 +diff --git a/projects/clr/hipamd/src/hip_prof_gen.py b/projects/clr/hipamd/src/hip_prof_gen.py
-+index e7baccbfec..6d1d1767de 100755
++index e7baccb..6d1d176 100755
 +--- a/projects/clr/hipamd/src/hip_prof_gen.py
 ++++ b/projects/clr/hipamd/src/hip_prof_gen.py
 +@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
@@ -109,7 +95,7 @@ index 00000000..6677a93a
 +   f.write('// HIP API args filling helper\n')
 +   f.write('static inline void hipApiArgsInit(hip_api_id_t id, hip_api_data_t* data) {\n')
 +diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
-+index 4a7dcff6cb..6fffe7fcf7 100644
++index 4a7dcff..6fffe7f 100644
 +--- a/projects/hip/include/hip/hip_common.h
 ++++ b/projects/hip/include/hip/hip_common.h
 +@@ -62,7 +62,7 @@ THE SOFTWARE.
@@ -122,7 +108,7 @@ index 00000000..6677a93a
 + #define __HIP_ARCH_HAS_GLOBAL_INT32_ATOMICS__ (0)
 + #define __HIP_ARCH_HAS_GLOBAL_FLOAT_ATOMIC_EXCH__ (0)
 +diff --git a/projects/hip/include/hip/linker_types.h b/projects/hip/include/hip/linker_types.h
-+index 1131910322..ea369f4835 100755
++index 1131910..ea369f4 100755
 +--- a/projects/hip/include/hip/linker_types.h
 ++++ b/projects/hip/include/hip/linker_types.h
 +@@ -135,4 +135,5 @@ typedef enum hipLibraryOption_e {
@@ -137,5 +123,5 @@ index 00000000..6677a93a
 +2.52.0
 +
 -- 
-2.43.0
+2.52.0
 
