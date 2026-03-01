@@ -369,7 +369,13 @@ class UiManager:
             SelectionItem("gfx120X-all", key_name_gpus, "gfx120X-all", True)
         )
         self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx90X-dcgpu", key_name_gpus, "gfx90X-dcgpu", False)
+            SelectionItem("gfx906", key_name_gpus, "gfx906", False)
+        )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx908", key_name_gpus, "gfx908", False)
+        )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx90a", key_name_gpus, "gfx90a", False)
         )
         self.gpu_pip_wheel_list.append(
             SelectionItem("gfx94X-dcgpu", key_name_gpus, "gfx94X-dcgpu", False)

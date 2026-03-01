@@ -55,7 +55,7 @@ RCB__CFG__KEY__ROCM_SDK_FROM_BUILD           = "rocm_sdk_build"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER  = "rocm_sdk_whl_server"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED  = "rocm_sdk_whl"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION = "rocm_sdk_whl_version"
-RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION = "7.11.0a20260121"
+RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION = "7.12.0a20260228"
 RCB__CFG__KEY__GPUS                          = "gpus"
 
 RCB__APPS_CFG__SECTION_APPS                  = "apps"
