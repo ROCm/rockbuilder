@@ -1,4 +1,4 @@
-From 888eb093ac1cee77c4559a8f74a16eb9f3904324 Mon Sep 17 00:00:00 2001
+From 061b7cf18d89bcc168b2a7c47f58cadb870923aa Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 1/4] helper scripts to init, config and build therock
@@ -6,12 +6,12 @@ Subject: [PATCH 1/4] helper scripts to init, config and build therock
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.bat      |  8 ++++++++
- rcb_build.sh       | 13 +++++++++++++
+ rcb_build.sh       | 12 ++++++++++++
  rcb_config.bat     |  8 ++++++++
  rcb_config.sh      | 12 ++++++++++++
  rcb_pre_config.bat | 26 ++++++++++++++++++++++++++
  rcb_pre_config.sh  | 15 +++++++++++++++
- 6 files changed, 82 insertions(+)
+ 6 files changed, 81 insertions(+)
  create mode 100644 rcb_build.bat
  create mode 100755 rcb_build.sh
  create mode 100644 rcb_config.bat
@@ -35,10 +35,10 @@ index 00000000..a2fd930c
 +cmake --build build
 diff --git a/rcb_build.sh b/rcb_build.sh
 new file mode 100755
-index 00000000..df28a910
+index 00000000..963399cd
 --- /dev/null
 +++ b/rcb_build.sh
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,12 @@
 +#!/usr/bin/env bash
 +
 +export CUR_DIR=$PWD
@@ -51,7 +51,6 @@ index 00000000..df28a910
 +cmake --build build
 +RES=$?
 +echo "rcb_build.sh therock cmake build command done, res: $RES"
-+
 diff --git a/rcb_config.bat b/rcb_config.bat
 new file mode 100644
 index 00000000..39e807ca
@@ -68,7 +67,7 @@ index 00000000..39e807ca
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.sh b/rcb_config.sh
 new file mode 100755
-index 00000000..0ace5dc7
+index 00000000..4152f8ec
 --- /dev/null
 +++ b/rcb_config.sh
 @@ -0,0 +1,12 @@
@@ -81,7 +80,7 @@ index 00000000..0ace5dc7
 +CMAKE_VERSION_OUTPUT=$(cmake --version)
 +echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
 +echo "rcb_config.sh therock cmake config command started"
-+cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=${RCB_AMDGPU_TARGETS} .
++cmake -B build -GNinja -DTHEROCK_AMDGPU_FAMILIES=${RCB_AMDGPU_TARGETS} .
 +RES=$?
 +echo "rcb_config.sh therock cmake config command done, res: $RES"
 diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
