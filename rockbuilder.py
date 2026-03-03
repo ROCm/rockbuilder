@@ -6,6 +6,7 @@ import sys
 import os
 import time
 import platform
+import math
 import subprocess
 import lib_python.app_builder as app_builder
 import rockbuilder_cfg as rcb_cfg_writer
@@ -17,6 +18,7 @@ from lib_python.utils import install_rocm_sdk_from_python_wheels
 from lib_python.utils import get_rocm_sdk_env_variables
 from lib_python.utils import verify_env__python
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
+from lib_python.utils import get_os_memory_info
 from pathlib import Path, PurePosixPath
 
 
@@ -365,7 +367,6 @@ def do_therock(prj_builder, args):
             ret = True
     return ret
 
-
 def verify_rockbuilder_config(rcb_cfg_reader):
     if rcb_cfg_reader:
         gpu_list = rcb_cfg_reader.get_configured_gpu_list()
@@ -381,7 +382,30 @@ def verify_rockbuilder_config(rcb_cfg_reader):
             print("ROCM SDK and target GPU configure failed.")
             sys.exit(1)
 
-def check_distro_specific_environment_variables():
+def _check_cpu_count_env_variable():
+    # default values
+    cpu_cnt_total = os.cpu_count()
+    if cpu_cnt_total <= 0:
+        cpu_cnt_total = 8
+    cpu_cnt_build = cpu_cnt_total
+    cpu_cnt_link = math.floor(cpu_cnt_total / 5)
+    # min amount of mem reserved per build process
+    min_mem_gp_per_cpu = 2
+    # cpu count available on the system
+    mem_total, mem_free = get_os_memory_info()
+    if mem_free:
+        cpu_cnt_build = math.floor(mem_free / min_mem_gp_per_cpu)
+    if cpu_cnt_total:
+        cpu_cnt_build = min(cpu_cnt_build, cpu_cnt_total)
+        cpu_cnt_link = math.floor(cpu_cnt_build / 5)
+        cpu_cnt_link = max(cpu_cnt_link, 1)
+    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD] = str(cpu_cnt_build)
+    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK] = str(cpu_cnt_link)
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD])
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK])
+
+
+def _check_distro_specific_environment_variables():
     is_posix = not any(platform.win32_ver())
     if is_posix:
         distro_info = {}
@@ -418,7 +442,8 @@ def check_distro_specific_environment_variables():
 # - rocm_sdk from the therock sources
 # - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
 def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
-    check_distro_specific_environment_variables()
+    _check_distro_specific_environment_variables()
+    _check_cpu_count_env_variable()
     if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
         return
     default_src_base_dir = rcb_const.get_app_src_base_dir()

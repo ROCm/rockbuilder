@@ -599,3 +599,36 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
     if err_happened:
         ret = None
     return ret
+    
+"""
+    return mem_total and mem_free in gb.
+"""
+def get_os_memory_info():
+    try:
+        is_posix = not any(platform.win32_ver())
+        if is_posix:
+            with open('/proc/meminfo', 'r') as f:
+                lines = f.readlines()    
+            mem_info = {}
+            for line in lines:
+                parts = line.split(':')
+                if len(parts) == 2:
+                    name = parts[0].strip()
+                    # value is in KB
+                value = int(parts[1].split()[0])
+                mem_info[name] = value
+            mem_total_gb = mem_info.get('MemTotal', 0) / (1024**2)
+            avail_gb = mem_info.get('MemAvailable', mem_info.get('MemFree', 0)) / (1024**2)
+            return mem_total_gb, avail_gb
+        else:
+            # Query free and total physical memory in KB
+            cmd = 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value'
+            output = subprocess.check_output(cmd, shell=True).decode()
+            mem_info = dict(line.split('=') for line in output.strip().split('\r\r\n') if '=' in line)
+            
+            mem_total_gb = int(mem_info['TotalVisibleMemorySize']) / (1024**2)
+            mem_free_gb = int(mem_info['FreePhysicalMemory']) / (1024**2)
+            return mem_total_gb, mem_free_gb
+    except Exception:
+        return None, None
+
