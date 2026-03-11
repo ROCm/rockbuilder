@@ -1,0 +1,216 @@
+From b62a8494178521bd87b94d999731c0c0fbf30af0 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 9 Mar 2026 17:52:06 -0700
+Subject: [PATCH 6/8] rocm-systems ASAN patches
+
+Patches to fix linking errors on ASAN builds for
+1) rocrtst
+2) aqlprofile
+3) roctracer
+
+Fixes following type of errors
+
+1) rocrtst
+rocrtst ':xnack+" gpu-id parsing fix
+
+Parsing of the gpu id fails if the gpu-name
+contains colon separated features lile ":xnack+"
+
+rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:3:5: error: expected end of line in preprocessor expression
+5.1         3 | #if ROCRTST_GPU < 0x1000
+5.1           |     ^
+5.1     <command line>:1:26: note: expanded from macro 'ROCRTST_GPU'
+5.1         1 | #define ROCRTST_GPU 0x950:xnack+
+5.1           |                          ^
+5.1     rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:6:20: error: invalid token at start of a preprocessor expression
+5.1         6 |   #if (ROCRTST_GPU == 0x908) || (ROCRTST_GPU == 0x90a) || (ROCRTST_GPU == 0x940)
+5.1           |                    ^
+5.1     2 errors generated.
+
+2) roctracer
+
+33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
+33.2    FAILED: test/MatrixTranspose_ctest
+...
+33.2    ld.lld: error: undefined symbol: __asan_option_detect_stack_use_after_return
+33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
+33.2    >>> referenced by MatrixTranspose.c:322 (test/MatrixTranspose.c:322)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(activity_callback)
+33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
+33.2
+33.2    ld.lld: error: undefined symbol: __asan_stack_malloc_1
+33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
+33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...005-rocrtst-xnack-gpu-id-parsing-fix.patch | 53 +++++++++++++++++++
+ .../0006-aqlprofile-linking-fix.patch         | 32 +++++++++++
+ ...acer-ASAN-linking-error-fix-on-tests.patch | 52 ++++++++++++++++++
+ 3 files changed, 137 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
+ create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
+ create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch b/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
+new file mode 100644
+index 0000000..67c03a6
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
+@@ -0,0 +1,53 @@
++From 1976891520907e396e923f70735face30374f74c Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 9 Mar 2026 17:28:33 -0700
++Subject: [PATCH] rocrtst ':xnack+" gpu-id parsing fix
++
++Parsing of the gpu id fails if the gpu-name
++contains colon separated features lile ":xnack+"
++
++rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:3:5: error: expected end of line in preprocessor expression
++5.1         3 | #if ROCRTST_GPU < 0x1000
++5.1           |     ^
++5.1     <command line>:1:26: note: expanded from macro 'ROCRTST_GPU'
++5.1         1 | #define ROCRTST_GPU 0x950:xnack+
++5.1           |                          ^
++5.1     rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:6:20: error: invalid token at start of a preprocessor expression
++5.1         6 |   #if (ROCRTST_GPU == 0x908) || (ROCRTST_GPU == 0x90a) || (ROCRTST_GPU == 0x940)
++5.1           |                    ^
++5.1     2 errors generated.
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ .../rocrtst/suites/test_common/CMakeLists.txt          | 10 +++++++++-
++ 1 file changed, 9 insertions(+), 1 deletion(-)
++
++diff --git a/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt b/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
++index 571ba709cb..4dc866a1b2 100644
++--- a/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
+++++ b/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
++@@ -404,6 +404,14 @@ function(build_kernel S_NAME TARG_DEV)
++   set(TARG_NAME "${S_NAME}_hsaco.${TARG_DEV}")
++   set(HSACO_TARG_LIST ${HSACO_TARG_LIST} "${KERNEL_DIR}/${SNAME_KERNEL}" PARENT_SCOPE)
++   string(SUBSTRING ${TARG_DEV} 3 -1 gfxNum)
+++  # gpu-name stored to TARG_DEV may contain additional features after base name separated by semicolon.
+++  # If the gpu name is for example: "gfx942:xnack+", then we need to remove also characters starting
+++  # from the colon to be able to parse the GPU ID as a hex number.
+++  string(FIND "${gfxNum}" ":" COLON_POS)
+++  if(NOT COLON_POS EQUAL -1)
+++    string(SUBSTRING "${gfxNum}" 0 ${COLON_POS} gfxNum)
+++  endif()
+++  message(STATUS "gfxNum: ${gfxNum}")
++   separate_arguments(CLANG_ARG_LIST UNIX_COMMAND
++    "-D ROCRTST_GPU=0x${gfxNum} -x cl -target amdgcn-amd-amdhsa -include ${OPENCL_INC_DIR}/opencl-c.h -mcpu=${TARG_DEV} ${BITCODE_ARGS} -cl-std=CL${OPENCL_VER} -mcode-object-version=4 ${CL_FILE_LIST} -o ${KERNEL_DIR}/${SNAME_KERNEL}")
++   add_custom_command(OUTPUT "${KERNEL_DIR}/${SNAME_KERNEL}" COMMAND ${CLANG} ${CLANG_ARG_LIST} DEPENDS ${CL_FILE_LIST} ${CLANG} COMMENT "BUILDING ${KERNEL_DIR}/${SNAME_KERNEL}" VERBATIM)
++@@ -693,4 +701,4 @@ install(TARGETS ${ROCRTST}
++ 
++ install ( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/lib DESTINATION lib/rocrtst )
++ 
++-include ( CPack )
++\ No newline at end of file
+++include ( CPack )
++-- 
++2.43.0
++
+diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
+new file mode 100644
+index 0000000..a5f4c01
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
+@@ -0,0 +1,32 @@
++From 618d2463e9969603db67d86ccd66b9299312a697 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 9 Mar 2026 23:22:45 -0700
++Subject: [PATCH] aqlprofile linking fix
++
++Fixes linking error on tests for ASAN builds.
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/aqlprofile/test/integration/CMakeLists.txt | 6 ++++++
++ 1 file changed, 6 insertions(+)
++
++diff --git a/projects/aqlprofile/test/integration/CMakeLists.txt b/projects/aqlprofile/test/integration/CMakeLists.txt
++index 0eb5a927ce..e145ec576f 100644
++--- a/projects/aqlprofile/test/integration/CMakeLists.txt
+++++ b/projects/aqlprofile/test/integration/CMakeLists.txt
++@@ -63,6 +63,12 @@ add_executable(testv2)
++ target_sources(testv2 PRIVATE main.cpp workload.cpp counter.cpp agent.cpp)
++ target_include_directories(testv2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/core/include/ ${HSA_RUNTIME_INC_PATH} /opt/rocm/include)
++ target_link_libraries(testv2 PRIVATE hsa-runtime64::hsa-runtime64 ${AQLPROFILE_TARGET})
+++if ( ENABLE_ASAN_PACKAGING )
+++    message(STATUS "ENABLE_ASAN_PACKAGING")
+++    set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address" )
+++    set ( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address" )
+++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
+++endif()
++ target_compile_definitions(testv2 PUBLIC AMD_INTERNAL_BUILD)
++ 
++ # Add a PRELOAD environment with libintercept
++-- 
++2.43.0
++
+diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
+new file mode 100644
+index 0000000..2a1f89e
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
+@@ -0,0 +1,52 @@
++From 961f2ca98e50c6b3654a0ffab7c48340909c80ce Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Tue, 10 Mar 2026 12:54:17 -0700
++Subject: [PATCH 3/3] roctracer ASAN linking error fix on tests
++
++Fixes a following type of errors when ASAN is enabled.
++
++33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
++33.2    FAILED: test/MatrixTranspose_ctest
++...
++33.2    ld.lld: error: undefined symbol: __asan_option_detect_stack_use_after_return
++33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
++33.2    >>> referenced by MatrixTranspose.c:322 (test/MatrixTranspose.c:322)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(activity_callback)
++33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
++33.2
++33.2    ld.lld: error: undefined symbol: __asan_stack_malloc_1
++33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
++33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/roctracer/test/CMakeLists.txt | 9 +++++++++
++ 1 file changed, 9 insertions(+)
++
++diff --git a/projects/roctracer/test/CMakeLists.txt b/projects/roctracer/test/CMakeLists.txt
++index 95563d5b9f..b68e69bb00 100644
++--- a/projects/roctracer/test/CMakeLists.txt
+++++ b/projects/roctracer/test/CMakeLists.txt
++@@ -22,6 +22,15 @@
++ 
++ get_property(HSA_RUNTIME_INCLUDE_DIRECTORIES TARGET hsa-runtime64::hsa-runtime64 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
++ 
+++if ( ENABLE_ASAN_PACKAGING )
+++    message(STATUS "ENABLE_ASAN_PACKAGING")
+++    #set ( CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG "${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG} -fno-omit-frame-pointer -fsanitize=address " )
+++    #set ( CMAKE_SHARED_LIBRARY_RPATH_LINK_CXX_FLAG "${CMAKE_SHARED_LIBRARY_RPATH_LINK_CXX_FLAG} -fsanitize=address " )
+++    set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address" )
+++    set ( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address" )
+++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
+++endif()
+++
++ # Set the HIP language runtime link flags as FindHIP does not set them.
++ set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG})
++ set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG_SEP ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG_SEP})
++-- 
++2.43.0
++
+-- 
+2.43.0
+
