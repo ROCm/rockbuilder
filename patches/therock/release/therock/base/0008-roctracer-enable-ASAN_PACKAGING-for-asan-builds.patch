@@ -1,7 +1,7 @@
-From e13eab438b401dbfdcf457b1eeb5646224d5fa47 Mon Sep 17 00:00:00 2001
+From 3ca5f1b76c3fe36f7146be4ddc71fc24b1623e82 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 13:08:57 -0700
-Subject: [PATCH 8/8] roctracer enable ASAN_PACKAGING for asan builds
+Subject: [PATCH 8/9] roctracer enable ASAN_PACKAGING for asan builds
 
 Fixes a following error on ASAN builds.
 

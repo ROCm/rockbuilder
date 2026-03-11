@@ -56,6 +56,9 @@ class RockProjectRepo:
         ret = True
         if exec_cmd is not None:
             exec_dir = self._replace_env_variables(exec_dir)
+            first_token = exec_cmd.split()[0] if exec_cmd.strip() else ""
+            if first_token.endswith(".py"):
+                exec_cmd = "python3 " + exec_cmd
             print("exec_cmd: " + exec_cmd + ", exec_dir: " + exec_dir)
             # capture_output=True --> can print output after process exist, not possible to see the output during the build time
             # capture_output=False --> can print output only during build time

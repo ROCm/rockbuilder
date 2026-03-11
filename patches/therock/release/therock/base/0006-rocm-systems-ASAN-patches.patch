@@ -1,4 +1,4 @@
-From b62a8494178521bd87b94d999731c0c0fbf30af0 Mon Sep 17 00:00:00 2001
+From a9e725fb345e2f93f28d643e0b966cd20e4a7676 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
 Subject: [PATCH 6/8] rocm-systems ASAN patches
@@ -27,7 +27,23 @@ rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_ke
 5.1           |                    ^
 5.1     2 errors generated.
 
-2) roctracer
+2) aqlprofiler
+
+46.5	ld.lld: error: undefined symbol: __asan_unregister_elf_globals
+46.5	>>> referenced by workload.cpp
+46.5	>>>               test/integration/CMakeFiles/testv2.dir/workload.cpp.o:(asan.module_dtor)
+46.5
+46.5	ld.lld: error: undefined symbol: __asan_stack_free_7
+46.5	>>> referenced by agent.cpp:162
+46.5	>>>(/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
+46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
+46.5	>>> (AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
+46.5	>>> referenced by agent.cpp:162
+46.5	>>> (/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
+46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
+46.5	>>>(AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
+
+3) roctracer
 
 33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
 33.2    FAILED: test/MatrixTranspose_ctest
@@ -49,9 +65,9 @@ rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_ke
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  ...005-rocrtst-xnack-gpu-id-parsing-fix.patch | 53 +++++++++++++++++++
- .../0006-aqlprofile-linking-fix.patch         | 32 +++++++++++
+ .../0006-aqlprofile-linking-fix.patch         | 46 ++++++++++++++++
  ...acer-ASAN-linking-error-fix-on-tests.patch | 52 ++++++++++++++++++
- 3 files changed, 137 insertions(+)
+ 3 files changed, 151 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
@@ -117,16 +133,30 @@ index 0000000..67c03a6
 +
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 new file mode 100644
-index 0000000..a5f4c01
+index 0000000..36b8e13
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,46 @@
 +From 618d2463e9969603db67d86ccd66b9299312a697 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 9 Mar 2026 23:22:45 -0700
 +Subject: [PATCH] aqlprofile linking fix
 +
-+Fixes linking error on tests for ASAN builds.
++Fixes linking errors on tests for ASAN builds.
++
++46.5	ld.lld: error: undefined symbol: __asan_unregister_elf_globals
++46.5	>>> referenced by workload.cpp
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/workload.cpp.o:(asan.module_dtor)
++46.5	
++46.5	ld.lld: error: undefined symbol: __asan_stack_free_7
++46.5	>>> referenced by agent.cpp:162 
++46.5	>>>(/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
++46.5	>>> (AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
++46.5	>>> referenced by agent.cpp:162
++46.5	>>> (/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
++46.5	>>>(AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
 +
 +Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---

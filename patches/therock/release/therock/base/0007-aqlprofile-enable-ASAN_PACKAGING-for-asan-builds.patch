@@ -1,7 +1,7 @@
-From b6af976a1bd04c38e7eae018b5d3b05ba7745ab9 Mon Sep 17 00:00:00 2001
+From b75676fd02d54d0227bd3b5f21d5982f933f929c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 23:23:19 -0700
-Subject: [PATCH 7/8] aqlprofile enable ASAN_PACKAGING for asan builds
+Subject: [PATCH 7/9] aqlprofile enable ASAN_PACKAGING for asan builds
 
 Fixes linking errors on tests when asan is enabled.
 
