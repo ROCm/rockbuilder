@@ -1,4 +1,4 @@
-From 2a6b38868b8223a838173f5aaf87324eb9f5a9a8 Mon Sep 17 00:00:00 2001
+From e09c92c8bb05a1228970bb56a57e1a3df4fc29ae Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
 Subject: [PATCH 9/9] use python script for therock instead of sh bat
@@ -13,12 +13,12 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  rcb_build.py       | 44 ++++++++++++++++++++++++
  rcb_build.sh       | 13 -------
  rcb_config.bat     |  8 -----
- rcb_config.py      | 63 ++++++++++++++++++++++++++++++++++
+ rcb_config.py      | 63 +++++++++++++++++++++++++++++++++
  rcb_config.sh      | 13 -------
  rcb_pre_config.bat | 26 --------------
- rcb_pre_config.py  | 85 ++++++++++++++++++++++++++++++++++++++++++++++
+ rcb_pre_config.py  | 86 ++++++++++++++++++++++++++++++++++++++++++++++
  rcb_pre_config.sh  | 24 -------------
- 9 files changed, 192 insertions(+), 92 deletions(-)
+ 9 files changed, 193 insertions(+), 92 deletions(-)
  delete mode 100644 rcb_build.bat
  create mode 100644 rcb_build.py
  delete mode 100755 rcb_build.sh
@@ -248,10 +248,10 @@ index 09a68f8..0000000
 -python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
-index 0000000..530aab1
+index 0000000..9944be3
 --- /dev/null
 +++ b/rcb_pre_config.py
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,86 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -281,7 +281,8 @@ index 0000000..530aab1
 +    venv_exists = os.path.isdir(bin_dir)
 +    if not venv_exists:
 +        print(f"rcb_pre_config.py creating python virtual environment: {venv_name}")
-+        run_cmd(["python3", "-m", "venv", venv_name])
++        python_cmd = "python" if IS_WINDOWS else "python3"
++        run_cmd([python_cmd, "-m", "venv", venv_name])
 +    os.environ["VIRTUAL_ENV"] = venv_path
 +    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 +    os.environ.pop("PYTHONHOME", None)
