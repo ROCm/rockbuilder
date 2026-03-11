@@ -1,17 +1,17 @@
-From b75676fd02d54d0227bd3b5f21d5982f933f929c Mon Sep 17 00:00:00 2001
+From f2a829ddc0779c10b71308eafba18724606fc766 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 23:23:19 -0700
-Subject: [PATCH 7/9] aqlprofile enable ASAN_PACKAGING for asan builds
+Subject: [PATCH 7/8] aqlprofile and roctracer add ASAN build check
 
-Fixes linking errors on tests when asan is enabled.
+Fixes linking errors on tests when ASAN build is enabled.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- profiler/CMakeLists.txt | 8 ++++++++
- 1 file changed, 8 insertions(+)
+ profiler/CMakeLists.txt | 9 +++++++++
+ 1 file changed, 9 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 2215fb2..83465f3 100644
+index 2215fb2..f20fc01 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -23,6 +23,13 @@ if(THEROCK_ENABLE_ROCPROFV3)
@@ -36,6 +36,14 @@ index 2215fb2..83465f3 100644
        -DHIP_PLATFORM="amd"
      COMPILER_TOOLCHAIN
        amd-hip
+@@ -175,6 +183,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       amd-hip
+     CMAKE_ARGS
+       -DHIP_PLATFORM=amd
++      -DENABLE_ASAN_PACKAGING=${ENABLE_ASAN_PACKAGING}
+     INTERFACE_INCLUDE_DIRS
+       # All old clients of roctx64 expect to just be able to find its include
+       # with no further qualification. Bad design, but also deprecated, so meh.
 -- 
 2.43.0
 

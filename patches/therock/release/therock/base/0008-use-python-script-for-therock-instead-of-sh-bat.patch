@@ -1,7 +1,7 @@
-From e09c92c8bb05a1228970bb56a57e1a3df4fc29ae Mon Sep 17 00:00:00 2001
+From 5d29aad7f2917abd971d01a1964c1e78246d3dca Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
-Subject: [PATCH 9/9] use python script for therock instead of sh bat
+Subject: [PATCH 8/8] use python script for therock instead of sh bat
 
 Combine rcb_pre_config, rcb_config and rcb_build
 bat and sh files to python scripts so that same

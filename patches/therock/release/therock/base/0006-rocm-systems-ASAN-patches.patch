@@ -1,4 +1,4 @@
-From a9e725fb345e2f93f28d643e0b966cd20e4a7676 Mon Sep 17 00:00:00 2001
+From ebad9f6fbafbe4b46f6f43fcc2dfdfe552d7d918 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
 Subject: [PATCH 6/8] rocm-systems ASAN patches

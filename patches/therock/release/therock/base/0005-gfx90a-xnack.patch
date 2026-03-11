@@ -1,7 +1,7 @@
 From 36609d5868d2447929aea796dafcb07303fd675b Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 19:41:21 -0700
-Subject: [PATCH 5/9] gfx90a xnack+
+Subject: [PATCH 5/8] gfx90a xnack+
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

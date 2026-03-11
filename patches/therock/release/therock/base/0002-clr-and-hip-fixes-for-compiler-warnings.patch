@@ -1,7 +1,7 @@
 From 0122553474cadd3a47067ebf8063c9cbcc9ae6db Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
-Subject: [PATCH 2/9] clr and hip fixes for compiler warnings
+Subject: [PATCH 2/8] clr and hip fixes for compiler warnings
 
 Fix warnings that are showed when building for example
 the clr project itself or other projects like miopen
