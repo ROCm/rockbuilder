@@ -407,8 +407,8 @@ def _check_cpu_count_env_variable():
 
 def _check_distro_specific_environment_variables():
     is_posix = not any(platform.win32_ver())
+    distro_info = {}
     if is_posix:
-        distro_info = {}
         os_release_path = '/etc/os-release'
         if os.path.exists(os_release_path):
             try:

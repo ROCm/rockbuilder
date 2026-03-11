@@ -1,0 +1,374 @@
+From 64db9ffa825bd1e712e146db4435ee1bcf7a1242 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 10 Mar 2026 21:30:00 -0700
+Subject: [PATCH 8/8] use python script for therock instead of sh bat
+
+Combine rcb_pre_config, rcb_config and rcb_build
+bat and sh files to python scripts so that same
+file can be used both on linux and windows.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ rcb_build.bat      |  8 -----
+ rcb_build.py       | 44 ++++++++++++++++++++++++
+ rcb_build.sh       | 13 -------
+ rcb_config.bat     |  8 -----
+ rcb_config.py      | 64 ++++++++++++++++++++++++++++++++++
+ rcb_config.sh      | 13 -------
+ rcb_pre_config.bat | 26 --------------
+ rcb_pre_config.py  | 86 ++++++++++++++++++++++++++++++++++++++++++++++
+ rcb_pre_config.sh  | 24 -------------
+ 9 files changed, 194 insertions(+), 92 deletions(-)
+ delete mode 100644 rcb_build.bat
+ create mode 100644 rcb_build.py
+ delete mode 100755 rcb_build.sh
+ delete mode 100644 rcb_config.bat
+ create mode 100644 rcb_config.py
+ delete mode 100755 rcb_config.sh
+ delete mode 100644 rcb_pre_config.bat
+ create mode 100644 rcb_pre_config.py
+ delete mode 100755 rcb_pre_config.sh
+
+diff --git a/rcb_build.bat b/rcb_build.bat
+deleted file mode 100644
+index a2fd930..0000000
+--- a/rcb_build.bat
++++ /dev/null
+@@ -1,8 +0,0 @@
+-set "VENV_NAME=.venv"
+-set "SCRIPT_DIR=%~dp0"
+-
+-cd /d "%SCRIPT_DIR%"
+-
+-echo Activating python virtual environment: "%VENV_NAME%"
+-call "%VENV_NAME%\Scripts\activate.bat"
+-cmake --build build
+diff --git a/rcb_build.py b/rcb_build.py
+new file mode 100644
+index 0000000..417e56a
+--- /dev/null
++++ b/rcb_build.py
+@@ -0,0 +1,44 @@
++#!/usr/bin/env python3
++
++import os
++import platform
++import subprocess
++import sys
++
++IS_WINDOWS = (platform.system() == "Windows")
++
++
++def activate_venv(venv_name):
++    venv_path = os.path.abspath(venv_name)
++    if IS_WINDOWS:
++        bin_dir = os.path.join(venv_path, "Scripts")
++    else:
++        bin_dir = os.path.join(venv_path, "bin")
++    if not os.path.isdir(bin_dir):
++        print(f"rcb_build.py python venv activation skipped ({bin_dir} not found)")
++        return
++    os.environ["VIRTUAL_ENV"] = venv_path
++    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
++    os.environ.pop("PYTHONHOME", None)
++    print(f"rcb_build.py python venv activated: {venv_path}")
++
++
++def main():
++    script_dir = os.path.dirname(os.path.abspath(__file__))
++    os.chdir(script_dir)
++    print(f"rcb_build.py current directory: {os.getcwd()}")
++
++    activate_venv(".venv")
++
++    result = subprocess.run(["cmake", "--version"], capture_output=True, text=True)
++    cmake_version = result.stdout.strip()
++    print(f"rcb_build.py CMAKE_VERSION: {cmake_version}")
++
++    print("rcb_build.py therock cmake build command started")
++    result = subprocess.run(["cmake", "--build", "build"])
++    print(f"rcb_build.py therock cmake build command done, res: {result.returncode}")
++    sys.exit(result.returncode)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/rcb_build.sh b/rcb_build.sh
+deleted file mode 100755
+index f5605ab..0000000
+--- a/rcb_build.sh
++++ /dev/null
+@@ -1,13 +0,0 @@
+-#!/usr/bin/env bash
+-
+-export CUR_DIR=$PWD
+-echo "rcb_build.sh current directory: $CUR_DIR"
+-source ./.venv/bin/activate
+-echo "rcb_build.sh python activated"
+-CMAKE_VERSION_OUTPUT=$(cmake --version)
+-echo "rcb_build.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
+-echo "rcb_build.sh therock cmake build command started"
+-cmake --build build
+-RES=$?
+-echo "rcb_build.sh therock cmake build command done, res: $RES"
+-exit $RES
+diff --git a/rcb_config.bat b/rcb_config.bat
+deleted file mode 100644
+index 39e807c..0000000
+--- a/rcb_config.bat
++++ /dev/null
+@@ -1,8 +0,0 @@
+-set "VENV_NAME=.venv"
+-set "SCRIPT_DIR=%~dp0"
+-
+-cd /d "%SCRIPT_DIR%"
+-
+-echo Activating python virtual environment: "%VENV_NAME%"
+-call "%VENV_NAME%\Scripts\activate.bat"
+-cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
+diff --git a/rcb_config.py b/rcb_config.py
+new file mode 100644
+index 0000000..27deff5
+--- /dev/null
++++ b/rcb_config.py
+@@ -0,0 +1,64 @@
++#!/usr/bin/env python3
++
++import os
++import platform
++import subprocess
++import sys
++
++IS_WINDOWS = (platform.system() == "Windows")
++
++def activate_venv(venv_name):
++    venv_path = os.path.abspath(venv_name)
++    if IS_WINDOWS:
++        bin_dir = os.path.join(venv_path, "Scripts")
++    else:
++        bin_dir = os.path.join(venv_path, "bin")
++    if not os.path.isdir(bin_dir):
++        print(f"rcb_config.py python venv activation skipped ({bin_dir} not found)")
++        return
++    os.environ["VIRTUAL_ENV"] = venv_path
++    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
++    os.environ.pop("PYTHONHOME", None)
++    print(f"rcb_config.py python venv activated: {venv_path}")
++
++
++def main():
++    script_dir = os.path.dirname(os.path.abspath(__file__))
++    os.chdir(script_dir)
++    print(f"rcb_config.py current directory: {os.getcwd()}")
++
++    activate_venv(".venv")
++
++    result = subprocess.run(["cmake", "--version"], capture_output=True, text=True)
++    cmake_version = result.stdout.strip()
++    print(f"rcb_config.py CMAKE_VERSION: {cmake_version}")
++
++    amdgpu_targets = os.environ.get("RCB_AMDGPU_TARGETS", "")
++    cmake_cmd = [
++        "cmake",
++        "-B", "build",
++        "-GNinja",
++    ]
++    cmake_cmd.append("-DTHEROCK_VERBOSE=1")
++    asan_gpu_families = {"gfx90a", "gfx942", "gfx950"}
++    sanitizer = os.environ.get("RCB_THEROCK_SANITIZER", "")
++    if sanitizer:
++        cmake_cmd.append(f"-DTHEROCK_SANITIZER={sanitizer}")
++    elif amdgpu_targets in asan_gpu_families:
++        answer = input(f"RCB_THEROCK_SANITIZER is not set and target is {amdgpu_targets}. "
++                       "Enable ASAN build? [y/N]: ").strip().lower()
++        if answer == "y":
++            cmake_cmd.append("-DTHEROCK_SANITIZER=ASAN")
++    cmake_cmd.append(f"-DTHEROCK_AMDGPU_FAMILIES={amdgpu_targets}")
++    if IS_WINDOWS:
++        cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
++    cmake_cmd.append(".")
++
++    print(f"rcb_config.py, config_cmd: {cmake_cmd}")
++    result = subprocess.run(cmake_cmd)
++    print(f"rcb_config.py therock config done, res: {result.returncode}")
++    sys.exit(result.returncode)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/rcb_config.sh b/rcb_config.sh
+deleted file mode 100755
+index 5c18937..0000000
+--- a/rcb_config.sh
++++ /dev/null
+@@ -1,13 +0,0 @@
+-#!/usr/bin/env bash
+-
+-export CUR_DIR=$PWD
+-echo "rcb_config.sh current directory: $CUR_DIR"
+-source ./.venv/bin/activate
+-echo "rcb_config.sh python activated"
+-CMAKE_VERSION_OUTPUT=$(cmake --version)
+-echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
+-echo "rcb_config.sh therock cmake config command started"
+-cmake -B build -GNinja -DTHEROCK_VERBOSE=1 -DTHEROCK_SANITIZER=ASAN -DTHEROCK_AMDGPU_FAMILIES=${RCB_AMDGPU_TARGETS} .
+-RES=$?
+-echo "rcb_config.sh therock cmake config command done, res: $RES"
+-exit $RES
+diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
+deleted file mode 100644
+index 09a68f8..0000000
+--- a/rcb_pre_config.bat
++++ /dev/null
+@@ -1,26 +0,0 @@
+-set "VENV_NAME=.venv"
+-set "SCRIPT_DIR=%~dp0"
+-
+-cd /d "%SCRIPT_DIR%"
+-
+-if not exist "%VENV_NAME%\Scripts\activate.bat" (
+-    echo Creating python virtual environment: "%VENV_NAME%"
+-    python -m venv "%VENV_NAME%"
+-    if errorlevel 1 (
+-        echo Error: Failed to create python virtual environment. Exiting.
+-        exit /b 1
+-    )
+-    echo Activating python virtual environment: "%VENV_NAME%"
+-    call "%VENV_NAME%\Scripts\activate.bat"
+-    python.exe -m pip install --upgrade pip
+-    pip install -r requirements.txt
+-    pip install windows-curses
+-    pip install "dvc[s3]"
+-    pip install "cmake>=3.28.0,<4.0.0"
+-    echo Python virtual environment created and enabled: "%VENV_NAME%"
+-) else (
+-    call "%VENV_NAME%\Scripts\activate.bat"
+-    echo Python virtual environment enabled: "%VENV_NAME%"
+-)
+-pip install "dvc[s3]"
+-python ./build_tools/fetch_sources.py
+diff --git a/rcb_pre_config.py b/rcb_pre_config.py
+new file mode 100644
+index 0000000..9944be3
+--- /dev/null
++++ b/rcb_pre_config.py
+@@ -0,0 +1,86 @@
++#!/usr/bin/env python3
++
++import os
++import platform
++import subprocess
++import sys
++
++IS_WINDOWS = (platform.system() == "Windows")
++
++
++def run_cmd(cmd, description=None, check=True):
++    if description:
++        print(f"rcb_pre_config.py {description}")
++    result = subprocess.run(cmd)
++    if check and result.returncode != 0:
++        print(f"rcb_pre_config.py command failed (res: {result.returncode}): {cmd}")
++        sys.exit(result.returncode)
++    return result.returncode
++
++
++def create_and_activate_venv(venv_name):
++    venv_path = os.path.abspath(venv_name)
++    if IS_WINDOWS:
++        bin_dir = os.path.join(venv_path, "Scripts")
++    else:
++        bin_dir = os.path.join(venv_path, "bin")
++    venv_exists = os.path.isdir(bin_dir)
++    if not venv_exists:
++        print(f"rcb_pre_config.py creating python virtual environment: {venv_name}")
++        python_cmd = "python" if IS_WINDOWS else "python3"
++        run_cmd([python_cmd, "-m", "venv", venv_name])
++    os.environ["VIRTUAL_ENV"] = venv_path
++    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
++    os.environ.pop("PYTHONHOME", None)
++    print(f"rcb_pre_config.py python virtual environment activated: {venv_path}")
++    return venv_exists
++
++
++def install_packages(venv_already_existed):
++    if not venv_already_existed:
++        run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
++                "upgrading pip")
++        run_cmd([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
++                "installing requirements.txt")
++        if IS_WINDOWS:
++            run_cmd([sys.executable, "-m", "pip", "install", "windows-curses"],
++                    "installing windows-curses")
++        run_cmd([sys.executable, "-m", "pip", "install", "dvc[s3]"],
++                "installing dvc[s3]")
++        run_cmd([sys.executable, "-m", "pip", "install", "cmake>=3.28.0,<4.0.0"],
++                "installing cmake")
++    else:
++        run_cmd([sys.executable, "-m", "pip", "install", "dvc[s3]"],
++                "installing dvc[s3]")
++
++
++def fetch_sources():
++    print("rcb_pre_config.py therock source fetch started")
++    res = run_cmd([sys.executable, "./build_tools/fetch_sources.py"], check=False)
++    if res != 0:
++        print(f"rcb_pre_config.py first attempt for submodule source code fetch failed: {res}")
++        print("rcb_pre_config.py resetting submodules and trying refresh again")
++        run_cmd(["git", "submodule", "foreach", "git", "reset", "--hard"], check=False)
++        res = run_cmd([sys.executable, "./build_tools/fetch_sources.py"], check=False)
++    return res
++
++
++def main():
++    script_dir = os.path.dirname(os.path.abspath(__file__))
++    os.chdir(script_dir)
++    print(f"rcb_pre_config.py current directory: {os.getcwd()}")
++
++    venv_already_existed = create_and_activate_venv(".venv")
++    install_packages(venv_already_existed)
++
++    result = subprocess.run(["cmake", "--version"], capture_output=True, text=True)
++    cmake_version = result.stdout.strip()
++    print(f"rcb_pre_config.py CMAKE_VERSION: {cmake_version}")
++
++    res = fetch_sources()
++    print(f"rcb_pre_config.py done, res: {res}")
++    sys.exit(res)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
+deleted file mode 100755
+index 29c47d2..0000000
+--- a/rcb_pre_config.sh
++++ /dev/null
+@@ -1,24 +0,0 @@
+-#!/usr/bin/env bash
+-
+-export CUR_DIR=$PWD
+-echo "rcb_pre_config.sh current directory: $CUR_DIR"
+-python3 -m venv ./.venv && source ./.venv/bin/activate
+-echo "rcb_pre_config.sh python activated"
+-pip install --upgrade pip
+-pip install -r ./requirements.txt
+-pip install "dvc[s3]"
+-pip install "cmake>=3.28.0,<4.0.0"
+-CMAKE_VERSION_OUTPUT=$(cmake --version)
+-echo "rcb_pre_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
+-echo "rcb_pre_config.sh therock source fetch started"
+-python ./build_tools/fetch_sources.py
+-RES=$?
+-if [ $RES -ne 0 ]; then
+-    echo "First attempt for submodule source cofe fetch failed: $RES"
+-    echo "Resetting submodules and trying refresh again"
+-    git submodule foreach git reset --hard
+-    python ./build_tools/fetch_sources.py
+-    RES=$?
+-fi
+-echo "rcb_pre_config.sh, res: $RES"
+-exit $RES
+-- 
+2.49.0.windows.1
+
