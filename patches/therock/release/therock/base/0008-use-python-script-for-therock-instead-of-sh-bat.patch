@@ -1,4 +1,4 @@
-From 5d29aad7f2917abd971d01a1964c1e78246d3dca Mon Sep 17 00:00:00 2001
+From 64db9ffa825bd1e712e146db4435ee1bcf7a1242 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
 Subject: [PATCH 8/8] use python script for therock instead of sh bat
@@ -13,12 +13,12 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  rcb_build.py       | 44 ++++++++++++++++++++++++
  rcb_build.sh       | 13 -------
  rcb_config.bat     |  8 -----
- rcb_config.py      | 63 +++++++++++++++++++++++++++++++++
+ rcb_config.py      | 64 ++++++++++++++++++++++++++++++++++
  rcb_config.sh      | 13 -------
  rcb_pre_config.bat | 26 --------------
  rcb_pre_config.py  | 86 ++++++++++++++++++++++++++++++++++++++++++++++
  rcb_pre_config.sh  | 24 -------------
- 9 files changed, 193 insertions(+), 92 deletions(-)
+ 9 files changed, 194 insertions(+), 92 deletions(-)
  delete mode 100644 rcb_build.bat
  create mode 100644 rcb_build.py
  delete mode 100755 rcb_build.sh
@@ -128,10 +128,10 @@ index 39e807c..0000000
 -cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 0000000..79a9098
+index 0000000..27deff5
 --- /dev/null
 +++ b/rcb_config.py
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,64 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -140,7 +140,6 @@ index 0000000..79a9098
 +import sys
 +
 +IS_WINDOWS = (platform.system() == "Windows")
-+
 +
 +def activate_venv(venv_name):
 +    venv_path = os.path.abspath(venv_name)
@@ -185,11 +184,13 @@ index 0000000..79a9098
 +        if answer == "y":
 +            cmake_cmd.append("-DTHEROCK_SANITIZER=ASAN")
 +    cmake_cmd.append(f"-DTHEROCK_AMDGPU_FAMILIES={amdgpu_targets}")
++    if IS_WINDOWS:
++        cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
 +    cmake_cmd.append(".")
 +
-+    print("rcb_config.py therock cmake config command started")
++    print(f"rcb_config.py, config_cmd: {cmake_cmd}")
 +    result = subprocess.run(cmake_cmd)
-+    print(f"rcb_config.py therock cmake config command done, res: {result.returncode}")
++    print(f"rcb_config.py therock config done, res: {result.returncode}")
 +    sys.exit(result.returncode)
 +
 +
@@ -369,5 +370,5 @@ index 29c47d2..0000000
 -echo "rcb_pre_config.sh, res: $RES"
 -exit $RES
 -- 
-2.43.0
+2.49.0.windows.1
 
