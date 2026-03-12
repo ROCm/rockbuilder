@@ -1,4 +1,4 @@
-From 64db9ffa825bd1e712e146db4435ee1bcf7a1242 Mon Sep 17 00:00:00 2001
+From a03b44a558c54f173b34e9ab96d8fb854171da94 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
 Subject: [PATCH 8/8] use python script for therock instead of sh bat
@@ -9,16 +9,16 @@ file can be used both on linux and windows.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- rcb_build.bat      |  8 -----
- rcb_build.py       | 44 ++++++++++++++++++++++++
+ rcb_build.bat      |  8 ----
+ rcb_build.py       | 44 ++++++++++++++++++++++
  rcb_build.sh       | 13 -------
- rcb_config.bat     |  8 -----
- rcb_config.py      | 64 ++++++++++++++++++++++++++++++++++
+ rcb_config.bat     |  8 ----
+ rcb_config.py      | 64 ++++++++++++++++++++++++++++++++
  rcb_config.sh      | 13 -------
- rcb_pre_config.bat | 26 --------------
- rcb_pre_config.py  | 86 ++++++++++++++++++++++++++++++++++++++++++++++
- rcb_pre_config.sh  | 24 -------------
- 9 files changed, 194 insertions(+), 92 deletions(-)
+ rcb_pre_config.bat | 26 -------------
+ rcb_pre_config.py  | 92 ++++++++++++++++++++++++++++++++++++++++++++++
+ rcb_pre_config.sh  | 24 ------------
+ 9 files changed, 200 insertions(+), 92 deletions(-)
  delete mode 100644 rcb_build.bat
  create mode 100644 rcb_build.py
  delete mode 100755 rcb_build.sh
@@ -249,10 +249,10 @@ index 09a68f8..0000000
 -python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
-index 0000000..9944be3
+index 0000000..064df9d
 --- /dev/null
 +++ b/rcb_pre_config.py
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,92 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -262,6 +262,13 @@ index 0000000..9944be3
 +
 +IS_WINDOWS = (platform.system() == "Windows")
 +
++# do not use sys.executable because that would run the parent process python
++# instead of the one we added to PATH
++def get_python_executable_name():
++    if IS_WINDOWS:
++        return "python"
++    else:
++        return "python3"
 +
 +def run_cmd(cmd, description=None, check=True):
 +    if description:
@@ -292,31 +299,30 @@ index 0000000..9944be3
 +
 +
 +def install_packages(venv_already_existed):
++    python_exec = get_python_executable_name()
 +    if not venv_already_existed:
-+        run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
++        run_cmd([python_exec, "-m", "pip", "install", "--upgrade", "pip"],
 +                "upgrading pip")
-+        run_cmd([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
++        run_cmd([python_exec, "-m", "pip", "install", "-r", "requirements.txt"],
 +                "installing requirements.txt")
-+        if IS_WINDOWS:
-+            run_cmd([sys.executable, "-m", "pip", "install", "windows-curses"],
-+                    "installing windows-curses")
-+        run_cmd([sys.executable, "-m", "pip", "install", "dvc[s3]"],
++        run_cmd([python_exec, "-m", "pip", "install", "dvc[s3]"],
 +                "installing dvc[s3]")
-+        run_cmd([sys.executable, "-m", "pip", "install", "cmake>=3.28.0,<4.0.0"],
++        run_cmd([python_exec, "-m", "pip", "install", "cmake>=3.28.0,<4.0.0"],
 +                "installing cmake")
-+    else:
-+        run_cmd([sys.executable, "-m", "pip", "install", "dvc[s3]"],
-+                "installing dvc[s3]")
++        if IS_WINDOWS:
++            run_cmd([python_exec, "-m", "pip", "install", "windows-curses"],
++                    "installing windows-curses")
 +
 +
 +def fetch_sources():
++    python_exec = get_python_executable_name()
 +    print("rcb_pre_config.py therock source fetch started")
-+    res = run_cmd([sys.executable, "./build_tools/fetch_sources.py"], check=False)
++    res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
 +    if res != 0:
 +        print(f"rcb_pre_config.py first attempt for submodule source code fetch failed: {res}")
 +        print("rcb_pre_config.py resetting submodules and trying refresh again")
 +        run_cmd(["git", "submodule", "foreach", "git", "reset", "--hard"], check=False)
-+        res = run_cmd([sys.executable, "./build_tools/fetch_sources.py"], check=False)
++        res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
 +    return res
 +
 +
@@ -370,5 +376,5 @@ index 29c47d2..0000000
 -echo "rcb_pre_config.sh, res: $RES"
 -exit $RES
 -- 
-2.49.0.windows.1
+2.43.0
 
