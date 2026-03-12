@@ -453,6 +453,35 @@ class RockProjectRepo:
                 cwd=repo_path,
             )
 
+    def run_git_command(self, args, cwd=None):
+        """Helper to run git commands and return output/success."""
+        try:
+            result = subprocess.run(
+                ['git'] + args,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result
+        except FileNotFoundError:
+            print("Error: 'git' command not found.")
+            return None
+
+    def check_and_abort_old_ongoing_am(self, repo_path="."):
+        """Checks for active am session and aborts if found."""
+        # check_status_for_am implementation via git status parsing
+        res = self.run_git_command(['status'], cwd=repo_path)
+        if res and "You are in the middle of an am session" in res.stdout:
+            print(f"Detected active 'am' session in: {os.path.abspath(repo_path)}")
+            abort_res = self.run_git_command(['am', '--abort'], cwd=repo_path)
+            if abort_res.returncode == 0:
+                print(f"Successfully aborted 'am' in {repo_path}")
+            else:
+                print(f"Failed to abort 'am' in {repo_path}: {abort_res.stderr}")
+            return True
+        return True
+
     def apply_repo_patches(self, repo_path: Path, patch_dir: Path):
         """Applies patches to a repository from the given patches directory."""
         patch_cnt = 0
@@ -460,18 +489,23 @@ class RockProjectRepo:
         print("repo_dir: " + str(repo_path) + ", patch_dir: " + str(patch_dir))
         if patch_files:
             patch_cnt = len(patch_files)
-            patch_files.sort(key=lambda p: p.name)
-            self.exec(
-                [
-                    "git",
-                    "am",
-                    "--ignore-whitespace",
-                    "--committer-date-is-author-date",
-                    "--no-gpg-sign",
-                ]
-                + patch_files,
-                cwd=repo_path,
-            )
+            if patch_cnt > 0:
+                # check first whether git am needs to be aborted from previout attempt
+                #print(f"repo_path: {repo_path}")
+                self.check_and_abort_old_ongoing_am(str(repo_path))
+                # then start applying patches
+                patch_files.sort(key=lambda p: p.name)
+                self.exec(
+                    [
+                        "git",
+                        "am",
+                        "--ignore-whitespace",
+                        "--committer-date-is-author-date",
+                        "--no-gpg-sign",
+                    ]
+                    + patch_files,
+                    cwd=repo_path,
+                )
         print(f"patch count: {patch_cnt}")
 
 
@@ -671,12 +705,12 @@ class RockProjectRepo:
             # Apply base patches to main repository. Patches to
             # submodules will be applied later. This enables patches
             # to modify submodule version to be checked out.
-            print("app_src_dir: " + str(self.app_src_dir))
+            print("    do_checkout, app_src_dir: " + str(self.app_src_dir))
             for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
                 full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
                                                             self.app_name,
                                                             self.app_patch_dir_base_name)
-                print("full patch dir: " + str(full_patch_dir))
+                print("    do_checkout, full patch dir: " + str(full_patch_dir))
                 if full_patch_dir.is_dir():
                     self.apply_main_repository_patches(
                         self.app_src_dir,
@@ -698,8 +732,20 @@ class RockProjectRepo:
                 cwd=self.app_src_dir,
             )
         except subprocess.CalledProcessError:
-            print("Failed to fetch git submodules")
-            sys.exit(1)
+            print("    do_checkout, failed to fetch git submodules, trying to reset them first")
+            try:
+                self.exec(
+                    ["git", "submodule", "foreach", "git", "reset", "--hard"],
+                    cwd=self.app_src_dir,
+                )
+                self.exec(
+                    ["git", "submodule", "update", "--init", "--recursive"] + fetch_args,
+                    cwd=self.app_src_dir,
+                )
+            except subprocess.CalledProcessError:
+                print("    do_checkout, failed to fetch git submodules even after resetting them")
+                sys.exit(1)
+        print("    do_checkout, tagging git submodules")
         self.exec(
             [
                 "git",
@@ -711,16 +757,14 @@ class RockProjectRepo:
             cwd=self.app_src_dir,
             stdout_devnull=True,
         )
-
         self.git_config_ignore_submodules(self.app_src_dir)
-
         if apply_patches_enabled:
+            print(f"    do_checkout, applying patches for {self.app_name} submodules")
             for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
                 full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
                                                             self.app_name,
                                                             self.app_patch_dir_base_name)
-                print("apply submodule patches")
-                print("full patch dir: " + str(full_patch_dir))
+                print("    do_checkout, submodule patch dir: " + str(full_patch_dir))
                 if full_patch_dir.is_dir():
                     # Apply base patches to submodules.
                     self.apply_submodule_patches(
@@ -757,15 +801,14 @@ class RockProjectRepo:
                     ["git", "tag", "-f", TAG_HIPIFY_DIFFBASE, "--no-sign"],
                     cwd=module_path,
                 )
-            print("do_hipify, hipified files committed")
+            print("    do_hipify, committed changes to hipified files")
         # always apply the patches from hipified directory. (even if CMD_HIPIFY was not specified in config file for project)
-
+        print(f"    do_hipify, applying patches for {self.app_name} submodules")
         for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
             full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
                                                         self.app_name,
                                                         self.app_patch_dir_base_name)
-            print("apply submodule patches")
-            print("full patch dir: " + str(full_patch_dir))
+            print("    do_hipify, submodule patch dir: " + str(full_patch_dir))
             if full_patch_dir.is_dir():
                 self.apply_all_patches(
                     self.app_src_dir,
@@ -773,7 +816,7 @@ class RockProjectRepo:
                     self.app_name,
                     "hipified",
                 )
-                print("do_hipify, hipified patches applied")
+                print("    do_hipify, patches applied for submodule")
                 # apply patches only from the first directory that exist
                 break
 
