@@ -26,3 +26,5 @@ lit==18.1.8
 
 # AWS Redshift connector
 redshift_connector==2.1.8
+
+dvc[s3]
