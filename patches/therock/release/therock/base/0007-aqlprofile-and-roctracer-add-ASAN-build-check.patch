@@ -1,4 +1,4 @@
-From f2a829ddc0779c10b71308eafba18724606fc766 Mon Sep 17 00:00:00 2001
+From ccb9a3766be0170576925fbcbd71b9328ecd5fa2 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 23:23:19 -0700
 Subject: [PATCH 7/8] aqlprofile and roctracer add ASAN build check
@@ -11,12 +11,12 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 9 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 2215fb2..f20fc01 100644
+index 1a192719..8aea865d 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -23,6 +23,13 @@ if(THEROCK_ENABLE_ROCPROFV3)
-     list(APPEND _rocprofiler_sdk_optional_deps rocprof-trace-decoder)
-   endif()
+@@ -27,6 +27,13 @@ if(THEROCK_ENABLE_ROCPROFV3)
+   therock_cmake_subproject_activate(rocprof-trace-decoder)
+   list(APPEND _rocprofiler_sdk_common_deps rocprof-trace-decoder)
  
 +  set(ENABLE_ASAN_PACKAGING OFF)
 +  # Enable ASAN for Comgr when THEROCK_SANITIZER is set to ASAN or HOST_ASAN
@@ -28,7 +28,7 @@ index 2215fb2..f20fc01 100644
    ##############################################################################
    # aqlprofile
    ##############################################################################
-@@ -33,6 +40,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -37,6 +44,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
      BACKGROUND_BUILD
      CMAKE_ARGS
        -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
@@ -36,7 +36,7 @@ index 2215fb2..f20fc01 100644
        -DHIP_PLATFORM="amd"
      COMPILER_TOOLCHAIN
        amd-hip
-@@ -175,6 +183,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -181,6 +189,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        amd-hip
      CMAKE_ARGS
        -DHIP_PLATFORM=amd

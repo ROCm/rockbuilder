@@ -1,4 +1,4 @@
-From c4ee5a76694504ac0c25a3edda8db651a5819b10 Mon Sep 17 00:00:00 2001
+From 1b8c1ae3b83ceaefd1b966e79d1c7a663182f349 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
 Subject: [PATCH 4/8] rccl add more amd gpus
@@ -18,7 +18,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
 new file mode 100644
-index 0000000..d539791
+index 00000000..d5397916
 --- /dev/null
 +++ b/patches/amd-mainline/rccl/0001-rccl-add-more-amd-gpus.patch
 @@ -0,0 +1,67 @@

@@ -1,33 +1,15 @@
-From ebad9f6fbafbe4b46f6f43fcc2dfdfe552d7d918 Mon Sep 17 00:00:00 2001
+From 0ab36dabb20dbea2c7ca77792cf2e3576d43984f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
 Subject: [PATCH 6/8] rocm-systems ASAN patches
 
 Patches to fix linking errors on ASAN builds for
-1) rocrtst
-2) aqlprofile
-3) roctracer
+1) aqlprofile
+2) roctracer
 
 Fixes following type of errors
 
-1) rocrtst
-rocrtst ':xnack+" gpu-id parsing fix
-
-Parsing of the gpu id fails if the gpu-name
-contains colon separated features lile ":xnack+"
-
-rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:3:5: error: expected end of line in preprocessor expression
-5.1         3 | #if ROCRTST_GPU < 0x1000
-5.1           |     ^
-5.1     <command line>:1:26: note: expanded from macro 'ROCRTST_GPU'
-5.1         1 | #define ROCRTST_GPU 0x950:xnack+
-5.1           |                          ^
-5.1     rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:6:20: error: invalid token at start of a preprocessor expression
-5.1         6 |   #if (ROCRTST_GPU == 0x908) || (ROCRTST_GPU == 0x90a) || (ROCRTST_GPU == 0x940)
-5.1           |                    ^
-5.1     2 errors generated.
-
-2) aqlprofiler
+1) aqlprofiler
 
 46.5	ld.lld: error: undefined symbol: __asan_unregister_elf_globals
 46.5	>>> referenced by workload.cpp
@@ -43,7 +25,7 @@ rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_ke
 46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
 46.5	>>>(AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
 
-3) roctracer
+2) roctracer
 
 33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
 33.2    FAILED: test/MatrixTranspose_ctest
@@ -64,76 +46,15 @@ rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_ke
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...005-rocrtst-xnack-gpu-id-parsing-fix.patch | 53 +++++++++++++++++++
  .../0006-aqlprofile-linking-fix.patch         | 46 ++++++++++++++++
- ...acer-ASAN-linking-error-fix-on-tests.patch | 52 ++++++++++++++++++
- 3 files changed, 151 insertions(+)
- create mode 100644 patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
+ ...acer-ASAN-linking-error-fix-on-tests.patch | 52 +++++++++++++++++++
+ 2 files changed, 98 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 
-diff --git a/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch b/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
-new file mode 100644
-index 0000000..67c03a6
---- /dev/null
-+++ b/patches/amd-mainline/rocm-systems/0005-rocrtst-xnack-gpu-id-parsing-fix.patch
-@@ -0,0 +1,53 @@
-+From 1976891520907e396e923f70735face30374f74c Mon Sep 17 00:00:00 2001
-+From: Mika Laitio <mika.laitio@amd.com>
-+Date: Mon, 9 Mar 2026 17:28:33 -0700
-+Subject: [PATCH] rocrtst ':xnack+" gpu-id parsing fix
-+
-+Parsing of the gpu id fails if the gpu-name
-+contains colon separated features lile ":xnack+"
-+
-+rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:3:5: error: expected end of line in preprocessor expression
-+5.1         3 | #if ROCRTST_GPU < 0x1000
-+5.1           |     ^
-+5.1     <command line>:1:26: note: expanded from macro 'ROCRTST_GPU'
-+5.1         1 | #define ROCRTST_GPU 0x950:xnack+
-+5.1           |                          ^
-+5.1     rocm-systems/projects/rocr-runtime/rocrtst/suites/test_common/kernels/cu_mask_kernels.cl:6:20: error: invalid token at start of a preprocessor expression
-+5.1         6 |   #if (ROCRTST_GPU == 0x908) || (ROCRTST_GPU == 0x90a) || (ROCRTST_GPU == 0x940)
-+5.1           |                    ^
-+5.1     2 errors generated.
-+
-+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-+---
-+ .../rocrtst/suites/test_common/CMakeLists.txt          | 10 +++++++++-
-+ 1 file changed, 9 insertions(+), 1 deletion(-)
-+
-+diff --git a/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt b/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
-+index 571ba709cb..4dc866a1b2 100644
-+--- a/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
-++++ b/projects/rocr-runtime/rocrtst/suites/test_common/CMakeLists.txt
-+@@ -404,6 +404,14 @@ function(build_kernel S_NAME TARG_DEV)
-+   set(TARG_NAME "${S_NAME}_hsaco.${TARG_DEV}")
-+   set(HSACO_TARG_LIST ${HSACO_TARG_LIST} "${KERNEL_DIR}/${SNAME_KERNEL}" PARENT_SCOPE)
-+   string(SUBSTRING ${TARG_DEV} 3 -1 gfxNum)
-++  # gpu-name stored to TARG_DEV may contain additional features after base name separated by semicolon.
-++  # If the gpu name is for example: "gfx942:xnack+", then we need to remove also characters starting
-++  # from the colon to be able to parse the GPU ID as a hex number.
-++  string(FIND "${gfxNum}" ":" COLON_POS)
-++  if(NOT COLON_POS EQUAL -1)
-++    string(SUBSTRING "${gfxNum}" 0 ${COLON_POS} gfxNum)
-++  endif()
-++  message(STATUS "gfxNum: ${gfxNum}")
-+   separate_arguments(CLANG_ARG_LIST UNIX_COMMAND
-+    "-D ROCRTST_GPU=0x${gfxNum} -x cl -target amdgcn-amd-amdhsa -include ${OPENCL_INC_DIR}/opencl-c.h -mcpu=${TARG_DEV} ${BITCODE_ARGS} -cl-std=CL${OPENCL_VER} -mcode-object-version=4 ${CL_FILE_LIST} -o ${KERNEL_DIR}/${SNAME_KERNEL}")
-+   add_custom_command(OUTPUT "${KERNEL_DIR}/${SNAME_KERNEL}" COMMAND ${CLANG} ${CLANG_ARG_LIST} DEPENDS ${CL_FILE_LIST} ${CLANG} COMMENT "BUILDING ${KERNEL_DIR}/${SNAME_KERNEL}" VERBATIM)
-+@@ -693,4 +701,4 @@ install(TARGETS ${ROCRTST}
-+ 
-+ install ( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../thirdparty/lib DESTINATION lib/rocrtst )
-+ 
-+-include ( CPack )
-+\ No newline at end of file
-++include ( CPack )
-+-- 
-+2.43.0
-+
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 new file mode 100644
-index 0000000..36b8e13
+index 00000000..36b8e130
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 @@ -0,0 +1,46 @@
@@ -185,7 +106,7 @@ index 0000000..36b8e13
 +
 diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 new file mode 100644
-index 0000000..2a1f89e
+index 00000000..2a1f89e0
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 @@ -0,0 +1,52 @@
