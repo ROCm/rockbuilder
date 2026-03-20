@@ -1,7 +1,7 @@
-From ccb9a3766be0170576925fbcbd71b9328ecd5fa2 Mon Sep 17 00:00:00 2001
+From 8cbcca12829049e6ecc4b0f14edc8bce38ca56d2 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 23:23:19 -0700
-Subject: [PATCH 7/8] aqlprofile and roctracer add ASAN build check
+Subject: [PATCH 07/13] aqlprofile and roctracer add ASAN build check
 
 Fixes linking errors on tests when ASAN build is enabled.
 
@@ -11,7 +11,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 9 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 1a192719..8aea865d 100644
+index 1a19271..8aea865 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -27,6 +27,13 @@ if(THEROCK_ENABLE_ROCPROFV3)

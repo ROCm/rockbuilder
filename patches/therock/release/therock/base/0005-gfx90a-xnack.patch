@@ -1,7 +1,7 @@
-From 73ae51ef323ba35e5ab2431140481ac4bfe240b8 Mon Sep 17 00:00:00 2001
+From 236babd1e118f2e278c4c596cc4ed9ad4742041e Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 19:41:21 -0700
-Subject: [PATCH 5/8] gfx90a xnack+
+Subject: [PATCH 05/13] gfx90a xnack+
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -10,7 +10,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
-index 318ab721..13773e49 100644
+index 318ab72..13773e4 100644
 --- a/cmake/therock_sanitizers.cmake
 +++ b/cmake/therock_sanitizers.cmake
 @@ -29,7 +29,7 @@ function(therock_sanitizer_configure
@@ -41,7 +41,7 @@ index 318ab721..13773e49 100644
      string(APPEND _stanza "message(STATUS \"Override TSAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
      # Action at a distance: Signal that the sub-project should extend its build and install
 diff --git a/rcb_config.sh b/rcb_config.sh
-index afd7a6d5..5c189379 100755
+index afd7a6d..5c18937 100755
 --- a/rcb_config.sh
 +++ b/rcb_config.sh
 @@ -7,7 +7,7 @@ echo "rcb_config.sh python activated"

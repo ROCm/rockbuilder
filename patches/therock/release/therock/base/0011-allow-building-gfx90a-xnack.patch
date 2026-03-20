@@ -1,0 +1,30 @@
+From ee27432592b1e4ae1ff0b2833f242381ab1e4586 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 19 Mar 2026 17:09:48 -0700
+Subject: [PATCH 11/13] allow building gfx90a:xnack+
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/therock_amdgpu_targets.cmake | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index 55f26a3..13e0637 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -86,6 +86,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
+     hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
+ )
+ 
++# gfx90a (separate family - different instruction support from gfx906/gfx908)
++therock_add_amdgpu_target(gfx90a:xnack+ "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++
+ # gfx94X family
+ therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
+ 
+-- 
+2.43.0
+

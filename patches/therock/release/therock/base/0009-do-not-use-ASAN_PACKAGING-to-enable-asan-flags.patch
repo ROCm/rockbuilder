@@ -1,0 +1,62 @@
+From bd0002da2cda8fa710e22e83170563c53905619e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 18 Mar 2026 17:53:15 -0700
+Subject: [PATCH 09/13] do not use ASAN_PACKAGING to enable asan flags
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ml-libs/CMakeLists.txt  |  1 +
+ profiler/CMakeLists.txt | 11 ++---------
+ 2 files changed, 3 insertions(+), 9 deletions(-)
+
+diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
+index 43dc3a4..4f663cd 100644
+--- a/ml-libs/CMakeLists.txt
++++ b/ml-libs/CMakeLists.txt
+@@ -114,6 +114,7 @@ if(THEROCK_ENABLE_MIOPEN)
+       -DMIOPEN_TEST_DISCRETE=OFF
+       -DBoost_COMPILER=${_THEROCK_MIOPEN_OVERRIDE_BOOST_COMPILER}
+       "-DMIOPEN_INSTALL_GPU_DATABASES=\"${THEROCK_AMDGPU_TARGETS}\""
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+     CMAKE_INCLUDES
+       therock_explicit_finders.cmake
+     COMPILER_TOOLCHAIN
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index 8aea865..75c84c8 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -27,13 +27,6 @@ if(THEROCK_ENABLE_ROCPROFV3)
+   therock_cmake_subproject_activate(rocprof-trace-decoder)
+   list(APPEND _rocprofiler_sdk_common_deps rocprof-trace-decoder)
+ 
+-  set(ENABLE_ASAN_PACKAGING OFF)
+-  # Enable ASAN for Comgr when THEROCK_SANITIZER is set to ASAN or HOST_ASAN
+-  if(THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
+-    set(ENABLE_ASAN_PACKAGING ON)
+-    message(STATUS "ENABLE_ASAN_PACKAGING for aqlprofile (THEROCK_SANITIZER=${THEROCK_SANITIZER})")
+-  endif()
+-
+   ##############################################################################
+   # aqlprofile
+   ##############################################################################
+@@ -44,7 +37,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+     BACKGROUND_BUILD
+     CMAKE_ARGS
+       -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
+-      -DENABLE_ASAN_PACKAGING=${ENABLE_ASAN_PACKAGING}
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+       -DHIP_PLATFORM="amd"
+     COMPILER_TOOLCHAIN
+       amd-hip
+@@ -189,7 +182,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       amd-hip
+     CMAKE_ARGS
+       -DHIP_PLATFORM=amd
+-      -DENABLE_ASAN_PACKAGING=${ENABLE_ASAN_PACKAGING}
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+     INTERFACE_INCLUDE_DIRS
+       # All old clients of roctx64 expect to just be able to find its include
+       # with no further qualification. Bad design, but also deprecated, so meh.
+-- 
+2.43.0
+

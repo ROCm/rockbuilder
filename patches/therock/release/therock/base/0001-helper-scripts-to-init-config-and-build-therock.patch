@@ -1,7 +1,7 @@
-From e67358436227ff795f10e4adeecf83fdd7722f97 Mon Sep 17 00:00:00 2001
+From 17472814076d4a5e821b3cb16766979738ecef1e Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 1/8] helper scripts to init, config and build therock
+Subject: [PATCH 01/13] helper scripts to init, config and build therock
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -21,7 +21,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/rcb_build.bat b/rcb_build.bat
 new file mode 100644
-index 00000000..a2fd930c
+index 0000000..a2fd930
 --- /dev/null
 +++ b/rcb_build.bat
 @@ -0,0 +1,8 @@
@@ -35,7 +35,7 @@ index 00000000..a2fd930c
 +cmake --build build
 diff --git a/rcb_build.sh b/rcb_build.sh
 new file mode 100755
-index 00000000..f5605abc
+index 0000000..f5605ab
 --- /dev/null
 +++ b/rcb_build.sh
 @@ -0,0 +1,13 @@
@@ -54,7 +54,7 @@ index 00000000..f5605abc
 +exit $RES
 diff --git a/rcb_config.bat b/rcb_config.bat
 new file mode 100644
-index 00000000..39e807ca
+index 0000000..39e807c
 --- /dev/null
 +++ b/rcb_config.bat
 @@ -0,0 +1,8 @@
@@ -68,7 +68,7 @@ index 00000000..39e807ca
 +cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.sh b/rcb_config.sh
 new file mode 100755
-index 00000000..afd7a6d5
+index 0000000..afd7a6d
 --- /dev/null
 +++ b/rcb_config.sh
 @@ -0,0 +1,13 @@
@@ -87,7 +87,7 @@ index 00000000..afd7a6d5
 +exit $RES
 diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
 new file mode 100644
-index 00000000..09a68f89
+index 0000000..09a68f8
 --- /dev/null
 +++ b/rcb_pre_config.bat
 @@ -0,0 +1,26 @@
@@ -119,7 +119,7 @@ index 00000000..09a68f89
 +python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
 new file mode 100755
-index 00000000..29c47d20
+index 0000000..29c47d2
 --- /dev/null
 +++ b/rcb_pre_config.sh
 @@ -0,0 +1,24 @@

@@ -1,7 +1,7 @@
-From b8c1c2c7c8e64b741fb6e2d661f9e68f3d9526e9 Mon Sep 17 00:00:00 2001
+From 9591c8c5b3cb96901b3d4d555308274e01bf72f9 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 27 Nov 2025 03:52:07 +0000
-Subject: [PATCH 3/8] set LLVM_DEFAULT_TARGET_TRIPLE if specified
+Subject: [PATCH 03/13] set LLVM_DEFAULT_TARGET_TRIPLE if specified
 
 Set target triple when compiling the amd-llvm
 if environment variable
@@ -14,7 +14,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
-index 1991c6c0..abe2a4a6 100644
+index 1991c6c..abe2a4a 100644
 --- a/compiler/CMakeLists.txt
 +++ b/compiler/CMakeLists.txt
 @@ -13,6 +13,9 @@ if(THEROCK_ENABLE_COMPILER)

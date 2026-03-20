@@ -1,7 +1,7 @@
-From 0ab36dabb20dbea2c7ca77792cf2e3576d43984f Mon Sep 17 00:00:00 2001
+From 31dbbb123ab4ea57f2a485c7b53a20c534c9acac Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
-Subject: [PATCH 6/8] rocm-systems ASAN patches
+Subject: [PATCH 06/13] rocm-systems ASAN patches
 
 Patches to fix linking errors on ASAN builds for
 1) aqlprofile
@@ -54,7 +54,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 new file mode 100644
-index 00000000..36b8e130
+index 0000000..36b8e13
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 @@ -0,0 +1,46 @@
@@ -106,7 +106,7 @@ index 00000000..36b8e130
 +
 diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 new file mode 100644
-index 00000000..2a1f89e0
+index 0000000..2a1f89e
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 @@ -0,0 +1,52 @@

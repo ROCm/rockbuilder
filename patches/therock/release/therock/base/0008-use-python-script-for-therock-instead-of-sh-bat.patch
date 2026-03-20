@@ -1,7 +1,7 @@
-From 0487d1b8bf52907bcfaf4493d49d72d42959179b Mon Sep 17 00:00:00 2001
+From 642f1d0b40cbb29ae4c12bb6ccae9012e13a4029 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
-Subject: [PATCH 8/8] use python script for therock instead of sh bat
+Subject: [PATCH 08/13] use python script for therock instead of sh bat
 
 Combine rcb_pre_config, rcb_config and rcb_build
 bat and sh files to python scripts so that same
@@ -31,7 +31,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/rcb_build.bat b/rcb_build.bat
 deleted file mode 100644
-index a2fd930c..00000000
+index a2fd930..0000000
 --- a/rcb_build.bat
 +++ /dev/null
 @@ -1,8 +0,0 @@
@@ -45,7 +45,7 @@ index a2fd930c..00000000
 -cmake --build build
 diff --git a/rcb_build.py b/rcb_build.py
 new file mode 100644
-index 00000000..417e56a7
+index 0000000..417e56a
 --- /dev/null
 +++ b/rcb_build.py
 @@ -0,0 +1,44 @@
@@ -95,7 +95,7 @@ index 00000000..417e56a7
 +    main()
 diff --git a/rcb_build.sh b/rcb_build.sh
 deleted file mode 100755
-index f5605abc..00000000
+index f5605ab..0000000
 --- a/rcb_build.sh
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -114,7 +114,7 @@ index f5605abc..00000000
 -exit $RES
 diff --git a/rcb_config.bat b/rcb_config.bat
 deleted file mode 100644
-index 39e807ca..00000000
+index 39e807c..0000000
 --- a/rcb_config.bat
 +++ /dev/null
 @@ -1,8 +0,0 @@
@@ -128,7 +128,7 @@ index 39e807ca..00000000
 -cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 00000000..27deff58
+index 0000000..27deff5
 --- /dev/null
 +++ b/rcb_config.py
 @@ -0,0 +1,64 @@
@@ -198,7 +198,7 @@ index 00000000..27deff58
 +    main()
 diff --git a/rcb_config.sh b/rcb_config.sh
 deleted file mode 100755
-index 5c189379..00000000
+index 5c18937..0000000
 --- a/rcb_config.sh
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -217,7 +217,7 @@ index 5c189379..00000000
 -exit $RES
 diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
 deleted file mode 100644
-index 09a68f89..00000000
+index 09a68f8..0000000
 --- a/rcb_pre_config.bat
 +++ /dev/null
 @@ -1,26 +0,0 @@
@@ -249,7 +249,7 @@ index 09a68f89..00000000
 -python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
-index 00000000..864ccbe9
+index 0000000..864ccbe
 --- /dev/null
 +++ b/rcb_pre_config.py
 @@ -0,0 +1,132 @@
@@ -387,7 +387,7 @@ index 00000000..864ccbe9
 +    main()
 diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
 deleted file mode 100755
-index 29c47d20..00000000
+index 29c47d2..0000000
 --- a/rcb_pre_config.sh
 +++ /dev/null
 @@ -1,24 +0,0 @@

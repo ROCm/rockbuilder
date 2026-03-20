@@ -1,0 +1,73 @@
+From 09f3a6a75523cc8d8da764fd85e07173929b6137 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 19 Mar 2026 17:11:12 -0700
+Subject: [PATCH 12/13] Prefer the xnack variant of gpu if also a non-xnack
+ version exist
+
+Fixes a error when testing the compiler by building the binary
+simultaneously for the gfx90a and gfx90a:xnack. Happens when building
+tests for aqlprofiler.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/therock_amdgpu_targets.cmake | 37 ++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index 13e0637..8a99dfd 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -241,6 +241,42 @@ therock_add_amdgpu_target(gfx1201 "AMD RX 9070 / XT" FAMILY dgpu-all gfx120X-all
+ # Optional extension targets (used for out of tree target development).
+ include(therock_custom_amdgpu_targets OPTIONAL)
+ 
++function(prefer_xnack_variant_of_gpu_by_removing_other input_string output_var)
++    set(_list ${input_string})
++
++    set(_full_items "")
++    set(_short_names "")
++
++    # First pass: collect short names from items with colon
++    foreach(item IN LISTS _list)
++        if(item MATCHES ":")
++            list(APPEND _full_items "${item}")
++
++            # Extract short name (before colon)
++            string(REGEX REPLACE ":.*$" "" short "${item}")
++            list(APPEND _short_names "${short}")
++        endif()
++    endforeach()
++
++    # Second pass: keep items
++    set(_result "")
++
++    foreach(item IN LISTS _list)
++        if(item MATCHES ":")
++            # Always keep full items
++            list(APPEND _result "${item}")
++        else()
++            # Keep only if NOT shadowed by a colon version
++            list(FIND _short_names "${item}" idx)
++            if(idx EQUAL -1)
++                list(APPEND _result "${item}")
++            endif()
++        endif()
++    endforeach()
++
++    set(${output_var} "${_result}" PARENT_SCOPE)
++endfunction()
++
+ # Validates and normalizes AMDGPU target selection cache variables.
+ #
+ # This function handles three separate target lists:
+@@ -345,6 +381,7 @@ function(therock_validate_amdgpu_targets)
+     endforeach()
+     list(REMOVE_DUPLICATES _test_expanded_targets)
+   endif()
++  prefer_xnack_variant_of_gpu_by_removing_other("${_test_expanded_targets}" _test_expanded_targets)
+ 
+   # Report test targets if different from per-arch targets.
+   if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")
+-- 
+2.43.0
+
