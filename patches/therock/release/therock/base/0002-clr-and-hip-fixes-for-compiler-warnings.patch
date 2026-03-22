@@ -1,4 +1,4 @@
-From bad776a9caa035ab18064c152a1ae22e4deb3262 Mon Sep 17 00:00:00 2001
+From affc75d51828a7d68b328c110f8c6895c8c444ac Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
 Subject: [PATCH 02/13] clr and hip fixes for compiler warnings
@@ -25,16 +25,16 @@ include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...r-and-hip-fix-various-build-warnings.patch | 86 +++++++++++++++++++
- 1 file changed, 86 insertions(+)
+ ...r-and-hip-fix-various-build-warnings.patch | 85 +++++++++++++++++++
+ 1 file changed, 85 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 new file mode 100644
-index 0000000..da185ef
+index 0000000..6682b7d
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,85 @@
 +From fd98a67692c6815417bbb670e2794af896072885 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 1 Dec 2025 09:06:00 +0000
@@ -73,9 +73,9 @@ index 0000000..da185ef
 +--- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 ++++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 +@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
-+ 
++
 + #define __forceinline__ inline __attribute__((always_inline))
-+ 
++
 +-#if __HIP_NO_IMAGE_SUPPORT
 ++#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
 + #define __hip_img_chk__                                                                            \
@@ -88,7 +88,7 @@ index 0000000..da185ef
 +@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
 +     f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
 +   f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
-+ 
++
 +-  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
 ++  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
 +   # Generating the method for the API args filling
@@ -101,7 +101,7 @@ index 0000000..da185ef
 +@@ -62,7 +62,7 @@ THE SOFTWARE.
 + #define HIP_INTERNAL_EXPORTED_API
 + #endif
-+ 
++
 +-#if __HIP_DEVICE_COMPILE__ == 0
 ++#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
 + // 32-bit Atomics
@@ -114,13 +114,12 @@ index 0000000..da185ef
 +@@ -135,4 +135,4 @@ typedef enum hipLibraryOption_e {
 + #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
 + #endif
-+ 
++
 +-#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
 +\ No newline at end of file
 ++#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
-+-- 
++--
 +2.43.0
-+
 -- 
-2.43.0
+2.41.3
 

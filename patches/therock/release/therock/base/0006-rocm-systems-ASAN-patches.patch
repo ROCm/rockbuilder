@@ -1,4 +1,4 @@
-From 31dbbb123ab4ea57f2a485c7b53a20c534c9acac Mon Sep 17 00:00:00 2001
+From aa993ac91c0b8c0a3412c1102be61332ab2edf15 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
 Subject: [PATCH 06/13] rocm-systems ASAN patches
@@ -46,18 +46,18 @@ Fixes following type of errors
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- .../0006-aqlprofile-linking-fix.patch         | 46 ++++++++++++++++
- ...acer-ASAN-linking-error-fix-on-tests.patch | 52 +++++++++++++++++++
- 2 files changed, 98 insertions(+)
+ .../0006-aqlprofile-linking-fix.patch         | 45 ++++++++++++++++
+ ...acer-ASAN-linking-error-fix-on-tests.patch | 51 +++++++++++++++++++
+ 2 files changed, 96 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
 new file mode 100644
-index 0000000..36b8e13
+index 0000000..6a53231
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix.patch
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,45 @@
 +From 618d2463e9969603db67d86ccd66b9299312a697 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 9 Mar 2026 23:22:45 -0700
@@ -68,9 +68,9 @@ index 0000000..36b8e13
 +46.5	ld.lld: error: undefined symbol: __asan_unregister_elf_globals
 +46.5	>>> referenced by workload.cpp
 +46.5	>>>               test/integration/CMakeFiles/testv2.dir/workload.cpp.o:(asan.module_dtor)
-+46.5	
++46.5
 +46.5	ld.lld: error: undefined symbol: __asan_stack_free_7
-+46.5	>>> referenced by agent.cpp:162 
++46.5	>>> referenced by agent.cpp:162
 +46.5	>>>(/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
 +46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
 +46.5	>>> (AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
@@ -99,17 +99,16 @@ index 0000000..36b8e13
 ++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
 ++endif()
 + target_compile_definitions(testv2 PUBLIC AMD_INTERNAL_BUILD)
-+ 
-+ # Add a PRELOAD environment with libintercept
-+-- 
-+2.43.0
 +
++ # Add a PRELOAD environment with libintercept
++--
++2.43.0
 diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
 new file mode 100644
-index 0000000..2a1f89e
+index 0000000..ca3a97e
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-roctracer-ASAN-linking-error-fix-on-tests.patch
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,51 @@
 +From 961f2ca98e50c6b3654a0ffab7c48340909c80ce Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Tue, 10 Mar 2026 12:54:17 -0700
@@ -144,9 +143,9 @@ index 0000000..2a1f89e
 +--- a/projects/roctracer/test/CMakeLists.txt
 ++++ b/projects/roctracer/test/CMakeLists.txt
 +@@ -22,6 +22,15 @@
-+ 
++
 + get_property(HSA_RUNTIME_INCLUDE_DIRECTORIES TARGET hsa-runtime64::hsa-runtime64 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
-+ 
++
 ++if ( ENABLE_ASAN_PACKAGING )
 ++    message(STATUS "ENABLE_ASAN_PACKAGING")
 ++    #set ( CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG "${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG} -fno-omit-frame-pointer -fsanitize=address " )
@@ -159,9 +158,8 @@ index 0000000..2a1f89e
 + # Set the HIP language runtime link flags as FindHIP does not set them.
 + set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG})
 + set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG_SEP ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG_SEP})
-+-- 
++--
 +2.43.0
-+
 -- 
-2.43.0
+2.41.3
 

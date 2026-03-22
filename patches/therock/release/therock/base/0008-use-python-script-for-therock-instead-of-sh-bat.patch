@@ -1,4 +1,4 @@
-From 642f1d0b40cbb29ae4c12bb6ccae9012e13a4029 Mon Sep 17 00:00:00 2001
+From a8ae9ecbce01fc80cdecdf40ca88ba2e4a00a010 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 10 Mar 2026 21:30:00 -0700
 Subject: [PATCH 08/13] use python script for therock instead of sh bat
@@ -416,5 +416,5 @@ index 29c47d2..0000000
 -echo "rcb_pre_config.sh, res: $RES"
 -exit $RES
 -- 
-2.43.0
+2.41.3
 

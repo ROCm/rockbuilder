@@ -1,4 +1,4 @@
-From 09f3a6a75523cc8d8da764fd85e07173929b6137 Mon Sep 17 00:00:00 2001
+From 1cd9a810835a394dae56cbf3eb1a2ef335270fc8 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
 Subject: [PATCH 12/13] Prefer the xnack variant of gpu if also a non-xnack
@@ -69,5 +69,5 @@ index 13e0637..8a99dfd 100644
    # Report test targets if different from per-arch targets.
    if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")
 -- 
-2.43.0
+2.41.3
 

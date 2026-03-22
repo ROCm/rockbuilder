@@ -1,4 +1,4 @@
-From 2b73928f9fa1a00f20ce754fc790a4205af02923 Mon Sep 17 00:00:00 2001
+From d70906f275d83da811a34ccbeb1987a993d48535 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 20 Mar 2026 14:32:09 -0700
 Subject: [PATCH 13/13] update asan check in rcb_config.py
@@ -32,5 +32,5 @@ index 27deff5..27bc359 100644
      if IS_WINDOWS:
          cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
 -- 
-2.43.0
+2.41.3
 

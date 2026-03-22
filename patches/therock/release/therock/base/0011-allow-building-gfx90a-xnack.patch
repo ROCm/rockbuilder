@@ -1,4 +1,4 @@
-From ee27432592b1e4ae1ff0b2833f242381ab1e4586 Mon Sep 17 00:00:00 2001
+From 3d12e77b9648f313316a7c95e00108cc73d394c1 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:09:48 -0700
 Subject: [PATCH 11/13] allow building gfx90a:xnack+
@@ -26,5 +26,5 @@ index 55f26a3..13e0637 100644
  therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
  
 -- 
-2.43.0
+2.41.3
 

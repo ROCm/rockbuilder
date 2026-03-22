@@ -1,4 +1,4 @@
-From 17472814076d4a5e821b3cb16766979738ecef1e Mon Sep 17 00:00:00 2001
+From a7772bf2badabdd90abfb8d54de499e841ad94f6 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 01/13] helper scripts to init, config and build therock
@@ -148,5 +148,5 @@ index 0000000..29c47d2
 +echo "rcb_pre_config.sh, res: $RES"
 +exit $RES
 -- 
-2.43.0
+2.41.3
 
