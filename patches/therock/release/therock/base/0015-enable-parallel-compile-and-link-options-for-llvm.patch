@@ -28,7 +28,7 @@ index 27bc359..6148986 100644
 +    print(f"safe_cpu_count_compile: {safe_cpu_count_compile} safe_cpu_count_link: {safe_cpu_count_link}")
 +    if safe_cpu_count_compile != "":
 +        cmake_cmd.append(f"-DLLVM_PARALLEL_COMPILE_JOBS={safe_cpu_count_compile}")
-+        flang_safe_cpu_compile_count = int(safe_cpu_count_compile) - 2
++        flang_safe_cpu_compile_count = max(1, int(safe_cpu_count_compile) // 2)
 +        flang_safe_cpu_compile_count = max(1, flang_safe_cpu_compile_count)
 +        flang_safe_cpu_compile_count = str(flang_safe_cpu_compile_count)
 +        cmake_cmd.append(f"-DFLANG_PARALLEL_COMPILE_JOBS={flang_safe_cpu_compile_count}")
