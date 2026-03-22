@@ -1,7 +1,7 @@
 From 5bc550c358417fda1af8b2931f684bd5fa969387 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 23:23:19 -0700
-Subject: [PATCH 07/15] aqlprofile and roctracer add ASAN build check
+Subject: [PATCH 07/16] aqlprofile and roctracer add ASAN build check
 
 Fixes linking errors on tests when ASAN build is enabled.
 

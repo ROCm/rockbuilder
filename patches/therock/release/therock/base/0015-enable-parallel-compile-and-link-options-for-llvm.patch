@@ -1,7 +1,7 @@
-From a81a52d1e37428635793433e22f5679b36c77f76 Mon Sep 17 00:00:00 2001
+From 65c7bed765577dced2e43aab459b150753c56db2 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 16 Mar 2026 11:16:12 -0700
-Subject: [PATCH 15/15] enable parallel compile and link options for llvm
+Subject: [PATCH 15/16] enable parallel compile and link options for llvm
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

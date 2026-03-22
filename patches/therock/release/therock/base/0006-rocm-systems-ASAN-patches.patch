@@ -1,7 +1,7 @@
 From aa993ac91c0b8c0a3412c1102be61332ab2edf15 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 9 Mar 2026 17:52:06 -0700
-Subject: [PATCH 06/15] rocm-systems ASAN patches
+Subject: [PATCH 06/16] rocm-systems ASAN patches
 
 Patches to fix linking errors on ASAN builds for
 1) aqlprofile

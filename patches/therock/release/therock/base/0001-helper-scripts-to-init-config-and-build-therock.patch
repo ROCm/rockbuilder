@@ -1,7 +1,7 @@
 From a7772bf2badabdd90abfb8d54de499e841ad94f6 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 01/15] helper scripts to init, config and build therock
+Subject: [PATCH 01/16] helper scripts to init, config and build therock
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

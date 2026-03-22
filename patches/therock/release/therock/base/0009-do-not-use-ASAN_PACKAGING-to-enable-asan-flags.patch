@@ -1,7 +1,7 @@
 From d11ba9a255c28b206dc8497e52597a8ba9bb1704 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 18 Mar 2026 17:53:15 -0700
-Subject: [PATCH 09/15] do not use ASAN_PACKAGING to enable asan flags
+Subject: [PATCH 09/16] do not use ASAN_PACKAGING to enable asan flags
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

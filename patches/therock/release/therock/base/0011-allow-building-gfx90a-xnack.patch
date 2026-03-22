@@ -1,7 +1,7 @@
 From 3d12e77b9648f313316a7c95e00108cc73d394c1 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:09:48 -0700
-Subject: [PATCH 11/15] allow building gfx90a:xnack+
+Subject: [PATCH 11/16] allow building gfx90a:xnack+
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

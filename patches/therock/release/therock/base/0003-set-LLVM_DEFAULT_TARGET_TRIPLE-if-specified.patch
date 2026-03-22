@@ -1,7 +1,7 @@
 From c5e8f6d7057bdadf7eeff48b5de7bb89db802924 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 27 Nov 2025 03:52:07 +0000
-Subject: [PATCH 03/15] set LLVM_DEFAULT_TARGET_TRIPLE if specified
+Subject: [PATCH 03/16] set LLVM_DEFAULT_TARGET_TRIPLE if specified
 
 Set target triple when compiling the amd-llvm
 if environment variable
