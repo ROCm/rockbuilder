@@ -1,27 +1,30 @@
-From 1cd9a810835a394dae56cbf3eb1a2ef335270fc8 Mon Sep 17 00:00:00 2001
+From e0e9ea5f07120521a7478aa9252f95bbacd3a992 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
-Subject: [PATCH 12/16] Prefer the xnack variant of gpu if also a non-xnack
- version exist
+Subject: [PATCH 4/9] Fix aqlprofile build error for xnack+ gpu target
 
-Fixes a error when testing the compiler by building the binary
-simultaneously for the gfx90a and gfx90a:xnack. Happens when building
-tests for aqlprofiler.
+If the GPU list for build targets contains both the
+base GPU-name and property enabled GPU-name then the
+build of aqlprofile would produce an error that compiler
+can not produce simultaneously a binaries both for the
+gfx90a and gfx90a:xnack+ targets.
+
+Failure occurs on aqlprofiler configure phase for tests.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- cmake/therock_amdgpu_targets.cmake | 37 ++++++++++++++++++++++++++++++
- 1 file changed, 37 insertions(+)
+ cmake/therock_amdgpu_targets.cmake | 39 ++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index 13e0637..8a99dfd 100644
+index 13e0637..0fab0eb 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
 @@ -241,6 +241,42 @@ therock_add_amdgpu_target(gfx1201 "AMD RX 9070 / XT" FAMILY dgpu-all gfx120X-all
  # Optional extension targets (used for out of tree target development).
  include(therock_custom_amdgpu_targets OPTIONAL)
  
-+function(prefer_xnack_variant_of_gpu_by_removing_other input_string output_var)
++function(remove_base_gpu_name_if_version_with_properties_also_exist input_string output_var)
 +    set(_list ${input_string})
 +
 +    set(_full_items "")
@@ -60,11 +63,13 @@ index 13e0637..8a99dfd 100644
  # Validates and normalizes AMDGPU target selection cache variables.
  #
  # This function handles three separate target lists:
-@@ -345,6 +381,7 @@ function(therock_validate_amdgpu_targets)
+@@ -345,6 +381,9 @@ function(therock_validate_amdgpu_targets)
      endforeach()
      list(REMOVE_DUPLICATES _test_expanded_targets)
    endif()
-+  prefer_xnack_variant_of_gpu_by_removing_other("${_test_expanded_targets}" _test_expanded_targets)
++  # If list contains both the gfx90a;gfx90a:xnack+, then remove the gfx90a so that list would only contain gfx90a:xnack
++  # This fixes the build errors on aqlprofile if target is gfx90a:xnack+ for example without ASAN enabled.
++  remove_base_gpu_name_if_version_with_properties_also_exist("${_test_expanded_targets}" _test_expanded_targets)
  
    # Report test targets if different from per-arch targets.
    if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")

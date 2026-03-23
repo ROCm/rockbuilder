@@ -1,14 +1,31 @@
-From bd19ca611692187baafa84547f7e7c21763177c2 Mon Sep 17 00:00:00 2001
-From: Mika Laitio <mika.laitio@amd.com>
-Date: Mon, 9 Mar 2026 19:41:21 -0700
-Subject: [PATCH 05/16] gfx90a xnack+
+From aaaec1968ced50cd6ae4485d1727d263a521f82c Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Mon, 23 Mar 2026 11:59:48 -0700
+Subject: [PATCH 2/9] enable gfx90a xnack+ and asan build options
 
-Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
- cmake/therock_sanitizers.cmake | 6 +++---
- rcb_config.sh                  | 2 +-
- 2 files changed, 4 insertions(+), 4 deletions(-)
+ cmake/therock_amdgpu_targets.cmake | 6 ++++++
+ cmake/therock_sanitizers.cmake     | 6 +++---
+ 2 files changed, 9 insertions(+), 3 deletions(-)
 
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index 55f26a3..13e0637 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -86,6 +86,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
+     hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
+ )
+ 
++# gfx90a (separate family - different instruction support from gfx906/gfx908)
++therock_add_amdgpu_target(gfx90a:xnack+ "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++
+ # gfx94X family
+ therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
+ 
 diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
 index 318ab72..13773e4 100644
 --- a/cmake/therock_sanitizers.cmake
@@ -40,19 +57,6 @@ index 318ab72..13773e4 100644
      string(APPEND _stanza "set(AMDGPU_TARGETS \"\${GPU_TARGETS}\")\n")
      string(APPEND _stanza "message(STATUS \"Override TSAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
      # Action at a distance: Signal that the sub-project should extend its build and install
-diff --git a/rcb_config.sh b/rcb_config.sh
-index afd7a6d..5c18937 100755
---- a/rcb_config.sh
-+++ b/rcb_config.sh
-@@ -7,7 +7,7 @@ echo "rcb_config.sh python activated"
- CMAKE_VERSION_OUTPUT=$(cmake --version)
- echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
- echo "rcb_config.sh therock cmake config command started"
--cmake -B build -GNinja -DTHEROCK_AMDGPU_FAMILIES=${RCB_AMDGPU_TARGETS} .
-+cmake -B build -GNinja -DTHEROCK_VERBOSE=1 -DTHEROCK_SANITIZER=ASAN -DTHEROCK_AMDGPU_FAMILIES=${RCB_AMDGPU_TARGETS} .
- RES=$?
- echo "rcb_config.sh therock cmake config command done, res: $RES"
- exit $RES
 -- 
 2.41.3
 

@@ -1,7 +1,7 @@
-From e05fa8a183ca47eba4f3fbe08dac593a79f2eacd Mon Sep 17 00:00:00 2001
+From 529aa617f58621781dd93acf4abd9ff8572227fe Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 16 Mar 2026 11:02:47 -0700
-Subject: [PATCH 14/16] add LLVM_PARALLEL_COMPILE_JOBS option for therock
+Subject: [PATCH 7/9] add LLVM_PARALLEL_COMPILE_JOBS option for therock
 
 Following 3 options are supported by the amd-llvm
 to avoid running out of memory during compile and link phases
