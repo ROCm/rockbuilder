@@ -1,48 +1,18 @@
-From a8ae9ecbce01fc80cdecdf40ca88ba2e4a00a010 Mon Sep 17 00:00:00 2001
+From adaccfa95cf7c471db13404c6c391fbd4610418b Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
-Date: Tue, 10 Mar 2026 21:30:00 -0700
-Subject: [PATCH 08/16] use python script for therock instead of sh bat
-
-Combine rcb_pre_config, rcb_config and rcb_build
-bat and sh files to python scripts so that same
-file can be used both on linux and windows.
+Date: Tue, 16 Sep 2025 17:02:28 -0700
+Subject: [PATCH 1/9] therock patches to python scripts config and build
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- rcb_build.bat      |   8 ---
- rcb_build.py       |  44 +++++++++++++++
- rcb_build.sh       |  13 -----
- rcb_config.bat     |   8 ---
- rcb_config.py      |  64 ++++++++++++++++++++++
- rcb_config.sh      |  13 -----
- rcb_pre_config.bat |  26 ---------
- rcb_pre_config.py  | 132 +++++++++++++++++++++++++++++++++++++++++++++
- rcb_pre_config.sh  |  24 ---------
- 9 files changed, 240 insertions(+), 92 deletions(-)
- delete mode 100644 rcb_build.bat
+ rcb_build.py      |  44 ++++++++++++++++
+ rcb_config.py     |  78 +++++++++++++++++++++++++++
+ rcb_pre_config.py | 132 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 254 insertions(+)
  create mode 100644 rcb_build.py
- delete mode 100755 rcb_build.sh
- delete mode 100644 rcb_config.bat
  create mode 100644 rcb_config.py
- delete mode 100755 rcb_config.sh
- delete mode 100644 rcb_pre_config.bat
  create mode 100644 rcb_pre_config.py
- delete mode 100755 rcb_pre_config.sh
 
-diff --git a/rcb_build.bat b/rcb_build.bat
-deleted file mode 100644
-index a2fd930..0000000
---- a/rcb_build.bat
-+++ /dev/null
-@@ -1,8 +0,0 @@
--set "VENV_NAME=.venv"
--set "SCRIPT_DIR=%~dp0"
--
--cd /d "%SCRIPT_DIR%"
--
--echo Activating python virtual environment: "%VENV_NAME%"
--call "%VENV_NAME%\Scripts\activate.bat"
--cmake --build build
 diff --git a/rcb_build.py b/rcb_build.py
 new file mode 100644
 index 0000000..417e56a
@@ -93,45 +63,12 @@ index 0000000..417e56a
 +
 +if __name__ == "__main__":
 +    main()
-diff --git a/rcb_build.sh b/rcb_build.sh
-deleted file mode 100755
-index f5605ab..0000000
---- a/rcb_build.sh
-+++ /dev/null
-@@ -1,13 +0,0 @@
--#!/usr/bin/env bash
--
--export CUR_DIR=$PWD
--echo "rcb_build.sh current directory: $CUR_DIR"
--source ./.venv/bin/activate
--echo "rcb_build.sh python activated"
--CMAKE_VERSION_OUTPUT=$(cmake --version)
--echo "rcb_build.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
--echo "rcb_build.sh therock cmake build command started"
--cmake --build build
--RES=$?
--echo "rcb_build.sh therock cmake build command done, res: $RES"
--exit $RES
-diff --git a/rcb_config.bat b/rcb_config.bat
-deleted file mode 100644
-index 39e807c..0000000
---- a/rcb_config.bat
-+++ /dev/null
-@@ -1,8 +0,0 @@
--set "VENV_NAME=.venv"
--set "SCRIPT_DIR=%~dp0"
--
--cd /d "%SCRIPT_DIR%"
--
--echo Activating python virtual environment: "%VENV_NAME%"
--call "%VENV_NAME%\Scripts\activate.bat"
--cmake -B build -GNinja -DTHEROCK_AMDGPU_TARGETS=%RCB_AMDGPU_TARGETS% .
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 0000000..27deff5
+index 0000000..c26c50f
 --- /dev/null
 +++ b/rcb_config.py
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,78 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -168,6 +105,8 @@ index 0000000..27deff5
 +    print(f"rcb_config.py CMAKE_VERSION: {cmake_version}")
 +
 +    amdgpu_targets = os.environ.get("RCB_AMDGPU_TARGETS", "")
++    safe_cpu_count_compile = os.environ.get("RCB_SAFE_CPU_COUNT_BUILD", "")
++    safe_cpu_count_link = os.environ.get("RCB_SAFE_CPU_COUNT_LINK", "")
 +    cmake_cmd = [
 +        "cmake",
 +        "-B", "build",
@@ -178,12 +117,24 @@ index 0000000..27deff5
 +    sanitizer = os.environ.get("RCB_THEROCK_SANITIZER", "")
 +    if sanitizer:
 +        cmake_cmd.append(f"-DTHEROCK_SANITIZER={sanitizer}")
-+    elif amdgpu_targets in asan_gpu_families:
-+        answer = input(f"RCB_THEROCK_SANITIZER is not set and target is {amdgpu_targets}. "
++    else:
++        for asan_gpu_item in asan_gpu_families:
++            if asan_gpu_item in amdgpu_targets:
++                answer = input(f"RCB_THEROCK_SANITIZER is not set and target is {amdgpu_targets}. "
 +                       "Enable ASAN build? [y/N]: ").strip().lower()
-+        if answer == "y":
-+            cmake_cmd.append("-DTHEROCK_SANITIZER=ASAN")
++                if answer == "y":
++                    cmake_cmd.append("-DTHEROCK_SANITIZER=ASAN")
++                    break
 +    cmake_cmd.append(f"-DTHEROCK_AMDGPU_FAMILIES={amdgpu_targets}")
++    print(f"safe_cpu_count_compile: {safe_cpu_count_compile} safe_cpu_count_link: {safe_cpu_count_link}")
++    if safe_cpu_count_compile != "":
++        cmake_cmd.append(f"-DLLVM_PARALLEL_COMPILE_JOBS={safe_cpu_count_compile}")
++        flang_safe_cpu_compile_count = max(1, int(safe_cpu_count_compile) // 2)
++        flang_safe_cpu_compile_count = max(1, flang_safe_cpu_compile_count)
++        flang_safe_cpu_compile_count = str(flang_safe_cpu_compile_count)
++        cmake_cmd.append(f"-DFLANG_PARALLEL_COMPILE_JOBS={flang_safe_cpu_compile_count}")
++    if safe_cpu_count_link != "":
++        cmake_cmd.append(f"-DLLVM_PARALLEL_LINK_JOBS={safe_cpu_count_link}")
 +    if IS_WINDOWS:
 +        cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
 +    cmake_cmd.append(".")
@@ -196,57 +147,6 @@ index 0000000..27deff5
 +
 +if __name__ == "__main__":
 +    main()
-diff --git a/rcb_config.sh b/rcb_config.sh
-deleted file mode 100755
-index 5c18937..0000000
---- a/rcb_config.sh
-+++ /dev/null
-@@ -1,13 +0,0 @@
--#!/usr/bin/env bash
--
--export CUR_DIR=$PWD
--echo "rcb_config.sh current directory: $CUR_DIR"
--source ./.venv/bin/activate
--echo "rcb_config.sh python activated"
--CMAKE_VERSION_OUTPUT=$(cmake --version)
--echo "rcb_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
--echo "rcb_config.sh therock cmake config command started"
--cmake -B build -GNinja -DTHEROCK_VERBOSE=1 -DTHEROCK_SANITIZER=ASAN -DTHEROCK_AMDGPU_FAMILIES=${RCB_AMDGPU_TARGETS} .
--RES=$?
--echo "rcb_config.sh therock cmake config command done, res: $RES"
--exit $RES
-diff --git a/rcb_pre_config.bat b/rcb_pre_config.bat
-deleted file mode 100644
-index 09a68f8..0000000
---- a/rcb_pre_config.bat
-+++ /dev/null
-@@ -1,26 +0,0 @@
--set "VENV_NAME=.venv"
--set "SCRIPT_DIR=%~dp0"
--
--cd /d "%SCRIPT_DIR%"
--
--if not exist "%VENV_NAME%\Scripts\activate.bat" (
--    echo Creating python virtual environment: "%VENV_NAME%"
--    python -m venv "%VENV_NAME%"
--    if errorlevel 1 (
--        echo Error: Failed to create python virtual environment. Exiting.
--        exit /b 1
--    )
--    echo Activating python virtual environment: "%VENV_NAME%"
--    call "%VENV_NAME%\Scripts\activate.bat"
--    python.exe -m pip install --upgrade pip
--    pip install -r requirements.txt
--    pip install windows-curses
--    pip install "dvc[s3]"
--    pip install "cmake>=3.28.0,<4.0.0"
--    echo Python virtual environment created and enabled: "%VENV_NAME%"
--) else (
--    call "%VENV_NAME%\Scripts\activate.bat"
--    echo Python virtual environment enabled: "%VENV_NAME%"
--)
--pip install "dvc[s3]"
--python ./build_tools/fetch_sources.py
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
 index 0000000..864ccbe
@@ -385,36 +285,6 @@ index 0000000..864ccbe
 +
 +if __name__ == "__main__":
 +    main()
-diff --git a/rcb_pre_config.sh b/rcb_pre_config.sh
-deleted file mode 100755
-index 29c47d2..0000000
---- a/rcb_pre_config.sh
-+++ /dev/null
-@@ -1,24 +0,0 @@
--#!/usr/bin/env bash
--
--export CUR_DIR=$PWD
--echo "rcb_pre_config.sh current directory: $CUR_DIR"
--python3 -m venv ./.venv && source ./.venv/bin/activate
--echo "rcb_pre_config.sh python activated"
--pip install --upgrade pip
--pip install -r ./requirements.txt
--pip install "dvc[s3]"
--pip install "cmake>=3.28.0,<4.0.0"
--CMAKE_VERSION_OUTPUT=$(cmake --version)
--echo "rcb_pre_config.sh CMAKE_VERSION: ${CMAKE_VERSION_OUTPUT}"
--echo "rcb_pre_config.sh therock source fetch started"
--python ./build_tools/fetch_sources.py
--RES=$?
--if [ $RES -ne 0 ]; then
--    echo "First attempt for submodule source cofe fetch failed: $RES"
--    echo "Resetting submodules and trying refresh again"
--    git submodule foreach git reset --hard
--    python ./build_tools/fetch_sources.py
--    RES=$?
--fi
--echo "rcb_pre_config.sh, res: $RES"
--exit $RES
 -- 
 2.41.3
 
