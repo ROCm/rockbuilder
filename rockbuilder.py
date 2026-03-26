@@ -390,7 +390,7 @@ def _check_cpu_count_env_variable():
     cpu_cnt_build = cpu_cnt_total
     cpu_cnt_link = math.floor(cpu_cnt_total / 5)
     # min amount of mem reserved per build process
-    min_mem_gp_per_cpu = 2
+    min_mem_gp_per_cpu = 2.5
     # cpu count available on the system
     mem_total, mem_free = get_os_memory_info()
     if mem_free:
