@@ -401,9 +401,8 @@ def install_rocm_sdk_from_python_wheels(rcb_cfg) -> str:
             print("Error, could not find ROCM_HOME from ROCM_SDK python wheel install.")
     return ret
 
-# check_rcb_rocm_sdk_version_file is checked if we want to use rocm_sdk
-# build by therock itself, which will create this file to ensure that everything has been build.
-# Otherwise we will assume that rocm_sdk is fully installed.
+# TODO: Check the existence of rcb_rocm_sdk_version_file to verify if the rockbuilder
+# has succesfully build therock sdk.
 def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                                check_rcb_rocm_sdk_version_file: bool,
                                exit_on_error:bool):
@@ -413,7 +412,8 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
     is_posix = _is_posix()
     # set the ENV_VARIABLE_NAME__LIB to be either LD_LIBRARY_PATH or LIBPATH depending
     # whether code is executed on Linux or Windows (it is later used to set env-variables)
-    NEW_PATH_ENV_DIRS = None
+    NEW_BIN_PATH_STR = None
+    NEW_LIB_PATH_STR = None
     if is_posix:
         ENV_VARIABLE_NAME__LIB = "LD_LIBRARY_PATH"
     else:
@@ -424,8 +424,12 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
         if rcb_rocm_sdk_src_version_fname.exists() or not check_rcb_rocm_sdk_version_file:
             rocm_home_bin_path = rocm_home_root_path / "bin"
             rocm_home_lib_path = rocm_home_root_path / "lib"
+            rocm_home_llvm_bin_path = rocm_home_root_path / "lib/llvm/bin"
+            rocm_home_llvm_lib_path = rocm_home_root_path / "lib/llvm/lib"
             rocm_home_bin_path = rocm_home_bin_path.resolve()
             rocm_home_lib_path = rocm_home_lib_path.resolve()
+            rocm_home_llvm_bin_path = rocm_home_llvm_bin_path.resolve()
+            rocm_home_llvm_lib_path = rocm_home_llvm_lib_path.resolve()
             
             if rocm_home_bin_path.exists() and rocm_home_lib_path.exists():
                 # set ROCM_HOME if not yet set
@@ -436,20 +440,33 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
                 # ROCM_PATH is used by some ROCM applications instead of ROCM_HOME
                 ret.append("ROCM_PATH=" + rocm_home_root_path.as_posix())
                 if not _is_directory_in_env_variable_path("PATH", rocm_home_bin_path.as_posix()):
-                    NEW_PATH_ENV_DIRS=rocm_home_bin_path.as_posix()
                     # print("Adding " + rocm_home_bin_path.as_posix() + " to PATH")
-                rocm_home_llvm_path = rocm_home_root_path / "lib" / "llvm" / "bin"
-                rocm_home_llvm_path = rocm_home_llvm_path.resolve()
-                if rocm_home_bin_path.exists() and not _is_directory_in_env_variable_path("PATH", rocm_home_llvm_path.as_posix()):
-                    # print("Adding " + rocm_home_llvm_path.as_posix() + " to PATH")
-                    NEW_PATH_ENV_DIRS=NEW_PATH_ENV_DIRS + os.pathsep + rocm_home_llvm_path.as_posix()
+                    NEW_BIN_PATH_STR=rocm_home_bin_path.as_posix()
+                if not _is_directory_in_env_variable_path("PATH", rocm_home_llvm_bin_path.as_posix()):
+                    # print("Adding " + rocm_home_llvm_bin_path.as_posix() + " to PATH")
+                    if NEW_BIN_PATH_STR:
+                        NEW_BIN_PATH_STR=NEW_BIN_PATH_STR + os.pathsep + rocm_home_llvm_bin_path.as_posix()
+                    else:
+                        NEW_BIN_PATH_STR=rocm_home_llvm_bin_path.as_posix()
+                # add rocm_home/lib and rocm_home/lib/llvm/lib to LIBRARY_PATH
                 if not _is_directory_in_env_variable_path(ENV_VARIABLE_NAME__LIB, rocm_home_lib_path.as_posix()):
                     # print("Adding " + rocm_home_lib_path.as_posix() + " to " + ENV_VARIABLE_NAME__LIB)
-                    ret.append(ENV_VARIABLE_NAME__LIB + "=" + (
-                        rocm_home_lib_path.as_posix()
-                        + os.pathsep
-                        + os.environ.get(ENV_VARIABLE_NAME__LIB, "")))
-                # find bitcode and put it to path
+                    NEW_LIB_PATH_STR=rocm_home_lib_path.as_posix()
+                if not _is_directory_in_env_variable_path(ENV_VARIABLE_NAME__LIB, rocm_home_llvm_lib_path.as_posix()):
+                    if NEW_LIB_PATH_STR:
+                        NEW_LIB_PATH_STR=NEW_LIB_PATH_STR + os.pathsep + rocm_home_llvm_lib_path.as_posix()
+                    else:
+                        NEW_LIB_PATH_STR=rocm_home_llvm_lib_path.as_posix()
+                old_lib_path = os.getenv(ENV_VARIABLE_NAME__LIB)
+                if old_lib_path and old_lib_path.strip():
+                    if NEW_LIB_PATH_STR:
+                        NEW_LIB_PATH_STR=NEW_LIB_PATH_STR + os.pathsep + old_lib_path
+                    else:
+                        NEW_LIB_PATH_STR=old_lib_path
+                if NEW_LIB_PATH_STR:
+                    NEW_LIB_PATH_STR = ENV_VARIABLE_NAME__LIB + "=" + NEW_LIB_PATH_STR
+                    ret.append(NEW_LIB_PATH_STR)
+                # find bitcode directory and put it to path
                 folder_path = None
                 for folder_path in Path(rocm_home_root_path).glob("**/bitcode"):
                     folder_path = folder_path.resolve()
@@ -591,9 +608,9 @@ def get_rocm_sdk_env_variables(rocm_home_root_path:Path,
         print("")
         if exit_on_error:
             sys.exit(1)
-    if (not err_happened) and NEW_PATH_ENV_DIRS:
+    if (not err_happened) and NEW_BIN_PATH_STR:
         ret.append("PATH=" + (
-                 NEW_PATH_ENV_DIRS
+                 NEW_BIN_PATH_STR
                  + os.pathsep
                  + os.environ.get("PATH", "")))
     if err_happened:
