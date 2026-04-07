@@ -1,18 +1,18 @@
-From f454efde6f5002627977e1eb989461d9b6a2e863 Mon Sep 17 00:00:00 2001
-From: Mika Laitio <lamikr@gmail.com>
-Date: Wed, 15 Oct 2025 19:41:24 -0700
-Subject: [PATCH 2/3] enable attention for experimental amd gpus by default
+From d46b9ae020a3fa71bf65a2c5ca852aa982703ad4 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 6 Apr 2026 13:53:55 -0700
+Subject: [PATCH] enable attention for experimental amd gpus by default
 
-Signed-off-by: Mika Laitio <lamikr@gmail.com>
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- .../native/transformers/cuda/sdp_utils.cpp     | 18 +++++++++++-------
- 1 file changed, 11 insertions(+), 7 deletions(-)
+ .../native/transformers/cuda/sdp_utils.cpp    | 28 +++++++++++--------
+ 1 file changed, 16 insertions(+), 12 deletions(-)
 
 diff --git a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-index 7fce73151b0..2fed41f5db5 100644
+index 79b5df3f302..67fdcfa5c0b 100644
 --- a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
 +++ b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-@@ -312,9 +312,11 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
+@@ -319,9 +319,11 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
      if (aotriton::isArchExperimentallySupported(stream)) {
        static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
        if (!enable_experimental) {
@@ -27,16 +27,21 @@ index 7fce73151b0..2fed41f5db5 100644
        }
      }
  #endif
-@@ -350,7 +352,7 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+@@ -357,7 +359,7 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
    using sm50 = SMVersion<5, 0>;
    using sm121 = SMVersion<12, 1>;
  #if USE_ROCM
 -#if USE_ROCM_ATTENTION
 +  #if USE_ROCM_ATTENTION
-   if(at::globalContext().getROCmFAPreferredBackend() == at::ROCmFABackend::Ck) {
-     // User explicitly set CK as the flash attention backend. Return true for now
-     // TODO: Flesh out sanity checks
-@@ -369,9 +371,11 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+   if (at::cuda::device_count() == 0) {
+     return false;
+   }
+@@ -375,20 +377,22 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+         }
+         return false;
+     }
+-#if AOTRITON_VERSION_MINOR >= 9
++    #if AOTRITON_VERSION_MINOR >= 9
      if (aotriton::isArchExperimentallySupported(stream)) {
        static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
        if (!enable_experimental) {
@@ -50,7 +55,18 @@ index 7fce73151b0..2fed41f5db5 100644
 +        return true;
        }
      }
- #endif
+-#endif
++    #endif
+   }
+-#else
+-  return false;
+-#endif
++  #else
++    return false;
++  #endif
+ #else
+   if (!at::cuda::is_available()) {
+     if (debug) {
 -- 
 2.43.0
 
