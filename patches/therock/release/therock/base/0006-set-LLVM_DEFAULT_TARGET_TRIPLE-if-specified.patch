@@ -1,7 +1,7 @@
-From 517da35d0ea6fb8d50bf96609592e1483d990915 Mon Sep 17 00:00:00 2001
+From 30c5a528f7f01a78616700dc95845d023254e3d5 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 27 Nov 2025 03:52:07 +0000
-Subject: [PATCH 6/9] set LLVM_DEFAULT_TARGET_TRIPLE if specified
+Subject: [PATCH 06/16] set LLVM_DEFAULT_TARGET_TRIPLE if specified
 
 Set target triple when compiling the amd-llvm
 if environment variable
@@ -14,7 +14,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
-index 1991c6c..abe2a4a 100644
+index 9be7b0b..5f8bae8 100644
 --- a/compiler/CMakeLists.txt
 +++ b/compiler/CMakeLists.txt
 @@ -13,6 +13,9 @@ if(THEROCK_ENABLE_COMPILER)
@@ -28,5 +28,5 @@ index 1991c6c..abe2a4a 100644
    # Building Flang is very memory-intensive on systems with many cores. Allow
    # users to specify the level of concurrency for these tasks so they can
 -- 
-2.41.3
+2.52.0
 

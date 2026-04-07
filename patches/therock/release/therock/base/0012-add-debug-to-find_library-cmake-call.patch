@@ -1,0 +1,54 @@
+From 322029beda291c974465c9e4312a560bd43b7184 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 13 Apr 2026 22:17:12 -0700
+Subject: [PATCH 12/16] add debug to find_library cmake call
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/therock_explicit_finders.cmake | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/cmake/therock_explicit_finders.cmake b/cmake/therock_explicit_finders.cmake
+index fca2690..8fa0b7b 100644
+--- a/cmake/therock_explicit_finders.cmake
++++ b/cmake/therock_explicit_finders.cmake
+@@ -38,6 +38,7 @@ message(STATUS "  Paths that must resolve from super-project: ${THEROCK_SUPER_PR
+ # Override CMake built-in find_library.
+ function(find_library var name)
+   if("${name}" STREQUAL "NAMES")
++    message(STATUS "parsing NAMES form: ${name}")
+     # Parse NAMES form.
+     cmake_parse_arguments(PARSE_ARGV 1 ARG
+       ""
+@@ -45,15 +46,20 @@ function(find_library var name)
+       "NAMES"
+     )
+   else()
++    message(STATUS "parsing SINGLE NAME form: ${name}")
+     # Parse single name form with optional paths.
+     set(ARG_NAMES "${name}")
+     set(ARG_UNPARSED_ARGUMENTS "PATHS" ${ARGN})
++    message(STATUS "ARGN: ${ARGN}")
++    message(STATUS "ARG_UNPARSED_ARGUMENTS: ${ARG_UNPARSED_ARGUMENTS}")
+   endif()
+ 
+   set(_is_superproject FALSE)
+   foreach(_name ${ARG_NAMES})
++    message(STATUS "find_library, _name: ${_name}")
+     if("${_name}" IN_LIST THEROCK_SUPER_PROJECT_FIND_LIBRARY_NAMES)
+       # Resolve from super-project
++      message(STATUS "find_library trying to resolve from super project: ${_name}")
+       set(_is_superproject TRUE)
+       _find_library(_found_library NAMES "${_name}"
+         NO_CACHE NO_DEFAULT_PATH NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH NO_CMAKE_SYSTEM_PATH NO_CMAKE_INSTALL_PREFIX
+@@ -61,6 +67,7 @@ function(find_library var name)
+       )
+       if(_found_library)
+         message(STATUS "Resolving super-project find_library(${var} NAMES ${ARG_NAMES}): ${_found_library}")
++	message(STATUS "CMAKE_LIBRARY_PATH: ${CMAKE_LIBRARY_PATH}")
+         set("${var}" "${_found_library}" PARENT_SCOPE)
+         return()
+       endif()
+-- 
+2.52.0
+

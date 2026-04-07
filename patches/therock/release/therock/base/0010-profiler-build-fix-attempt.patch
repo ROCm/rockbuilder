@@ -1,0 +1,25 @@
+From ff7e679104ddc552d2ed66e1924b4f5e28f5ea13 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 10 Apr 2026 18:16:03 -0700
+Subject: [PATCH 10/16] profiler build fix attempt
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ profiler/CMakeLists.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index a6eac4c..9c2ec5d 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -298,6 +298,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       BACKGROUND_BUILD
+       CMAKE_ARGS
+         -DHIP_PLATFORM=amd
++        -DROCM_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
+         -DROCPROFSYS_BUILD_ELFUTILS=ON
+         -DROCPROFSYS_BUILD_TBB=ON
+         -DROCPROFSYS_BUILD_LIBIBERTY=ON
+-- 
+2.52.0
+

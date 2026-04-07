@@ -1,11 +1,11 @@
-From 5b3c455c765e0c6c27af3fc825196c66ccd91429 Mon Sep 17 00:00:00 2001
-From: Mika Laitio <lamikr@gmail.com>
+From 4194de6cbe7bef882555f4228d268b1d4af1159d Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 21 Mar 2026 20:28:40 -0700
-Subject: [PATCH 8/9] rccl use lto-partitions=32 instead of default 8
+Subject: [PATCH 08/16] rccl use lto-partitions=32 instead of default 8
 
 Aims to decrease the rccl libraries linking time.
 
-Signed-off-by: Mika Laitio <lamikr@gmail.com>
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  ...o-partitions-32-instead-of-default-8.patch | 26 +++++++++++++++++++
  1 file changed, 26 insertions(+)
@@ -18,13 +18,13 @@ index 0000000..eb9f73c
 +++ b/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 @@ -0,0 +1,26 @@
 +From bf39ac79b728f60a9119f35037c8a1e10ad534e2 Mon Sep 17 00:00:00 2001
-+From: Mika Laitio <lamikr@gmail.com>
++From: Mika Laitio <mika.laitio@amd.com>
 +Date: Sat, 21 Mar 2026 20:26:26 -0700
 +Subject: [PATCH] rccl use lto-partitions=32 instead of default 8
 +
 +Aims to decrease the linking time of rccl libraries.
 +
-+Signed-off-by: Mika Laitio <lamikr@gmail.com>
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
 + projects/rccl/src/CMakeLists.txt | 1 +
 + 1 file changed, 1 insertion(+)
@@ -44,5 +44,5 @@ index 0000000..eb9f73c
 +--
 +2.41.3
 -- 
-2.41.3
+2.52.0
 

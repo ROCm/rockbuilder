@@ -1,9 +1,9 @@
-From aaaec1968ced50cd6ae4485d1727d263a521f82c Mon Sep 17 00:00:00 2001
-From: Mika Laitio <lamikr@gmail.com>
+From 02ba9bd6fd17e2ec0ec5bac43ccb27499cf7ded3 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 11:59:48 -0700
-Subject: [PATCH 2/9] enable gfx90a xnack+ and asan build options
+Subject: [PATCH 02/16] enable gfx90a xnack+ and asan build options
 
-Signed-off-by: Mika Laitio <lamikr@gmail.com>
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  cmake/therock_amdgpu_targets.cmake | 6 ++++++
  cmake/therock_sanitizers.cmake     | 6 +++---
@@ -58,5 +58,5 @@ index 318ab72..13773e4 100644
      string(APPEND _stanza "message(STATUS \"Override TSAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
      # Action at a distance: Signal that the sub-project should extend its build and install
 -- 
-2.41.3
+2.52.0
 

@@ -1,0 +1,313 @@
+From 1fa20408d7291146d296987a0d84fd9b8eb38db2 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 13 Apr 2026 14:35:14 -0700
+Subject: [PATCH 11/16] add patch to fix amdsmi lib64 linking error
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...and-hip-fixes-for-compiler-warnings.patch} | 35 ++++++++-------
+ ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
+ ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
+ ...-partitions-32-instead-of-default-8.patch} | 11 ++---
+ ...-amd-gpus-to-list-of-supported-GPUs.patch} | 16 +++----
+ ...ries-before-lib-to-fix-linking-error.patch | 44 +++++++++++++++++++
+ 6 files changed, 82 insertions(+), 36 deletions(-)
+ rename patches/amd-mainline/rocm-systems/{0004-clr-and-hip-fix-various-build-warnings.patch => 0001-clr-and-hip-fixes-for-compiler-warnings.patch} (87%)
+ rename patches/amd-mainline/rocm-systems/{0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch => 0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch} (92%)
+ rename patches/amd-mainline/rocm-systems/{0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch => 0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch} (93%)
+ rename patches/amd-mainline/rocm-systems/{0009-rccl-use-lto-partitions-32-instead-of-default-8.patch => 0004-rccl-use-lto-partitions-32-instead-of-default-8.patch} (77%)
+ rename patches/amd-mainline/rocm-systems/{0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch => 0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch} (90%)
+ create mode 100644 patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
+similarity index 87%
+rename from patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
+rename to patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
+index 6682b7d..3cfa100 100644
+--- a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
++++ b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
+@@ -1,7 +1,7 @@
+-From fd98a67692c6815417bbb670e2794af896072885 Mon Sep 17 00:00:00 2001
++From a1b40ebd20964603f65e828643e9d75eb68bab79 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <mika.laitio@amd.com>
+ Date: Mon, 1 Dec 2025 09:06:00 +0000
+-Subject: [PATCH] clr and hip fixes for compiler warnings
++Subject: [PATCH 1/6] clr and hip fixes for compiler warnings
+ 
+ Fix warnings that are showed when building for example
+ the clr project itself or other projects like miopen
+@@ -32,54 +32,55 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+  4 files changed, 4 insertions(+), 4 deletions(-)
+ 
+ diff --git a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
+-index 8081966cf7..2a5712bdb6 100644
++index 217adfe636..8c84b8cf19 100644
+ --- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
+ +++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
+-@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
+-
++@@ -238,7 +238,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
++ 
+  #define __forceinline__ inline __attribute__((always_inline))
+-
++ 
+ -#if __HIP_NO_IMAGE_SUPPORT
+ +#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
+  #define __hip_img_chk__                                                                            \
+    __attribute__((unavailable("The image/texture API not supported on the device")))
+  #else
+ diff --git a/projects/clr/hipamd/src/hip_prof_gen.py b/projects/clr/hipamd/src/hip_prof_gen.py
+-index e7baccbfec..6d1d1767de 100755
++index 2fd83b00ba..387a1f0a4c 100755
+ --- a/projects/clr/hipamd/src/hip_prof_gen.py
+ +++ b/projects/clr/hipamd/src/hip_prof_gen.py
+-@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
++@@ -526,7 +526,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
+      f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
+    f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
+-
++ 
+ -  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
+ +  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
+    # Generating the method for the API args filling
+    f.write('// HIP API args filling helper\n')
+    f.write('static inline void hipApiArgsInit(hip_api_id_t id, hip_api_data_t* data) {\n')
+ diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
+-index 4a7dcff6cb..6fffe7fcf7 100644
++index 4989ce8b19..d6b4f3cff9 100644
+ --- a/projects/hip/include/hip/hip_common.h
+ +++ b/projects/hip/include/hip/hip_common.h
+-@@ -62,7 +62,7 @@ THE SOFTWARE.
++@@ -46,7 +46,7 @@
+  #define HIP_INTERNAL_EXPORTED_API
+  #endif
+-
++ 
+ -#if __HIP_DEVICE_COMPILE__ == 0
+ +#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
+  // 32-bit Atomics
+  #define __HIP_ARCH_HAS_GLOBAL_INT32_ATOMICS__ (0)
+  #define __HIP_ARCH_HAS_GLOBAL_FLOAT_ATOMIC_EXCH__ (0)
+ diff --git a/projects/hip/include/hip/linker_types.h b/projects/hip/include/hip/linker_types.h
+-index 1131910322..03f97ec834 100755
++index 4a8f263e0c..86f3905954 100755
+ --- a/projects/hip/include/hip/linker_types.h
+ +++ b/projects/hip/include/hip/linker_types.h
+-@@ -135,4 +135,4 @@ typedef enum hipLibraryOption_e {
++@@ -119,4 +119,4 @@ typedef enum hipLibraryOption_e {
+  #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
+  #endif
+-
++ 
+ -#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+ \ No newline at end of file
+ +#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+---
+-2.43.0
++-- 
++2.41.3
++
+diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+similarity index 92%
+rename from patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+rename to patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+index 653d702..8aca518 100644
+--- a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
++++ b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+@@ -1,7 +1,7 @@
+-From e362b3a5af3d593bb66e00f3a805489bca89c0c0 Mon Sep 17 00:00:00 2001
++From 22c0b87254522a94c6c0d062ade6e88620e8e4b7 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <mika.laitio@amd.com>
+ Date: Mon, 9 Mar 2026 23:22:45 -0700
+-Subject: [PATCH 1/2] aqlprofile linking fix for tests when ASAN enabled
++Subject: [PATCH 2/6] aqlprofile linking fix for tests when ASAN enabled
+ 
+ Fixes linking errors on aqlprofile integrations tests
+ when ASAN build is enabled.
+@@ -26,7 +26,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+  1 file changed, 5 insertions(+)
+ 
+ diff --git a/projects/aqlprofile/test/integration/CMakeLists.txt b/projects/aqlprofile/test/integration/CMakeLists.txt
+-index 0eb5a927..60870ffa 100644
++index 0eb5a927ce..60870ffa04 100644
+ --- a/projects/aqlprofile/test/integration/CMakeLists.txt
+ +++ b/projects/aqlprofile/test/integration/CMakeLists.txt
+ @@ -63,6 +63,11 @@ add_executable(testv2)
+diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+similarity index 93%
+rename from patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+rename to patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+index 81a0ed3..70879f8 100644
+--- a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
++++ b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+@@ -1,7 +1,7 @@
+-From f4705274ca7a0c06f010535c442ab2a059068b85 Mon Sep 17 00:00:00 2001
++From fb6071723ef78ba749c7ad2efc5fd6172bd59fc0 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <mika.laitio@amd.com>
+ Date: Tue, 10 Mar 2026 12:54:17 -0700
+-Subject: [PATCH 2/2] roctracer linking fix for tests when ASAN enabled
++Subject: [PATCH 3/6] roctracer linking fix for tests when ASAN enabled
+ 
+ Fixes a following type of linking errors on roctracer
+ when build ASAN is enabled.
+@@ -29,7 +29,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+  1 file changed, 6 insertions(+)
+ 
+ diff --git a/projects/roctracer/test/CMakeLists.txt b/projects/roctracer/test/CMakeLists.txt
+-index 95563d5b..ac2e5c73 100644
++index 95563d5b9f..ac2e5c7333 100644
+ --- a/projects/roctracer/test/CMakeLists.txt
+ +++ b/projects/roctracer/test/CMakeLists.txt
+ @@ -22,6 +22,12 @@
+diff --git a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
+similarity index 77%
+rename from patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
+rename to patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
+index eb9f73c..596264b 100644
+--- a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
++++ b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
+@@ -1,7 +1,7 @@
+-From bf39ac79b728f60a9119f35037c8a1e10ad534e2 Mon Sep 17 00:00:00 2001
++From 4015a7b4811e4524ae98604b2c689849c8590321 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <mika.laitio@amd.com>
+ Date: Sat, 21 Mar 2026 20:26:26 -0700
+-Subject: [PATCH] rccl use lto-partitions=32 instead of default 8
++Subject: [PATCH 4/6] rccl use lto-partitions=32 instead of default 8
+ 
+ Aims to decrease the linking time of rccl libraries.
+ 
+@@ -11,10 +11,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+  1 file changed, 1 insertion(+)
+ 
+ diff --git a/projects/rccl/src/CMakeLists.txt b/projects/rccl/src/CMakeLists.txt
+-index 7ae82671..9d553741 100644
++index e455f11c43..16a3a53929 100644
+ --- a/projects/rccl/src/CMakeLists.txt
+ +++ b/projects/rccl/src/CMakeLists.txt
+-@@ -922,6 +922,7 @@ if (HAVE_PARALLEL_JOBS)
++@@ -938,6 +938,7 @@ if (HAVE_PARALLEL_JOBS)
+      set(num_linker_jobs "1")
+    endif()
+    message(STATUS "Use ${num_linker_jobs} jobs for linking")
+@@ -22,5 +22,6 @@ index 7ae82671..9d553741 100644
+    target_link_options(rccl PRIVATE -parallel-jobs=${num_linker_jobs})       # Use multiple threads to link
+  endif()
+  if(BUILD_ADDRESS_SANITIZER)
+---
++-- 
+ 2.41.3
++
+diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+similarity index 90%
+rename from patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+rename to patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+index d727549..98b59d0 100644
+--- a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
++++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+@@ -1,7 +1,7 @@
+-From 88e3f0f46c819f5031355c336835d5d6d7fb2305 Mon Sep 17 00:00:00 2001
++From 037417c9549520e5025eed0e674c5290e748cf94 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <mika.laitio@amd.com>
+ Date: Mon, 23 Mar 2026 15:53:36 -0700
+-Subject: [PATCH] rccl add more amd gpus to list of supported GPUs
++Subject: [PATCH 5/6] rccl add more amd gpus to list of supported GPUs
+ 
+ - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
+   gfx1150 to the list if default GPUs. This fixes the
+@@ -22,10 +22,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+  4 files changed, 16 insertions(+), 3 deletions(-)
+ 
+ diff --git a/projects/rccl/CMakeLists.txt b/projects/rccl/CMakeLists.txt
+-index a3bcbfea..36c8f269 100644
++index 54518a7c05..0169b4fe37 100644
+ --- a/projects/rccl/CMakeLists.txt
+ +++ b/projects/rccl/CMakeLists.txt
+-@@ -98,9 +98,15 @@ set(DEFAULT_GPUS
++@@ -146,9 +146,15 @@ set(DEFAULT_GPUS
+        gfx942
+        gfx950
+        gfx1030
+@@ -42,10 +42,10 @@ index a3bcbfea..36c8f269 100644
+        gfx1200
+        gfx1201)
+ diff --git a/projects/rccl/src/device/common.h b/projects/rccl/src/device/common.h
+-index 4ebacf44..30fbdaf6 100644
++index 0f6e45d58e..8e09df318f 100644
+ --- a/projects/rccl/src/device/common.h
+ +++ b/projects/rccl/src/device/common.h
+-@@ -26,7 +26,8 @@
++@@ -29,7 +29,8 @@
+    { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
+  #endif
+  
+@@ -56,7 +56,7 @@ index 4ebacf44..30fbdaf6 100644
+    collTrace->data_0 = 0;
+  #else
+ diff --git a/projects/rccl/src/include/rccl_float8.h b/projects/rccl/src/include/rccl_float8.h
+-index e8eb675c..cbe20440 100755
++index e8eb675ce3..7e37fd90e3 100755
+ --- a/projects/rccl/src/include/rccl_float8.h
+ +++ b/projects/rccl/src/include/rccl_float8.h
+ @@ -41,7 +41,11 @@ typedef struct
+@@ -73,7 +73,7 @@ index e8eb675c..cbe20440 100755
+  #include <hip/hip_fp8.h>
+  
+ diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
+-index 116f60a9..090a9d84 100644
++index 116f60a963..090a9d842d 100644
+ --- a/projects/rccl/tools/JitterBench/Common.hpp
+ +++ b/projects/rccl/tools/JitterBench/Common.hpp
+ @@ -43,7 +43,9 @@ THE SOFTWARE.
+diff --git a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
+new file mode 100644
+index 0000000..f1a1333
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
+@@ -0,0 +1,44 @@
++From 25b67b20379d4b6399e6ab1967b34a3205791f07 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 13 Apr 2026 14:02:18 -0700
++Subject: [PATCH 6/6] link /lib64 libraries before /lib to fix linking error
++
++Linking of amdsmi can fail on systems which have both
++the 32 and 64 bit libraries installed.
++
++In these systems the 32 bit version of libraries are usually
++installed to /lib-folder and 64-bit versions to /lib64 folder
++which can lead to linking error if lib-folder is specified
++before the lib64 folder because then the 32-bit version of libraries
++are tried to link to 64 bit version of amdsmi.
++
++Fix is simply the specify the lib64 folder before the lib-folder.
++
++Example of the error that this fixes:
++
++0.1	: && /therock/build/compiler/amd-llvm/dist/lib/llvm/bin/clang -fPIC -O3 -DNDEBUG  -L/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,--build-id=sha1   -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o goamdsmi_shim/libgoamdsmi_shim64.so.1.0 goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o  -Wl,-rpath,/therock/build/core/amdsmi/build/src:  -lpthread  -lrt  -lm  src/libamd_smi.so.26.4.0  -L/lib  -L/lib64 && :
++0.1	ld.lld: error: /usr/lib/gcc/x86_64-mageia-linux/12/../../../../lib64/crti.o is incompatible with elf32-i386
++0.1	ld.lld: error: /therock/build/compiler/amd-llvm/dist/lib/llvm/lib/clang/23/lib/linux/clang_rt.crtbegin-x86_64.o is incompatible with elf32-i386
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/amdsmi/goamdsmi_shim/CMakeLists.txt | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
++index 3549c8f07f..4f0c7e4d65 100644
++--- a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
+++++ b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
++@@ -90,8 +90,8 @@ add_library(${GOAMDSMI_SHIM_TARGET} SHARED ${go_amd_smi_sources} ${go_amd_smi_he
++ target_link_libraries(${GOAMDSMI_SHIM_TARGET} pthread rt m)
++ 
++ target_link_libraries(${GOAMDSMI_SHIM_TARGET} amd_smi)
++-target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
++ target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib64)
+++target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
++ 
++ ## Set the VERSION and SOVERSION values
++ set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
++-- 
++2.41.3
++
+-- 
+2.52.0
+

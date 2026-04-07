@@ -1,7 +1,7 @@
-From e0e9ea5f07120521a7478aa9252f95bbacd3a992 Mon Sep 17 00:00:00 2001
+From 582475ae50897b9986496e58d7a6bf2fc6d3fa59 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
-Subject: [PATCH 4/9] Fix aqlprofile build error for xnack+ gpu target
+Subject: [PATCH 04/16] Fix aqlprofile build error for xnack+ gpu target
 
 If the GPU list for build targets contains both the
 base GPU-name and property enabled GPU-name then the
@@ -74,5 +74,5 @@ index 13e0637..0fab0eb 100644
    # Report test targets if different from per-arch targets.
    if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")
 -- 
-2.41.3
+2.52.0
 

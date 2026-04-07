@@ -1,7 +1,7 @@
-From dadede3ffc10b9868e9f946ed24d6ebec6ee3a35 Mon Sep 17 00:00:00 2001
+From 5c98091d50246d6877f57d6b248303469a8cb746 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 9/9] rccl add more amd gpus to list of supported GPUs
+Subject: [PATCH 09/16] rccl add more amd gpus to list of supported GPUs
 
 - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
   gfx1150 to the list if default GPUs. This fixes the
@@ -21,12 +21,12 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 new file mode 100644
-index 0000000..ddf72c3
+index 0000000..d727549
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 @@ -0,0 +1,92 @@
 +From 88e3f0f46c819f5031355c336835d5d6d7fb2305 Mon Sep 17 00:00:00 2001
-+From: Mika Laitio <lamikr@gmail.com>
++From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 23 Mar 2026 15:53:36 -0700
 +Subject: [PATCH] rccl add more amd gpus to list of supported GPUs
 +
@@ -40,7 +40,7 @@ index 0000000..ddf72c3
 +  iGPUs like gfx1103, gfx1150, gfx1151 and newer gpus
 +  like gfx1200 and gfx1201
 +
-+Signed-off-by: Mika Laitio <lamikr@gmail.com>
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
 + projects/rccl/CMakeLists.txt               | 6 ++++++
 + projects/rccl/src/device/common.h          | 3 ++-
@@ -118,5 +118,5 @@ index 0000000..ddf72c3
 +2.41.3
 +
 -- 
-2.41.3
+2.52.0
 
