@@ -1,7 +1,7 @@
-From 5cfeaac3757fe7f9e3ad6893584a0d9eb8f1bb09 Mon Sep 17 00:00:00 2001
+From ade4883c57c71d72455c7d1c68514c528a8c66ee Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 16 Apr 2026 00:36:14 -0700
-Subject: [PATCH 18/18] rocprofiler-systems use therock provided elfutils
+Subject: [PATCH 18/19] rocprofiler-systems use therock provided elfutils
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 2 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 6b8b8ea..1867d18 100644
+index 6b8b8ea8..1867d184 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -315,6 +315,7 @@ if(THEROCK_ENABLE_ROCPROFV3)

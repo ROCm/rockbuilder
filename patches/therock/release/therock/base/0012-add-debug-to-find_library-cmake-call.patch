@@ -1,7 +1,7 @@
-From 322029beda291c974465c9e4312a560bd43b7184 Mon Sep 17 00:00:00 2001
+From caed852f045926f727ad9ba3660a7c09aa89cc5f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 22:17:12 -0700
-Subject: [PATCH 12/16] add debug to find_library cmake call
+Subject: [PATCH 12/19] add debug to find_library cmake call
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 7 insertions(+)
 
 diff --git a/cmake/therock_explicit_finders.cmake b/cmake/therock_explicit_finders.cmake
-index fca2690..8fa0b7b 100644
+index fca26908..8fa0b7b7 100644
 --- a/cmake/therock_explicit_finders.cmake
 +++ b/cmake/therock_explicit_finders.cmake
 @@ -38,6 +38,7 @@ message(STATUS "  Paths that must resolve from super-project: ${THEROCK_SUPER_PR

@@ -1,7 +1,7 @@
-From 02ba9bd6fd17e2ec0ec5bac43ccb27499cf7ded3 Mon Sep 17 00:00:00 2001
+From 42e407c087728d858c4ca44411cd9c00d1950cc7 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 11:59:48 -0700
-Subject: [PATCH 02/16] enable gfx90a xnack+ and asan build options
+Subject: [PATCH 02/19] enable gfx90a xnack+ and asan build options
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -10,7 +10,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  2 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index 55f26a3..13e0637 100644
+index 55f26a3d..13e06375 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
 @@ -86,6 +86,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
@@ -27,7 +27,7 @@ index 55f26a3..13e0637 100644
  therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
  
 diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
-index 318ab72..13773e4 100644
+index 318ab721..13773e49 100644
 --- a/cmake/therock_sanitizers.cmake
 +++ b/cmake/therock_sanitizers.cmake
 @@ -29,7 +29,7 @@ function(therock_sanitizer_configure

@@ -1,7 +1,7 @@
-From 26eac22732a515e216e60e9931189a18a71d5aaf Mon Sep 17 00:00:00 2001
+From 7fb9306f079a1faf44d9d3e383123bb1a06a1092 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 01/16] therock patches to python scripts config and build
+Subject: [PATCH 01/19] therock patches to python scripts config and build
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -15,7 +15,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/rcb_build.py b/rcb_build.py
 new file mode 100644
-index 0000000..417e56a
+index 00000000..417e56a7
 --- /dev/null
 +++ b/rcb_build.py
 @@ -0,0 +1,44 @@
@@ -65,7 +65,7 @@ index 0000000..417e56a
 +    main()
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 0000000..c26c50f
+index 00000000..c26c50f6
 --- /dev/null
 +++ b/rcb_config.py
 @@ -0,0 +1,78 @@
@@ -149,7 +149,7 @@ index 0000000..c26c50f
 +    main()
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
-index 0000000..864ccbe
+index 00000000..864ccbe9
 --- /dev/null
 +++ b/rcb_pre_config.py
 @@ -0,0 +1,132 @@

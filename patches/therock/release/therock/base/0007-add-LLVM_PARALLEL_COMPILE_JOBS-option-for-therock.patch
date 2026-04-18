@@ -1,7 +1,7 @@
-From b824bab8883b80e1171c0910b1ff5e5712ae793d Mon Sep 17 00:00:00 2001
+From c7b30cfb37d846113909fca9aedb202bd5703e1c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 16 Mar 2026 11:02:47 -0700
-Subject: [PATCH 07/16] add LLVM_PARALLEL_COMPILE_JOBS option for therock
+Subject: [PATCH 07/19] add LLVM_PARALLEL_COMPILE_JOBS option for therock
 
 Following 3 options are supported by the amd-llvm
 to avoid running out of memory during compile and link phases
@@ -17,7 +17,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  2 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index edfa76a..80bcb15 100644
+index edfa76aa..80bcb152 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -122,6 +122,7 @@ set(THEROCK_SANITIZER "" CACHE STRING "Enable project wide sanitizer build ('ASA
@@ -29,7 +29,7 @@ index edfa76a..80bcb15 100644
  
  # List of python executables to use for multi-version python builds
 diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
-index 5f8bae8..2c3b748 100644
+index 5f8bae88..2c3b7480 100644
 --- a/compiler/CMakeLists.txt
 +++ b/compiler/CMakeLists.txt
 @@ -24,9 +24,18 @@ if(THEROCK_ENABLE_COMPILER)

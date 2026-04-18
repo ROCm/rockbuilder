@@ -1,7 +1,7 @@
-From f9d6e6de6f11d6ef877b3446233d10be2af6b293 Mon Sep 17 00:00:00 2001
+From ef03c54aed9c9b00a6e9565ce931ce999a875c1d Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 20:07:50 -0700
-Subject: [PATCH 17/17] rocprofiler-sdk do not build external yaml-cpp
+Subject: [PATCH 17/19] rocprofiler-sdk do not build external yaml-cpp
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 2 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 876f515..6b8b8ea 100644
+index 876f5158..6b8b8ea8 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -97,6 +97,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
