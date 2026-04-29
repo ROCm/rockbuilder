@@ -409,28 +409,37 @@ def _check_distro_specific_environment_variables():
     is_posix = not any(platform.win32_ver())
     distro_info = {}
     if is_posix:
-        os_release_path = '/etc/os-release'
-        if os.path.exists(os_release_path):
-            try:
-                with open(os_release_path, 'r') as cur_file:
-                    for cur_line in cur_file:
-                        cur_line = cur_line.strip()
-                        if cur_line and '=' in cur_line:
-                            cur_key, cur_val = cur_line.split('=', 1)
-                            # remove quotes from the value if present
-                            cur_val = cur_val.strip('"\'')
-                            distro_info[cur_key] = cur_val
-            except IOError as e:
-                print(f"Error reading {os_release_path}: {e}")
-        else:
-            print(f"File not found: {os_release_path}")
-    else:
-        distro_info["ID"] = "windows"
-    if "ID" in distro_info:
-        distro = distro_info["ID"]
-        if distro == "mageia":
-            if "ROCM_SDK_TARGET_TRIPLE" not in os.environ:
-                os.environ["ROCM_SDK_TARGET_TRIPLE"] = "x86_64-mageia-linux"
+        try:
+            default_gcc_target_triple = "x86_64-linux-gnu"
+            # Run the command and capture output as text
+            result = subprocess.run(
+                ["gcc", "-dumpmachine"], 
+                capture_output=True, 
+                text=True, 
+                check=True
+            )
+            # Strip trailing newlines/spaces
+            cur_gcc_target_triple  = result.stdout.strip()
+            if cur_gcc_target_triple != default_gcc_target_triple:
+                print(f"gcc's target triple detected: {cur_gcc_target_triple}")
+                if "ROCM_SDK_TARGET_TRIPLE" not in os.environ:
+                    print(f"This differs from the default value: {default_gcc_target_triple}")
+                    print(f"Using {cur_gcc_target_triple} if building amd-llvm for therock")
+                    print(f"This is required for files in directory: /usr/libc/gcc/{cur_gcc_target_triple}")
+                    os.environ["ROCM_SDK_TARGET_TRIPLE"] = cur_gcc_target_triple
+                else:
+                    print(f"env variable {ROCM_SDK_TARGET_TRIPLE} set, will use this for gcc target triple:")
+                    print(f"    " +  os.environ["ROCM_SDK_TARGET_TRIPLE"])
+            else:
+                print(f"Using default gcc target triple for amd-clang build: {default_gcc_target_triple}")
+        except subprocess.CalledProcessError as e:
+            print("Error, failed to find the the gcc's target triple with command:")
+            print("    gcc -dumpmachine")
+            print(f"Error code: {e}")
+            sys.exit(1)
+        except FileNotFoundError:
+            print("Error, gcc is not installed or not in PATH.")
+            sys.exit(1)
 
 # Ensures that rocm_sdk install exist or will be installed by using
 # the method that has been saved to rockbuilder.cfg config file.
