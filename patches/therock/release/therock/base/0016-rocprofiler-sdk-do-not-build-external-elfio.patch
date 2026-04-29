@@ -1,7 +1,7 @@
-From 5ddadedaeb2b49e86fb9ec2a388737bceb0b05fc Mon Sep 17 00:00:00 2001
+From d70a060e1ed3ce78fff0c02e54cf87c8645179d1 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:30:54 -0700
-Subject: [PATCH 16/19] rocprofiler-sdk do not build external elfio
+Subject: [PATCH 16/20] rocprofiler-sdk do not build external elfio
 
 Use system provided elfio instead of trying to build one.
 
@@ -11,7 +11,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 4cbed251..876f5158 100644
+index 4cbed25..876f515 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -96,6 +96,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
@@ -32,5 +32,5 @@ index 4cbed251..876f5158 100644
        aqlprofile
        hip-clr
 -- 
-2.52.0
+2.54.0
 

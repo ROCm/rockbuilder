@@ -1,7 +1,7 @@
-From 171519e851c3db7b29b8e8154c5303aa38c4cc41 Mon Sep 17 00:00:00 2001
+From 5d81feca04c5f12cb60418c48cf8f6ec1974a785 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 14:35:14 -0700
-Subject: [PATCH 11/19] add patch to fix amdsmi lib64 linking error
+Subject: [PATCH 11/20] add patch to fix amdsmi lib64 linking error
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -23,7 +23,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-buil
 similarity index 87%
 rename from patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 rename to patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
-index 6682b7d0..3cfa1009 100644
+index 6682b7d..3cfa100 100644
 --- a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 +++ b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
 @@ -1,7 +1,7 @@
@@ -111,7 +111,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-t
 similarity index 92%
 rename from patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 rename to patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
-index 653d7021..8aca518f 100644
+index 653d702..8aca518 100644
 --- a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
@@ -137,7 +137,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-te
 similarity index 93%
 rename from patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 rename to patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
-index 81a0ed38..70879f80 100644
+index 81a0ed3..70879f8 100644
 --- a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
@@ -163,7 +163,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-i
 similarity index 77%
 rename from patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 rename to patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
-index 38e35ed0..0ce60630 100644
+index 38e35ed..0ce6063 100644
 --- a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 +++ b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
 @@ -1,7 +1,7 @@
@@ -201,7 +201,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-li
 similarity index 90%
 rename from patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 rename to patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-index 31d76cd9..976b31cc 100644
+index 31d76cd..976b31c 100644
 --- a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 +++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 @@ -1,7 +1,7 @@
@@ -260,7 +260,7 @@ index 31d76cd9..976b31cc 100644
  @@ -43,7 +43,9 @@ THE SOFTWARE.
 diff --git a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 new file mode 100644
-index 00000000..f6353da9
+index 0000000..f6353da
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 @@ -0,0 +1,44 @@
@@ -309,5 +309,5 @@ index 00000000..f6353da9
 +2.41.3
 +
 -- 
-2.52.0
+2.54.0
 

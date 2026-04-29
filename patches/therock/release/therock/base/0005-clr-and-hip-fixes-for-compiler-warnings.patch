@@ -1,7 +1,7 @@
-From c4973de65bcbd3a1e1bd994560dda29009ac954c Mon Sep 17 00:00:00 2001
+From 3cc7d32e3b4a2580895f31b15583b5af04e336c2 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
-Subject: [PATCH 05/19] clr and hip fixes for compiler warnings
+Subject: [PATCH 05/20] clr and hip fixes for compiler warnings
 
 Fix warnings that are showed when building for example
 the clr project itself or other projects like miopen
@@ -31,7 +31,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 new file mode 100644
-index 00000000..6682b7d0
+index 0000000..6682b7d
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 @@ -0,0 +1,85 @@
@@ -121,5 +121,5 @@ index 00000000..6682b7d0
 +--
 +2.43.0
 -- 
-2.52.0
+2.54.0
 

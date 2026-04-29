@@ -1,0 +1,158 @@
+From c005783913e3052d4c7e0beab0b9b0846d57ad20 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 29 Apr 2026 13:17:47 -0700
+Subject: [PATCH 20/20] elfutils gcc 16 fedora 44 fixes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes initialization discards ‘const’ qualifier
++   from pointer target type [-Werror=discarded-qualifiers]
++- riscv_disasm.c
++- dwarf_getsrclines.c
++- src/readelf.c
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../0001-elfutils-gcc-16-build-fixes.patch    | 116 ++++++++++++++++++
+ .../sysdeps/linux/elfutils/CMakeLists.txt     |   1 +
+ 2 files changed, 117 insertions(+)
+ create mode 100644 patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
+
+diff --git a/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
+new file mode 100644
+index 0000000..ff1b8b9
+--- /dev/null
++++ b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
+@@ -0,0 +1,116 @@
++From a5a358fa84160996c4f3f7f1685c5efed6251678 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Wed, 29 Apr 2026 12:00:38 -0700
++Subject: [PATCH] elfutils gcc 16 build fixes
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++1) initialization discards ‘const’ qualifier
++   from pointer target type [-Werror=discarded-qualifiers]
++- riscv_disasm.c
++- dwarf_getsrclines.c
++- src/readelf.c
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ libcpu/riscv_disasm.c     | 2 +-
++ libdw/dwarf_getsrclines.c | 6 +++---
++ src/readelf.c             | 9 ++++-----
++ 3 files changed, 8 insertions(+), 9 deletions(-)
++
++diff --git a/libcpu/riscv_disasm.c b/libcpu/riscv_disasm.c
++index 823fe9c..66bb91f 100644
++--- a/libcpu/riscv_disasm.c
+++++ b/libcpu/riscv_disasm.c
++@@ -1256,7 +1256,7 @@ riscv_disasm (Ebl *ebl,
++ 		  if (rd != 0)
++ 		    op[last++] = REG (rd);
++ 		  struct known_csrs key = { csr, NULL };
++-		  struct known_csrs *found = bsearch (&key, known,
+++		  const struct known_csrs *found = bsearch (&key, known,
++ 						      sizeof (known) / sizeof (known[0]),
++ 						      sizeof (known[0]),
++ 						      compare_csr);
++diff --git a/libdw/dwarf_getsrclines.c b/libdw/dwarf_getsrclines.c
++index da78db6..7548bf2 100644
++--- a/libdw/dwarf_getsrclines.c
+++++ b/libdw/dwarf_getsrclines.c
++@@ -364,7 +364,7 @@ read_srcfiles (Dwarf *dbg,
++       const unsigned char *dirp = linep;
++       while (dirp < lineendp && *dirp != 0)
++ 	{
++-	  uint8_t *endp = memchr (dirp, '\0', lineendp - dirp);
+++	  const uint8_t *endp = memchr (dirp, '\0', lineendp - dirp);
++ 	  if (endp == NULL)
++ 	    goto invalid_data;
++ 	  ++ndirs;
++@@ -440,7 +440,7 @@ read_srcfiles (Dwarf *dbg,
++       for (unsigned int n = 1; n < ndirlist; n++)
++ 	{
++ 	  dirarray[n].dir = (char *) linep;
++-	  uint8_t *endp = memchr (linep, '\0', lineendp - linep);
+++	  const uint8_t *endp = memchr (linep, '\0', lineendp - linep);
++ 	  assert (endp != NULL); // Checked above when calculating ndirlist.
++ 	  dirarray[n].len = endp - linep;
++ 	  linep = endp + 1;
++@@ -927,7 +927,7 @@ read_srclines (Dwarf *dbg,
++ 	    case DW_LNE_define_file:
++ 	      {
++ 		char *fname = (char *) linep;
++-		uint8_t *endp = memchr (linep, '\0', lineendp - linep);
+++		const uint8_t *endp = memchr (linep, '\0', lineendp - linep);
++ 		if (endp == NULL)
++ 		  goto invalid_data;
++ 		size_t fnamelen = endp - linep;
++diff --git a/src/readelf.c b/src/readelf.c
++index 3e97b64..45d57ea 100644
++--- a/src/readelf.c
+++++ b/src/readelf.c
++@@ -7959,7 +7959,7 @@ attr_callback (Dwarf_Attribute *attrp, void *arg)
++ 		    valuestr = dwarf_filesrc (files, num, NULL, NULL);
++ 		    if (valuestr != NULL)
++ 		      {
++-			char *filename = strrchr (valuestr, '/');
+++			const char *filename = strrchr (valuestr, '/');
++ 			if (filename != NULL)
++ 			  valuestr = filename + 1;
++ 		      }
++@@ -8713,7 +8713,6 @@ print_form_data (Dwarf *dbg, int form, const unsigned char *readp,
++ 		 Dwarf_Off str_offsets_base)
++ {
++   Dwarf_Word val;
++-  unsigned char *endp;
++   Elf_Data *data;
++   char *str;
++   switch (form)
++@@ -8819,7 +8818,7 @@ print_form_data (Dwarf *dbg, int form, const unsigned char *readp,
++       break;
++ 
++     case DW_FORM_string:
++-      endp = memchr (readp, '\0', readendp - readp);
+++      const unsigned char *endp = memchr (readp, '\0', readendp - readp);
++       if (endp == NULL)
++ 	goto invalid_data;
++       printf ("%s", readp);
++@@ -9206,7 +9205,7 @@ print_debug_line_section (Dwfl_Module *dwflmod, Ebl *ebl, GElf_Ehdr *ehdr,
++ 	{
++ 	  while (linep < lineendp && *linep != 0)
++ 	    {
++-	      unsigned char *endp = memchr (linep, '\0', lineendp - linep);
+++	      const unsigned char *endp = memchr (linep, '\0', lineendp - linep);
++ 	      if (unlikely (endp == NULL))
++ 		goto invalid_unit;
++ 
++@@ -9440,7 +9439,7 @@ print_debug_line_section (Dwfl_Module *dwflmod, Ebl *ebl, GElf_Ehdr *ehdr,
++ 		case DW_LNE_define_file:
++ 		  {
++ 		    char *fname = (char *) linep;
++-		    unsigned char *endp = memchr (linep, '\0',
+++		    const unsigned char *endp = memchr (linep, '\0',
++ 						  lineendp - linep);
++ 		    if (unlikely (endp == NULL))
++ 		      goto invalid_unit;
++-- 
++2.54.0
++
+diff --git a/third-party/sysdeps/linux/elfutils/CMakeLists.txt b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
+index a57c92c..4e497fa 100644
+--- a/third-party/sysdeps/linux/elfutils/CMakeLists.txt
++++ b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
+@@ -11,6 +11,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+       # Originally mirrored from: "https://sourceware.org/elfutils/ftp/0.192/elfutils-0.192.tar.bz2"
+       URL "https://rocm-third-party-deps.s3.us-east-2.amazonaws.com/elfutils-0.192.tar.bz2"
+       URL_HASH "SHA512=543188f5f2cfe5bc7955a878416c5f252edff9926754e5de0c6c57b132f21d9285c9b29e41281e93baad11d4ae7efbbf93580c114579c182103565fe99bd3909"
++      PATCH_COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/build_tools/patch_third_party_source.py ${CMAKE_SOURCE_DIR}/patches/third-party/elfutils
+       TOUCH "${_download_stamp}"
+     )
+ 
+-- 
+2.54.0
+

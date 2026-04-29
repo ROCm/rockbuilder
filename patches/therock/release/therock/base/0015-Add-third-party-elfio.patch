@@ -1,7 +1,7 @@
-From 49e16257f042bf26a18831ec285a7486555c46f1 Mon Sep 17 00:00:00 2001
+From ea69d91325ae9013b4053f58f6b7eb0c60eaba04 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 30 Mar 2026 22:44:47 -0700
-Subject: [PATCH 15/19] Add third-party/elfio
+Subject: [PATCH 15/20] Add third-party/elfio
 
 Add third-party/elfio project for therock
 to allow profiler tools like rocprofiler-sdk to
@@ -36,7 +36,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  create mode 100644 third-party/elfio/artifact-elfio.toml
 
 diff --git a/BUILD_TOPOLOGY.toml b/BUILD_TOPOLOGY.toml
-index 81009cf5..6738ec99 100644
+index 81009cf..6738ec9 100644
 --- a/BUILD_TOPOLOGY.toml
 +++ b/BUILD_TOPOLOGY.toml
 @@ -415,6 +415,13 @@ feature_name = "HOST_SUITE_SPARSE"
@@ -64,7 +64,7 @@ index 81009cf5..6738ec99 100644
  disable_platforms = ["windows"]
 diff --git a/patches/third-party/elfio/0001-Explicitly-include-cstdint-for-gcc-15.patch b/patches/third-party/elfio/0001-Explicitly-include-cstdint-for-gcc-15.patch
 new file mode 100644
-index 00000000..642f1b87
+index 0000000..642f1b8
 --- /dev/null
 +++ b/patches/third-party/elfio/0001-Explicitly-include-cstdint-for-gcc-15.patch
 @@ -0,0 +1,34 @@
@@ -103,7 +103,7 @@ index 00000000..642f1b87
 +2.52.0
 +
 diff --git a/third-party/CMakeLists.txt b/third-party/CMakeLists.txt
-index 9a754a00..d2be1ac2 100644
+index 9a754a0..d2be1ac 100644
 --- a/third-party/CMakeLists.txt
 +++ b/third-party/CMakeLists.txt
 @@ -11,18 +11,18 @@ add_custom_target(therock-third-party)
@@ -142,7 +142,7 @@ index 9a754a00..d2be1ac2 100644
    add_subdirectory(host-blas)
 diff --git a/third-party/elfio/CMakeLists.txt b/third-party/elfio/CMakeLists.txt
 new file mode 100644
-index 00000000..e17a9935
+index 0000000..e17a993
 --- /dev/null
 +++ b/third-party/elfio/CMakeLists.txt
 @@ -0,0 +1,37 @@
@@ -185,7 +185,7 @@ index 00000000..e17a9935
 +)
 diff --git a/third-party/elfio/artifact-elfio.toml b/third-party/elfio/artifact-elfio.toml
 new file mode 100644
-index 00000000..9bd11c64
+index 0000000..9bd11c6
 --- /dev/null
 +++ b/third-party/elfio/artifact-elfio.toml
 @@ -0,0 +1,4 @@
@@ -194,5 +194,5 @@ index 00000000..9bd11c64
 +[components.doc."third-party/elfio/stage"]
 +[components.lib."third-party/elfio/stage"]
 -- 
-2.52.0
+2.54.0
 
