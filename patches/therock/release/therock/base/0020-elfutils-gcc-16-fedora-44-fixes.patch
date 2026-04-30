@@ -1,7 +1,7 @@
-From c005783913e3052d4c7e0beab0b9b0846d57ad20 Mon Sep 17 00:00:00 2001
+From 20bc33c5de697b703fc9109590c4fbedcb2791e0 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 13:17:47 -0700
-Subject: [PATCH 20/20] elfutils gcc 16 fedora 44 fixes
+Subject: [PATCH 20/21] elfutils gcc 16 fedora 44 fixes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -21,7 +21,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
 new file mode 100644
-index 0000000..ff1b8b9
+index 0000000..b001371
 --- /dev/null
 +++ b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
 @@ -0,0 +1,116 @@

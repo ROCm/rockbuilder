@@ -1,7 +1,7 @@
-From 26eac22732a515e216e60e9931189a18a71d5aaf Mon Sep 17 00:00:00 2001
+From 5a5ef487d327f6d3a7e31d57994b71d250fa4e97 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 01/20] therock patches to python scripts config and build
+Subject: [PATCH 01/21] therock patches to python scripts config and build
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

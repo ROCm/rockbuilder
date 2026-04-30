@@ -1,7 +1,7 @@
-From 5af1fcc40efeb357f6fb909daf57576f8ef70741 Mon Sep 17 00:00:00 2001
+From 278095d13212d22627006e083317c8d04df158b4 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:45:55 -0700
-Subject: [PATCH 14/20] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
+Subject: [PATCH 14/21] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
 
 Add new build flag ROCPROFILER_BUILD_ELFIO which
 is by default on to support the current way of building.

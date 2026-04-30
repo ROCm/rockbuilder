@@ -1,7 +1,7 @@
-From 4405a39e498d663244f50530afb0146277362eae Mon Sep 17 00:00:00 2001
+From cc5eadc4801d96c1a3165d540788f132bf2772a3 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@pilppa.org>
 Date: Fri, 17 Apr 2026 18:59:00 -0700
-Subject: [PATCH 19/20] rocm-systems/dyninst gcc 15 fix
+Subject: [PATCH 19/21] rocm-systems/dyninst gcc 15 fix
 
 Signed-off-by: Mika Laitio <lamikr@pilppa.org>
 ---

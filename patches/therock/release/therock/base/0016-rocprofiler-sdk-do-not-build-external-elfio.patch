@@ -1,7 +1,7 @@
-From d70a060e1ed3ce78fff0c02e54cf87c8645179d1 Mon Sep 17 00:00:00 2001
+From 4ccf5923a059cb4357be353733c4b70094999a3c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:30:54 -0700
-Subject: [PATCH 16/20] rocprofiler-sdk do not build external elfio
+Subject: [PATCH 16/21] rocprofiler-sdk do not build external elfio
 
 Use system provided elfio instead of trying to build one.
 
