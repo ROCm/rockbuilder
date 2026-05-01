@@ -1,4 +1,4 @@
-From 5a5ef487d327f6d3a7e31d57994b71d250fa4e97 Mon Sep 17 00:00:00 2001
+From 35832610556443063ce871b6e8e8fd880a368365 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 01/22] therock patches to python scripts config and build
@@ -6,9 +6,9 @@ Subject: [PATCH 01/22] therock patches to python scripts config and build
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.py      |  44 ++++++++++++++++
- rcb_config.py     |  78 +++++++++++++++++++++++++++
+ rcb_config.py     |  82 ++++++++++++++++++++++++++++
  rcb_pre_config.py | 132 ++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 254 insertions(+)
+ 3 files changed, 258 insertions(+)
  create mode 100644 rcb_build.py
  create mode 100644 rcb_config.py
  create mode 100644 rcb_pre_config.py
@@ -65,10 +65,10 @@ index 0000000..417e56a
 +    main()
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 0000000..c26c50f
+index 0000000..ab5a167
 --- /dev/null
 +++ b/rcb_config.py
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,82 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -113,6 +113,7 @@ index 0000000..c26c50f
 +        "-GNinja",
 +    ]
 +    cmake_cmd.append("-DTHEROCK_VERBOSE=1")
++    cmake_cmd.append("-DTHEROCK_ENABLE_ROCPROFSYS=0")
 +    asan_gpu_families = {"gfx90a", "gfx942", "gfx950"}
 +    sanitizer = os.environ.get("RCB_THEROCK_SANITIZER", "")
 +    if sanitizer:
@@ -139,7 +140,10 @@ index 0000000..c26c50f
 +        cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
 +    cmake_cmd.append(".")
 +
-+    print(f"rcb_config.py, config_cmd: {cmake_cmd}")
++    cmake_cmd_str = " ".join(cmake_cmd)
++    with open("rcb_config.txt", "w") as f_handle:
++        f_handle.write(cmake_cmd_str) 
++    print(f"rcb_config.py, therock config_cmd: {cmake_cmd_str}")
 +    result = subprocess.run(cmake_cmd)
 +    print(f"rcb_config.py therock config done, res: {result.returncode}")
 +    sys.exit(result.returncode)
@@ -286,5 +290,5 @@ index 0000000..864ccbe
 +if __name__ == "__main__":
 +    main()
 -- 
-2.54.0
+2.43.0
 

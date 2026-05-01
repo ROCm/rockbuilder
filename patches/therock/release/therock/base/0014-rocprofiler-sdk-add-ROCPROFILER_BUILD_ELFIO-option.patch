@@ -1,4 +1,4 @@
-From 278095d13212d22627006e083317c8d04df158b4 Mon Sep 17 00:00:00 2001
+From 7e83595e1aff4f25f0f4dcbdda29915ddbfdd8fa Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:45:55 -0700
 Subject: [PATCH 14/22] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
@@ -136,5 +136,5 @@ index 0000000..3dfb022
 +2.52.0
 +
 -- 
-2.54.0
+2.43.0
 

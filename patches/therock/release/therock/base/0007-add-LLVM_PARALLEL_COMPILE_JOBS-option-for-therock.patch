@@ -1,4 +1,4 @@
-From 9114193bfa522c78e55f0586bdff674f44ebe649 Mon Sep 17 00:00:00 2001
+From 1c30203e50f1e4425999d1cc1bcc06b8d9487cda Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 16 Mar 2026 11:02:47 -0700
 Subject: [PATCH 07/22] add LLVM_PARALLEL_COMPILE_JOBS option for therock
@@ -17,10 +17,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  2 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index edfa76a..80bcb15 100644
+index 483f7e8..712d7a5 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -122,6 +122,7 @@ set(THEROCK_SANITIZER "" CACHE STRING "Enable project wide sanitizer build ('ASA
+@@ -127,6 +127,7 @@ set(THEROCK_SANITIZER "" CACHE STRING "Enable project wide sanitizer build ('ASA
  
  # Options to control the concurrency for building LLVM.
  set(FLANG_PARALLEL_COMPILE_JOBS "" CACHE STRING "Limit parallel compile jobs for Flang (reduces memory usage on systems with many cores)")
@@ -29,7 +29,7 @@ index edfa76a..80bcb15 100644
  
  # List of python executables to use for multi-version python builds
 diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
-index 5f8bae8..2c3b748 100644
+index 127e44e..8e10512 100644
 --- a/compiler/CMakeLists.txt
 +++ b/compiler/CMakeLists.txt
 @@ -24,9 +24,18 @@ if(THEROCK_ENABLE_COMPILER)
@@ -53,5 +53,5 @@ index 5f8bae8..2c3b748 100644
    # of parallel link jobs.
    if(LLVM_PARALLEL_LINK_JOBS)
 -- 
-2.54.0
+2.43.0
 

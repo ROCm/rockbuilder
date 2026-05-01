@@ -1,4 +1,4 @@
-From a0d3c1f4f60638ea3991c7c3216827bff32e4ac9 Mon Sep 17 00:00:00 2001
+From a96589d33e5927cea4195b5e128ff5976cbe0ce4 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 21 Mar 2026 20:28:40 -0700
 Subject: [PATCH 08/22] rccl use lto-partitions=32 instead of default 8
@@ -44,5 +44,5 @@ index 0000000..38e35ed
 +--
 +2.41.3
 -- 
-2.54.0
+2.43.0
 

@@ -1,7 +1,7 @@
-From 6ee2f4a6470d819078cc435a8177e0616d361030 Mon Sep 17 00:00:00 2001
+From ffd88311d8fd393a82bee2e12f21e92c8408f7ee Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 16 Apr 2026 00:36:14 -0700
-Subject: [PATCH 18/22] rocprofiler-systems use therock provided elfutils
+Subject: [PATCH 17/22] rocprofiler-systems use therock provided elfutils
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,10 +9,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 2 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 6b8b8ea..1867d18 100644
+index 7328d8a..cbdcd55 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -315,6 +315,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -320,6 +320,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
          -DROCPROFSYS_GFX_TARGETS="${_ROCPROFSYS_GFX_TARGETS_ESCAPED}"
          -DROCPROFSYS_BUILD_SPDLOG=OFF
          -DROCPROFSYS_BUILD_SQLITE3=OFF
@@ -20,7 +20,7 @@ index 6b8b8ea..1867d18 100644
          -DROCPROFSYS_USE_PYTHON="${_ROCPROFSYS_USE_PYTHON}"
          -DROCPROFSYS_PYTHON_VERSIONS:STRING="${_ROCPROFSYS_PYTHON_VERSIONS_STR}"
          -DROCPROFSYS_PYTHON_ROOT_DIRS:STRING="${_ROCPROFSYS_PYTHON_ROOT_DIRS_STR}"
-@@ -326,6 +327,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -331,6 +332,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        CMAKE_INCLUDES
          therock_explicit_finders.cmake
        BUILD_DEPS
@@ -29,5 +29,5 @@ index 6b8b8ea..1867d18 100644
          therock-fmt
          roctracer
 -- 
-2.54.0
+2.43.0
 

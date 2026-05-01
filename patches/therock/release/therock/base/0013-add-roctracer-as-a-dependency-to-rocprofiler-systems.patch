@@ -1,4 +1,4 @@
-From f8d3da76e3188c0616303b8e6234d157c1d2d9b5 Mon Sep 17 00:00:00 2001
+From 862ebe4712ea12a9327c4518c8dbad92ac057771 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 22:22:56 -0700
 Subject: [PATCH 13/22] add roctracer as a dependency to rocprofiler-systems
@@ -57,10 +57,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 9c2ec5d..4cbed25 100644
+index 2170317..abfa1ae 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -323,6 +323,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -328,6 +328,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        BUILD_DEPS
          therock-spdlog
          therock-fmt
@@ -69,5 +69,5 @@ index 9c2ec5d..4cbed25 100644
          amdsmi
          aqlprofile
 -- 
-2.54.0
+2.43.0
 

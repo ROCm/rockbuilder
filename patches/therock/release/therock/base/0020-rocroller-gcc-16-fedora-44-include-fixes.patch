@@ -1,7 +1,7 @@
-From 16ead803fed51ffd467a8534db518e4fffb83d44 Mon Sep 17 00:00:00 2001
+From 3df5b1d712b085e7f59bbc0ce1933e6ef85bc31d Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 17:08:07 -0700
-Subject: [PATCH 21/22] rocroller gcc 16/fedora 44 include fixes
+Subject: [PATCH 20/22] rocroller gcc 16/fedora 44 include fixes
 
 Include cstdint and unistd.h in places
 where they are not anymore included by
@@ -122,5 +122,5 @@ index 0000000..353cd6d
 +2.54.0
 +
 -- 
-2.54.0
+2.43.0
 

@@ -1,4 +1,4 @@
-From fc2cf3c37a4b345d9eb5470429d6147fe98f2be9 Mon Sep 17 00:00:00 2001
+From ac6bc2fc11a0067f1a95fe37ab4032b1b504fa8e Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 11:59:48 -0700
 Subject: [PATCH 02/22] enable gfx90a xnack+ and asan build options
@@ -10,7 +10,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  2 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index 55f26a3..13e0637 100644
+index d0e07b0..c4e8026 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
 @@ -86,6 +86,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
@@ -58,5 +58,5 @@ index 318ab72..13773e4 100644
      string(APPEND _stanza "message(STATUS \"Override TSAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
      # Action at a distance: Signal that the sub-project should extend its build and install
 -- 
-2.54.0
+2.43.0
 

@@ -1,4 +1,4 @@
-From 82979f7179f535e22e2ebbcab107bf865d8921c0 Mon Sep 17 00:00:00 2001
+From 5a3d206b7d12972acaf064802a1a6bfc6d7bd0a4 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
 Subject: [PATCH 03/22] asan build fixes
@@ -68,12 +68,12 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 
 diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
-index 1a477c4..d8c8888 100644
+index 12460c3..15a57f9 100644
 --- a/ml-libs/CMakeLists.txt
 +++ b/ml-libs/CMakeLists.txt
-@@ -110,6 +110,7 @@ if(THEROCK_ENABLE_MIOPEN)
+@@ -107,6 +107,7 @@ if(THEROCK_ENABLE_MIOPEN)
+       -DMIOPEN_USE_MLIR=OFF # TODO: enable
        -DMIOPEN_TEST_DISCRETE=OFF
-       -DBoost_COMPILER=${_THEROCK_MIOPEN_OVERRIDE_BOOST_COMPILER}
        "-DMIOPEN_INSTALL_GPU_DATABASES=\"${THEROCK_AMDGPU_TARGETS}\""
 +      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
      CMAKE_INCLUDES
@@ -225,10 +225,10 @@ index 0000000..81a0ed3
 +2.41.3
 +
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index a57fe9e..a6eac4c 100644
+index 94c6561..40be1e7 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -33,6 +33,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -38,6 +38,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
      BACKGROUND_BUILD
      CMAKE_ARGS
        -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
@@ -236,7 +236,7 @@ index a57fe9e..a6eac4c 100644
        -DHIP_PLATFORM="amd"
      COMPILER_TOOLCHAIN
        amd-hip
-@@ -203,6 +204,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -208,6 +209,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        amd-hip
      CMAKE_ARGS
        -DHIP_PLATFORM=amd
@@ -245,5 +245,5 @@ index a57fe9e..a6eac4c 100644
        # All old clients of roctx64 expect to just be able to find its include
        # with no further qualification. Bad design, but also deprecated, so meh.
 -- 
-2.54.0
+2.43.0
 

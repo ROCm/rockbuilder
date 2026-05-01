@@ -1,7 +1,7 @@
-From 20bc33c5de697b703fc9109590c4fbedcb2791e0 Mon Sep 17 00:00:00 2001
+From 0c1738b83563a3d8e12250ee9ca4e0a095a91162 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 13:17:47 -0700
-Subject: [PATCH 20/22] elfutils gcc 16 fedora 44 fixes
+Subject: [PATCH 19/22] elfutils gcc 16 fedora 44 fixes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -154,5 +154,5 @@ index a57c92c..4e497fa 100644
      )
  
 -- 
-2.54.0
+2.43.0
 
