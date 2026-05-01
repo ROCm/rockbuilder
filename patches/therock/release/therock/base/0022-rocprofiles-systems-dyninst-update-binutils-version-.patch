@@ -1,31 +1,33 @@
-From cc5eadc4801d96c1a3165d540788f132bf2772a3 Mon Sep 17 00:00:00 2001
-From: Mika Laitio <lamikr@pilppa.org>
-Date: Fri, 17 Apr 2026 18:59:00 -0700
-Subject: [PATCH 19/22] rocm-systems/dyninst gcc 15 fix
+From 1c6122251543c6b05d7b67163e9e30e738899a32 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 1 May 2026 10:42:07 -0700
+Subject: [PATCH 22/22] rocprofiles-systems/dyninst update binutils version
+ from 2.45 to 2.46.0
 
-Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  ...-and-hip-fixes-for-compiler-warnings.patch |  4 +--
  ...king-fix-for-tests-when-ASAN-enabled.patch |  4 +--
  ...king-fix-for-tests-when-ASAN-enabled.patch |  4 +--
- ...o-partitions-32-instead-of-default-8.patch |  6 ++---
- ...e-amd-gpus-to-list-of-supported-GPUs.patch |  6 ++---
- ...ries-before-lib-to-fix-linking-error.patch |  6 ++---
+ ...o-partitions-32-instead-of-default-8.patch |  4 +--
+ ...e-amd-gpus-to-list-of-supported-GPUs.patch |  4 +--
+ ...ries-before-lib-to-fix-linking-error.patch |  4 +--
  ...k-add-ROCPROFILER_BUILD_ELFIO-option.patch |  4 +--
- ...rofiler-systems-dyninst-gcc-15-fixes.patch | 26 +++++++++++++++++++
- 8 files changed, 43 insertions(+), 17 deletions(-)
- create mode 100644 patches/amd-mainline/rocm-systems/0008-rocprofiler-systems-dyninst-gcc-15-fixes.patch
+ ...rofiler-systems-dyninst-gcc-15-fixes.patch |  6 ++--
+ ...ems-dyninst-update-binutils-version-.patch | 29 +++++++++++++++++++
+ 9 files changed, 46 insertions(+), 17 deletions(-)
+ create mode 100644 patches/amd-mainline/rocm-systems/0009-rocprofiles-systems-dyninst-update-binutils-version-.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
-index 3cfa100..2f1af7f 100644
+index 2f1af7f..20b1616 100644
 --- a/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
 +++ b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
 @@ -1,7 +1,7 @@
  From a1b40ebd20964603f65e828643e9d75eb68bab79 Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Mon, 1 Dec 2025 09:06:00 +0000
--Subject: [PATCH 1/6] clr and hip fixes for compiler warnings
-+Subject: [PATCH 1/8] clr and hip fixes for compiler warnings
+-Subject: [PATCH 1/8] clr and hip fixes for compiler warnings
++Subject: [PATCH 1/9] clr and hip fixes for compiler warnings
  
  Fix warnings that are showed when building for example
  the clr project itself or other projects like miopen
@@ -33,19 +35,19 @@ index 3cfa100..2f1af7f 100644
  \ No newline at end of file
  +#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
-index 8aca518..bca4f39 100644
+index bca4f39..4979282 100644
 --- a/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
  From 22c0b87254522a94c6c0d062ade6e88620e8e4b7 Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Mon, 9 Mar 2026 23:22:45 -0700
--Subject: [PATCH 2/6] aqlprofile linking fix for tests when ASAN enabled
-+Subject: [PATCH 2/8] aqlprofile linking fix for tests when ASAN enabled
+-Subject: [PATCH 2/8] aqlprofile linking fix for tests when ASAN enabled
++Subject: [PATCH 2/9] aqlprofile linking fix for tests when ASAN enabled
  
  Fixes linking errors on aqlprofile integrations tests
  when ASAN build is enabled.
@@ -53,19 +55,19 @@ index 8aca518..bca4f39 100644
   
   # Add a PRELOAD environment with libintercept
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
-index 70879f8..eab7a9f 100644
+index eab7a9f..7e314c8 100644
 --- a/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
  From fb6071723ef78ba749c7ad2efc5fd6172bd59fc0 Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Tue, 10 Mar 2026 12:54:17 -0700
--Subject: [PATCH 3/6] roctracer linking fix for tests when ASAN enabled
-+Subject: [PATCH 3/8] roctracer linking fix for tests when ASAN enabled
+-Subject: [PATCH 3/8] roctracer linking fix for tests when ASAN enabled
++Subject: [PATCH 3/9] roctracer linking fix for tests when ASAN enabled
  
  Fixes a following type of linking errors on roctracer
  when build ASAN is enabled.
@@ -73,20 +75,19 @@ index 70879f8..eab7a9f 100644
   set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG})
   set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG_SEP ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG_SEP})
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
-index 0ce6063..64853c0 100644
+index 64853c0..294b40e 100644
 --- a/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
 +++ b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
 @@ -1,7 +1,7 @@
--From 4015a7b4811e4524ae98604b2c689849c8590321 Mon Sep 17 00:00:00 2001
-+From 1c84b29292347e8bd338a9109867adcca7ccc9ea Mon Sep 17 00:00:00 2001
+ From 1c84b29292347e8bd338a9109867adcca7ccc9ea Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Sat, 21 Mar 2026 20:26:26 -0700
--Subject: [PATCH 4/6] rccl use lto-partitions=32 instead of default 8
-+Subject: [PATCH 4/8] rccl use lto-partitions=32 instead of default 8
+-Subject: [PATCH 4/8] rccl use lto-partitions=32 instead of default 8
++Subject: [PATCH 4/9] rccl use lto-partitions=32 instead of default 8
  
  Aims to decrease the linking time of rccl libraries.
  
@@ -94,20 +95,19 @@ index 0ce6063..64853c0 100644
   endif()
   if(BUILD_ADDRESS_SANITIZER)
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-index 976b31c..cf79d01 100644
+index cf79d01..ec03c7c 100644
 --- a/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 +++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 @@ -1,7 +1,7 @@
--From 037417c9549520e5025eed0e674c5290e748cf94 Mon Sep 17 00:00:00 2001
-+From a356da626ba747e4026901e011c5130fa8e0f082 Mon Sep 17 00:00:00 2001
+ From a356da626ba747e4026901e011c5130fa8e0f082 Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Mon, 23 Mar 2026 15:53:36 -0700
--Subject: [PATCH 5/6] rccl add more amd gpus to list of supported GPUs
-+Subject: [PATCH 5/8] rccl add more amd gpus to list of supported GPUs
+-Subject: [PATCH 5/8] rccl add more amd gpus to list of supported GPUs
++Subject: [PATCH 5/9] rccl add more amd gpus to list of supported GPUs
  
  - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
    gfx1150 to the list if default GPUs. This fixes the
@@ -115,20 +115,19 @@ index 976b31c..cf79d01 100644
     val = 0
   #else
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
-index f6353da..f11f3c9 100644
+index f11f3c9..6e1ee0c 100644
 --- a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 +++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 @@ -1,7 +1,7 @@
--From 25b67b20379d4b6399e6ab1967b34a3205791f07 Mon Sep 17 00:00:00 2001
-+From 7fea6b80815124a514d8bdb7fab0b4836487f15e Mon Sep 17 00:00:00 2001
+ From 7fea6b80815124a514d8bdb7fab0b4836487f15e Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Mon, 13 Apr 2026 14:02:18 -0700
--Subject: [PATCH 6/6] link /lib64 libraries before /lib to fix linking error
-+Subject: [PATCH 6/8] link /lib64 libraries before /lib to fix linking error
+-Subject: [PATCH 6/8] link /lib64 libraries before /lib to fix linking error
++Subject: [PATCH 6/9] link /lib64 libraries before /lib to fix linking error
  
  Linking of amdsmi can fail on systems which have both
  the 32 and 64 bit libraries installed.
@@ -136,54 +135,84 @@ index f6353da..f11f3c9 100644
   ## Set the VERSION and SOVERSION values
   set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
  -- 
--2.41.3
-+2.52.0
+-2.52.0
++2.54.0
  
 diff --git a/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch b/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
-index 3dfb022..a3adc15 100644
+index a3adc15..29b4e5a 100644
 --- a/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
 +++ b/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
 @@ -1,7 +1,7 @@
--From 09ed3b285a3125be6847a96b3cf2337eb5ef34ab Mon Sep 17 00:00:00 2001
-+From 35710c542faac7289aa240d860cb776b05567a8f Mon Sep 17 00:00:00 2001
+ From 35710c542faac7289aa240d860cb776b05567a8f Mon Sep 17 00:00:00 2001
  From: Mika Laitio <mika.laitio@amd.com>
  Date: Tue, 31 Mar 2026 00:50:47 -0700
--Subject: [PATCH] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
-+Subject: [PATCH 7/8] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
+-Subject: [PATCH 7/8] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
++Subject: [PATCH 7/9] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
  
  Add new build flag ROCPROFILER_BUILD_ELFIO which
  is by default on to support the current way of building.
+@@ -97,5 +97,5 @@ index cab59c07bd..b430ce5ebd 100644
+      get_target_property(ELFIO_INCLUDE_DIR elfio::elfio INTERFACE_INCLUDE_DIRECTORIES)
+      target_include_directories(rocprofiler-sdk-elfio SYSTEM
+ -- 
+-2.52.0
++2.54.0
+ 
 diff --git a/patches/amd-mainline/rocm-systems/0008-rocprofiler-systems-dyninst-gcc-15-fixes.patch b/patches/amd-mainline/rocm-systems/0008-rocprofiler-systems-dyninst-gcc-15-fixes.patch
-new file mode 100644
-index 0000000..8b4fe9a
---- /dev/null
+index 8b4fe9a..5ba0dc0 100644
+--- a/patches/amd-mainline/rocm-systems/0008-rocprofiler-systems-dyninst-gcc-15-fixes.patch
 +++ b/patches/amd-mainline/rocm-systems/0008-rocprofiler-systems-dyninst-gcc-15-fixes.patch
-@@ -0,0 +1,26 @@
-+From 71f8b3f3043428107f2525ef997b193e86f9da64 Mon Sep 17 00:00:00 2001
-+From: Mika Laitio <lamikr@pilppa.org>
-+Date: Fri, 17 Apr 2026 18:56:32 -0700
-+Subject: [PATCH 8/8] rocprofiler-systems/dyninst gcc 15 fixes
+@@ -1,7 +1,7 @@
+-From 71f8b3f3043428107f2525ef997b193e86f9da64 Mon Sep 17 00:00:00 2001
++From 764ff366e0403d9e698bc19263e7e2daaf3b3700 Mon Sep 17 00:00:00 2001
+ From: Mika Laitio <lamikr@pilppa.org>
+ Date: Fri, 17 Apr 2026 18:56:32 -0700
+-Subject: [PATCH 8/8] rocprofiler-systems/dyninst gcc 15 fixes
++Subject: [PATCH 8/9] rocprofiler-systems/dyninst gcc 15 fixes
+ 
+ Signed-off-by: Mika Laitio <lamikr@pilppa.org>
+ ---
+@@ -22,5 +22,5 @@ index 070a6eade5..e9cf1f7282 100644
+  	path = examples/lulesh/external/kokkos
+  	url = https://github.com/kokkos/kokkos.git
+ -- 
+-2.52.0
++2.54.0
+ 
+diff --git a/patches/amd-mainline/rocm-systems/0009-rocprofiles-systems-dyninst-update-binutils-version-.patch b/patches/amd-mainline/rocm-systems/0009-rocprofiles-systems-dyninst-update-binutils-version-.patch
+new file mode 100644
+index 0000000..6e4182e
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0009-rocprofiles-systems-dyninst-update-binutils-version-.patch
+@@ -0,0 +1,29 @@
++From 6b58f5b94d7ad512842915590523be1115d95890 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Fri, 1 May 2026 10:39:35 -0700
++Subject: [PATCH 9/9] rocprofiles-systems/dyninst update binutils version from
++ 2.45 to 2.46.0
 +
-+Signed-off-by: Mika Laitio <lamikr@pilppa.org>
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
-+ projects/rocprofiler-systems/.gitmodules | 2 +-
-+ 1 file changed, 1 insertion(+), 1 deletion(-)
++ projects/rocprofiler-systems/cmake/DyninstLibIberty.cmake | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
 +
-+diff --git a/projects/rocprofiler-systems/.gitmodules b/projects/rocprofiler-systems/.gitmodules
-+index 070a6eade5..e9cf1f7282 100644
-+--- a/projects/rocprofiler-systems/.gitmodules
-++++ b/projects/rocprofiler-systems/.gitmodules
-+@@ -11,7 +11,7 @@
-+ [submodule "external/dyninst"]
-+ 	path = external/dyninst
-+ 	url = https://github.com/ROCm/dyninst.git
-+-	branch = dyninst_13
-++	branch = users/lamikr/dyninst_13_gcc_15_include_fixes
-+ [submodule "external/kokkos"]
-+ 	path = examples/lulesh/external/kokkos
-+ 	url = https://github.com/kokkos/kokkos.git
++diff --git a/projects/rocprofiler-systems/cmake/DyninstLibIberty.cmake b/projects/rocprofiler-systems/cmake/DyninstLibIberty.cmake
++index 6607614f44..d4ed2729ed 100644
++--- a/projects/rocprofiler-systems/cmake/DyninstLibIberty.cmake
+++++ b/projects/rocprofiler-systems/cmake/DyninstLibIberty.cmake
++@@ -85,8 +85,8 @@ else()
++         PREFIX ${_li_root}
++         URL
++             ${DYNINST_BINUTILS_DOWNLOAD_URL}
++-            http://ftpmirror.gnu.org/gnu/binutils/binutils-2.45.tar.gz
++-            http://mirrors.kernel.org/sourceware/binutils/releases/binutils-2.45.tar.gz
+++            http://ftpmirror.gnu.org/gnu/binutils/binutils-2.46.0.tar.gz
+++            http://mirrors.kernel.org/sourceware/binutils/releases/binutils-2.46.0.tar.gz
++         BUILD_IN_SOURCE 1
++         CONFIGURE_COMMAND
++             ${CMAKE_COMMAND} -E env CC=${CMAKE_C_COMPILER} CFLAGS=-fPIC\ -O3
 +-- 
-+2.52.0
++2.54.0
 +
 -- 
 2.54.0

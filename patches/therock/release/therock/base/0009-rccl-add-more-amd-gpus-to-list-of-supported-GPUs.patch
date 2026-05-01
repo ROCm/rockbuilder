@@ -1,7 +1,7 @@
 From f60a31e40349f8337e38baf97d4b423cba62109b Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 09/21] rccl add more amd gpus to list of supported GPUs
+Subject: [PATCH 09/22] rccl add more amd gpus to list of supported GPUs
 
 - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
   gfx1150 to the list if default GPUs. This fixes the

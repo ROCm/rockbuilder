@@ -1,7 +1,7 @@
 From f8d3da76e3188c0616303b8e6234d157c1d2d9b5 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 22:22:56 -0700
-Subject: [PATCH 13/21] add roctracer as a dependency to rocprofiler-systems
+Subject: [PATCH 13/22] add roctracer as a dependency to rocprofiler-systems
 
 Building of roccprofiler-systems in therock can fail
 to error when trying to find the roctracer64 library in

@@ -1,7 +1,7 @@
 From 60294eb68dae7cd66306d8ac88ad927d3e35575f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 10 Apr 2026 18:16:03 -0700
-Subject: [PATCH 10/21] profiler build fix attempt
+Subject: [PATCH 10/22] profiler build fix attempt
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

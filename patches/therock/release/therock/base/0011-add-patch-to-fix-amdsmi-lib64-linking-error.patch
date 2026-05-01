@@ -1,7 +1,7 @@
 From 79507016267359c84279b1691449d94218484036 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 14:35:14 -0700
-Subject: [PATCH 11/21] add patch to fix amdsmi lib64 linking error
+Subject: [PATCH 11/22] add patch to fix amdsmi lib64 linking error
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

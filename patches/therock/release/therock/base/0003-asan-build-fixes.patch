@@ -1,7 +1,7 @@
 From 82979f7179f535e22e2ebbcab107bf865d8921c0 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
-Subject: [PATCH 03/21] asan build fixes
+Subject: [PATCH 03/22] asan build fixes
 
 Fixes for following components to check if DTHEROCK_SANITIZER=ASAN or
 ASAN_HOST flag is set and then enabling asan specific build flags:

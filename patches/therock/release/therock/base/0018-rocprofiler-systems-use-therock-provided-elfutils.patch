@@ -1,7 +1,7 @@
 From 6ee2f4a6470d819078cc435a8177e0616d361030 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 16 Apr 2026 00:36:14 -0700
-Subject: [PATCH 18/21] rocprofiler-systems use therock provided elfutils
+Subject: [PATCH 18/22] rocprofiler-systems use therock provided elfutils
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---

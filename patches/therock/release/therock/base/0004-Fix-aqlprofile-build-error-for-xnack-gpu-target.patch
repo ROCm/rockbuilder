@@ -1,7 +1,7 @@
 From 8a2a9250cf63d0f8543e5ac7133e04262634f781 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
-Subject: [PATCH 04/21] Fix aqlprofile build error for xnack+ gpu target
+Subject: [PATCH 04/22] Fix aqlprofile build error for xnack+ gpu target
 
 If the GPU list for build targets contains both the
 base GPU-name and property enabled GPU-name then the
