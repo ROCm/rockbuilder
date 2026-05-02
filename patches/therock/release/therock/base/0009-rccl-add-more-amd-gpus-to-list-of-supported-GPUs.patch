@@ -1,7 +1,7 @@
-From 0ce539ec5e98a4eb0b02dcd5f28ae898e0413165 Mon Sep 17 00:00:00 2001
+From 779bf9e6f983855e7f9775573e2f7d80984fd4a0 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 09/22] rccl add more amd gpus to list of supported GPUs
+Subject: [PATCH 09/23] rccl add more amd gpus to list of supported GPUs
 
 - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
   gfx1150 to the list if default GPUs. This fixes the
@@ -21,7 +21,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 new file mode 100644
-index 0000000..31d76cd
+index 00000000..31d76cd9
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 @@ -0,0 +1,92 @@
@@ -118,5 +118,5 @@ index 0000000..31d76cd
 +2.41.3
 +
 -- 
-2.43.0
+2.52.0
 

@@ -1,7 +1,7 @@
-From 3df5b1d712b085e7f59bbc0ce1933e6ef85bc31d Mon Sep 17 00:00:00 2001
+From bbac8c1d2d9034e0eb95de5d77c80a8def1a4d2c Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 17:08:07 -0700
-Subject: [PATCH 20/22] rocroller gcc 16/fedora 44 include fixes
+Subject: [PATCH 20/23] rocroller gcc 16/fedora 44 include fixes
 
 Include cstdint and unistd.h in places
 where they are not anymore included by
@@ -17,7 +17,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  create mode 100644 patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 
 diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-index f7047b3..a332a6a 100644
+index f7047b3e..a332a6ab 100644
 --- a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 +++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 @@ -1,7 +1,7 @@
@@ -50,7 +50,7 @@ index f7047b3..a332a6a 100644
 +
 diff --git a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
 new file mode 100644
-index 0000000..b57cd9b
+index 00000000..b57cd9bf
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
 @@ -0,0 +1,30 @@
@@ -86,7 +86,7 @@ index 0000000..b57cd9b
 +
 diff --git a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 new file mode 100644
-index 0000000..353cd6d
+index 00000000..353cd6d7
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 @@ -0,0 +1,31 @@
@@ -122,5 +122,5 @@ index 0000000..353cd6d
 +2.54.0
 +
 -- 
-2.43.0
+2.52.0
 

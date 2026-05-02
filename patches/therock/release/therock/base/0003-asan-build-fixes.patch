@@ -1,7 +1,7 @@
-From 5a3d206b7d12972acaf064802a1a6bfc6d7bd0a4 Mon Sep 17 00:00:00 2001
+From 89ebe52be0f1de10c034d69f86e5acc775ede2ee Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
-Subject: [PATCH 03/22] asan build fixes
+Subject: [PATCH 03/23] asan build fixes
 
 Fixes for following components to check if DTHEROCK_SANITIZER=ASAN or
 ASAN_HOST flag is set and then enabling asan specific build flags:
@@ -68,7 +68,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 
 diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
-index 12460c3..15a57f9 100644
+index 12460c3a..15a57f9d 100644
 --- a/ml-libs/CMakeLists.txt
 +++ b/ml-libs/CMakeLists.txt
 @@ -107,6 +107,7 @@ if(THEROCK_ENABLE_MIOPEN)
@@ -81,7 +81,7 @@ index 12460c3..15a57f9 100644
      COMPILER_TOOLCHAIN
 diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 new file mode 100644
-index 0000000..f7047b3
+index 00000000..f7047b3e
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 @@ -0,0 +1,31 @@
@@ -118,7 +118,7 @@ index 0000000..f7047b3
 +2.43.0
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 new file mode 100644
-index 0000000..653d702
+index 00000000..653d7021
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -0,0 +1,46 @@
@@ -170,7 +170,7 @@ index 0000000..653d702
 +
 diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 new file mode 100644
-index 0000000..81a0ed3
+index 00000000..81a0ed38
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -0,0 +1,50 @@
@@ -225,7 +225,7 @@ index 0000000..81a0ed3
 +2.41.3
 +
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 94c6561..40be1e7 100644
+index 94c6561f..40be1e71 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -38,6 +38,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
@@ -245,5 +245,5 @@ index 94c6561..40be1e7 100644
        # All old clients of roctx64 expect to just be able to find its include
        # with no further qualification. Bad design, but also deprecated, so meh.
 -- 
-2.43.0
+2.52.0
 

@@ -1,7 +1,7 @@
-From 0c1738b83563a3d8e12250ee9ca4e0a095a91162 Mon Sep 17 00:00:00 2001
+From 5130a490e711a730dcfa5d1358a2389d0ad29fb4 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 13:17:47 -0700
-Subject: [PATCH 19/22] elfutils gcc 16 fedora 44 fixes
+Subject: [PATCH 19/23] elfutils gcc 16 fedora 44 fixes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -21,7 +21,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
 new file mode 100644
-index 0000000..b001371
+index 00000000..b0013713
 --- /dev/null
 +++ b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
 @@ -0,0 +1,116 @@
@@ -142,7 +142,7 @@ index 0000000..b001371
 +2.54.0
 +
 diff --git a/third-party/sysdeps/linux/elfutils/CMakeLists.txt b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
-index a57c92c..4e497fa 100644
+index a57c92c4..4e497fa2 100644
 --- a/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 +++ b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 @@ -11,6 +11,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -154,5 +154,5 @@ index a57c92c..4e497fa 100644
      )
  
 -- 
-2.43.0
+2.52.0
 

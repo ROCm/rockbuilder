@@ -1,7 +1,7 @@
-From c89d1e6d0ff4b8953c394ce7beac5f9d931fc4ee Mon Sep 17 00:00:00 2001
+From 656b4664cb7c84de3203a7b1fa9e0ea40b349fe7 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 10 Apr 2026 18:16:03 -0700
-Subject: [PATCH 10/22] profiler build fix attempt
+Subject: [PATCH 10/23] profiler build fix attempt
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 40be1e7..2170317 100644
+index 40be1e71..21703172 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -303,6 +303,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
@@ -21,5 +21,5 @@ index 40be1e7..2170317 100644
          -DROCPROFSYS_BUILD_TBB=ON
          -DROCPROFSYS_BUILD_LIBIBERTY=ON
 -- 
-2.43.0
+2.52.0
 
