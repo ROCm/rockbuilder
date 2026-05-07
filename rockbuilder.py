@@ -387,22 +387,33 @@ def _check_cpu_count_env_variable():
     cpu_cnt_total = os.cpu_count()
     if cpu_cnt_total <= 0:
         cpu_cnt_total = 8
-    cpu_cnt_build = cpu_cnt_total
-    cpu_cnt_link = math.floor(cpu_cnt_total / 5)
     # min amount of mem reserved per build process
-    min_mem_gp_per_cpu = 2.5
+    moderate_min_mem_gb_per_cpu_job = 1.5
+    safe_min_mem_gb_per_cpu_job = 2.5
     # cpu count available on the system
     mem_total, mem_free = get_os_memory_info()
     if mem_free:
-        cpu_cnt_build = math.floor(mem_free / min_mem_gp_per_cpu)
-    if cpu_cnt_total:
-        cpu_cnt_build = min(cpu_cnt_build, cpu_cnt_total)
-        cpu_cnt_link = math.floor(cpu_cnt_build / 5)
-        cpu_cnt_link = max(cpu_cnt_link, 1)
-    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD] = str(cpu_cnt_build)
-    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK] = str(cpu_cnt_link)
-    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_BUILD])
-    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_COUNT_LINK])
+        moderate_cpu_job_cnt_build = math.floor(mem_free / moderate_min_mem_gb_per_cpu_job)
+        safe_cpu_job_cnt_build = math.floor(mem_free / safe_min_mem_gb_per_cpu_job)
+    else:
+        moderate_cpu_job_cnt_build = cpu_cnt_total
+        safe_cpu_job_cnt_build = cpu_cnt_total
+
+    moderate_cpu_job_cnt_build = min(moderate_cpu_job_cnt_build, cpu_cnt_total)
+    moderate_cpu_job_cnt_link = math.floor(moderate_cpu_job_cnt_build / 4)
+    moderate_cpu_job_cnt_link = max(1, moderate_cpu_job_cnt_link)
+    safe_cpu_job_cnt_build = min(safe_cpu_job_cnt_build, cpu_cnt_total)
+    safe_cpu_job_cnt_link = math.floor(safe_cpu_job_cnt_build / 5)
+    safe_cpu_job_cnt_link = max(1, safe_cpu_job_cnt_link)
+
+    os.environ[rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_COMPILE] = str(moderate_cpu_job_cnt_build)
+    os.environ[rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_LINK] = str(moderate_cpu_job_cnt_link)
+    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_COMPILE] = str(safe_cpu_job_cnt_build)
+    os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK] = str(safe_cpu_job_cnt_link)
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_COMPILE}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_COMPILE])
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_LINK}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_LINK])
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_COMPILE}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_COMPILE])
+    print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK])
 
 
 def _check_distro_specific_environment_variables():

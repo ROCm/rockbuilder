@@ -105,8 +105,8 @@ index 00000000..ab5a1671
 +    print(f"rcb_config.py CMAKE_VERSION: {cmake_version}")
 +
 +    amdgpu_targets = os.environ.get("RCB_AMDGPU_TARGETS", "")
-+    safe_cpu_count_compile = os.environ.get("RCB_SAFE_CPU_COUNT_BUILD", "")
-+    safe_cpu_count_link = os.environ.get("RCB_SAFE_CPU_COUNT_LINK", "")
++    safe_cpu_count_compile = os.environ.get("RCB_SAFE_CPU_JOB_COUNT_COMPILE", "")
++    safe_cpu_count_link = os.environ.get("RCB_SAFE_CPU_JOB_COUNT_LINK", "")
 +    cmake_cmd = [
 +        "cmake",
 +        "-B", "build",
