@@ -1,4 +1,4 @@
-From 9cdae05514533f3eb9643ce41ce10399e742ca37 Mon Sep 17 00:00:00 2001
+From 456333806618904ec5b8d279b34e8ea9d15d80d0 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 2 May 2026 01:04:29 -0700
 Subject: [PATCH 23/23] rocm-libraries stinkytofu gcc 16/fedora 44 fixes
@@ -17,15 +17,15 @@ and
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...ation-R_X86_64_PC32-out-of-range-err.patch |  8 +-
- ...cc-16-fedora-44-uint32_t-include-fix.patch |  6 +-
- ...-gcc-16-fedora-44-usleep-include-fix.patch |  6 +-
- ...-16-fedora-44-uint32_t-include-fixes.patch | 91 +++++++++++++++++++
- 4 files changed, 101 insertions(+), 10 deletions(-)
+ ...ation-R_X86_64_PC32-out-of-range-err.patch |  9 +-
+ ...cc-16-fedora-44-uint32_t-include-fix.patch |  7 +-
+ ...-gcc-16-fedora-44-usleep-include-fix.patch |  7 +-
+ ...-16-fedora-44-uint32_t-include-fixes.patch | 90 +++++++++++++++++++
+ 4 files changed, 103 insertions(+), 10 deletions(-)
  create mode 100644 patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch
 
 diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-index a332a6ab..7f41cb87 100644
+index 8d9173d..078ac4e 100644
 --- a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 +++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 @@ -1,7 +1,7 @@
@@ -47,15 +47,15 @@ index a332a6ab..7f41cb87 100644
  --- a/projects/miopen/CMakeLists.txt
  +++ b/projects/miopen/CMakeLists.txt
  @@ -6,6 +6,13 @@ cmake_minimum_required( VERSION 3.15 )
-@@ -28,5 +28,5 @@ index 989cb438..f5970abd 100644
+@@ -28,4 +28,5 @@ index 989cb438..f5970abd 100644
     cmake_policy(SET CMP0074 NEW)
   endif()
- -- 
+ --
 -2.54.0
 +2.52.0
- 
++
 diff --git a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
-index b57cd9bf..e4738e03 100644
+index 2baca85..7ea442b 100644
 --- a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
 +++ b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
 @@ -1,7 +1,7 @@
@@ -68,15 +68,15 @@ index b57cd9bf..e4738e03 100644
  
  Never gcc versions requires including the
  ctdint.h or cstdint implicitly to resolve
-@@ -26,5 +26,5 @@ index 00b3537b..ac172b89 100644
+@@ -26,4 +26,5 @@ index 00b3537b..ac172b89 100644
   namespace amdisa
   {
- -- 
+ --
 -2.54.0
 +2.52.0
- 
++
 diff --git a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
-index 353cd6d7..77865ce6 100644
+index 0cb1196..01c07ce 100644
 --- a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 +++ b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 @@ -1,7 +1,7 @@
@@ -89,19 +89,19 @@ index 353cd6d7..77865ce6 100644
  
  Never gcc versions requires including the
  unistd.h for usleep function.
-@@ -27,5 +27,5 @@ index a713db76..0bff6d8a 100644
+@@ -27,4 +27,5 @@ index a713db76..0bff6d8a 100644
   #include "SimpleTest.hpp"
   #include "common/SourceMatcher.hpp"
- -- 
+ --
 -2.54.0
 +2.52.0
- 
++
 diff --git a/patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch b/patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch
 new file mode 100644
-index 00000000..044f776e
+index 0000000..b39f7ae
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,90 @@
 +From 59149a600ab688590d46e544ad3b2930a4b2f6a4 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Tue, 5 May 2026 16:06:01 -0700
@@ -133,9 +133,9 @@ index 00000000..044f776e
 +--- a/shared/stinkytofu/include/stinkytofu/serialization/logical/IRSerializer.hpp
 ++++ b/shared/stinkytofu/include/stinkytofu/serialization/logical/IRSerializer.hpp
 +@@ -23,6 +23,7 @@
-+ 
++
 + #pragma once
-+ 
++
 ++#include <cstdint>
 + #include <iostream>
 + #include <string>
@@ -145,7 +145,7 @@ index 00000000..044f776e
 +--- a/shared/stinkytofu/src/serialization/asm/IRParser.cpp
 ++++ b/shared/stinkytofu/src/serialization/asm/IRParser.cpp
 +@@ -25,6 +25,7 @@
-+ 
++
 + #include <algorithm>
 + #include <cctype>
 ++#include <climits>
@@ -157,9 +157,9 @@ index 00000000..044f776e
 +--- a/shared/stinkytofu/src/serialization/asm/PatternParser.cpp
 ++++ b/shared/stinkytofu/src/serialization/asm/PatternParser.cpp
 +@@ -23,6 +23,8 @@
-+ 
++
 + #include "stinkytofu/serialization/asm/PatternParser.hpp"
-+ 
++
 ++#include <climits>
 ++#include <cstdint>
 + #include <fstream>
@@ -175,7 +175,7 @@ index 00000000..044f776e
 + #include <cassert>
 ++#include <cstdint>
 + #include <map>
-+ 
++
 + #include "ReadyQueue.hpp"
 +diff --git a/shared/stinkytofu/src/transforms/asm/dag/ReadyQueue.hpp b/shared/stinkytofu/src/transforms/asm/dag/ReadyQueue.hpp
 +index 194b552a..536a838a 100644
@@ -184,15 +184,14 @@ index 00000000..044f776e
 +@@ -22,6 +22,8 @@
 +  * ************************************************************************ */
 + #pragma once
-+ 
++
 ++#include <cstdint>
 ++#include <climits>
 + #include <cmath>
 + #include <iostream>  // TODO: don't use iostream.
 + #include <map>
-+-- 
++--
 +2.52.0
-+
 -- 
 2.52.0
 

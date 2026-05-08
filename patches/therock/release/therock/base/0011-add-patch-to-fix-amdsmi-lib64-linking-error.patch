@@ -1,17 +1,17 @@
-From e8cd63d4d12464415189dba537469e21c42488b1 Mon Sep 17 00:00:00 2001
+From 1face8217320439835c685924dc0951816a03984 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 14:35:14 -0700
 Subject: [PATCH 11/23] add patch to fix amdsmi lib64 linking error
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...and-hip-fixes-for-compiler-warnings.patch} | 35 ++++++++-------
+ ...and-hip-fixes-for-compiler-warnings.patch} | 22 +++++-----
  ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
  ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
- ...-partitions-32-instead-of-default-8.patch} | 11 ++---
+ ...-partitions-32-instead-of-default-8.patch} |  8 ++--
  ...-amd-gpus-to-list-of-supported-GPUs.patch} | 16 +++----
- ...ries-before-lib-to-fix-linking-error.patch | 44 +++++++++++++++++++
- 6 files changed, 82 insertions(+), 36 deletions(-)
+ ...ries-before-lib-to-fix-linking-error.patch | 43 +++++++++++++++++++
+ 6 files changed, 72 insertions(+), 29 deletions(-)
  rename patches/amd-mainline/rocm-systems/{0004-clr-and-hip-fix-various-build-warnings.patch => 0001-clr-and-hip-fixes-for-compiler-warnings.patch} (87%)
  rename patches/amd-mainline/rocm-systems/{0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch => 0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch} (92%)
  rename patches/amd-mainline/rocm-systems/{0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch => 0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch} (93%)
@@ -23,7 +23,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-buil
 similarity index 87%
 rename from patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 rename to patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
-index 6682b7d0..3cfa1009 100644
+index 6682b7d..cad202e 100644
 --- a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
 +++ b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
 @@ -1,7 +1,7 @@
@@ -36,7 +36,7 @@ index 6682b7d0..3cfa1009 100644
  
  Fix warnings that are showed when building for example
  the clr project itself or other projects like miopen
-@@ -32,54 +32,55 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+@@ -32,10 +32,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
   4 files changed, 4 insertions(+), 4 deletions(-)
  
  diff --git a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
@@ -45,15 +45,11 @@ index 6682b7d0..3cfa1009 100644
  --- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
  +++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
 -@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
--
 +@@ -238,7 +238,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
-+ 
+ 
   #define __forceinline__ inline __attribute__((always_inline))
--
-+ 
- -#if __HIP_NO_IMAGE_SUPPORT
- +#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
-  #define __hip_img_chk__                                                                            \
+ 
+@@ -45,10 +45,10 @@ index 8081966cf7..2a5712bdb6 100644
     __attribute__((unavailable("The image/texture API not supported on the device")))
   #else
  diff --git a/projects/clr/hipamd/src/hip_prof_gen.py b/projects/clr/hipamd/src/hip_prof_gen.py
@@ -65,11 +61,8 @@ index 6682b7d0..3cfa1009 100644
 +@@ -526,7 +526,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
       f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
     f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
--
-+ 
- -  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
- +  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
-    # Generating the method for the API args filling
+ 
+@@ -58,10 +58,10 @@ index e7baccbfec..6d1d1767de 100755
     f.write('// HIP API args filling helper\n')
     f.write('static inline void hipApiArgsInit(hip_api_id_t id, hip_api_data_t* data) {\n')
  diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
@@ -81,11 +74,8 @@ index 6682b7d0..3cfa1009 100644
 +@@ -46,7 +46,7 @@
   #define HIP_INTERNAL_EXPORTED_API
   #endif
--
-+ 
- -#if __HIP_DEVICE_COMPILE__ == 0
- +#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
-  // 32-bit Atomics
+ 
+@@ -71,10 +71,10 @@ index 4a7dcff6cb..6fffe7fcf7 100644
   #define __HIP_ARCH_HAS_GLOBAL_INT32_ATOMICS__ (0)
   #define __HIP_ARCH_HAS_GLOBAL_FLOAT_ATOMIC_EXCH__ (0)
  diff --git a/projects/hip/include/hip/linker_types.h b/projects/hip/include/hip/linker_types.h
@@ -97,21 +87,18 @@ index 6682b7d0..3cfa1009 100644
 +@@ -119,4 +119,4 @@ typedef enum hipLibraryOption_e {
   #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
   #endif
--
-+ 
- -#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+ 
+@@ -82,4 +82,4 @@ index 1131910322..03f97ec834 100755
  \ No newline at end of file
  +#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
----
+ --
 -2.43.0
-+-- 
 +2.41.3
-+
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 similarity index 92%
 rename from patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 rename to patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
-index 653d7021..8aca518f 100644
+index 950f0e6..e9e8bbc 100644
 --- a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
@@ -137,7 +124,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-te
 similarity index 93%
 rename from patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 rename to patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
-index 81a0ed38..70879f80 100644
+index ffd2e2b..c0bce02 100644
 --- a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 +++ b/patches/amd-mainline/rocm-systems/0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 @@ -1,7 +1,7 @@
@@ -163,7 +150,7 @@ diff --git a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-i
 similarity index 77%
 rename from patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 rename to patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
-index 38e35ed0..0ce60630 100644
+index 38e35ed..d59a92f 100644
 --- a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 +++ b/patches/amd-mainline/rocm-systems/0004-rccl-use-lto-partitions-32-instead-of-default-8.patch
 @@ -1,7 +1,7 @@
@@ -189,19 +176,11 @@ index 38e35ed0..0ce60630 100644
       set(num_linker_jobs "1")
     endif()
     message(STATUS "Use ${num_linker_jobs} jobs for linking")
-@@ -22,5 +22,6 @@ index 7ae82671..9d553741 100644
-    target_link_options(rccl PRIVATE -parallel-jobs=${num_linker_jobs})       # Use multiple threads to link
-  endif()
-  if(BUILD_ADDRESS_SANITIZER)
----
-+-- 
- 2.41.3
-+
 diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 similarity index 90%
 rename from patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 rename to patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-index 31d76cd9..976b31cc 100644
+index 9e37b68..d2a589a 100644
 --- a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 +++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 @@ -1,7 +1,7 @@
@@ -239,7 +218,7 @@ index 31d76cd9..976b31cc 100644
 +@@ -29,7 +29,8 @@
     { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
   #endif
-  
+ 
 @@ -56,7 +56,7 @@ index 4ebacf44..30fbdaf6 100644
     collTrace->data_0 = 0;
   #else
@@ -251,7 +230,7 @@ index 31d76cd9..976b31cc 100644
  @@ -41,7 +41,11 @@ typedef struct
 @@ -73,7 +73,7 @@ index e8eb675c..cbe20440 100755
   #include <hip/hip_fp8.h>
-  
+ 
  diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
 -index 116f60a9..090a9d84 100644
 +index 116f60a963..090a9d842d 100644
@@ -260,10 +239,10 @@ index 31d76cd9..976b31cc 100644
  @@ -43,7 +43,9 @@ THE SOFTWARE.
 diff --git a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 new file mode 100644
-index 00000000..f6353da9
+index 0000000..7ed9e23
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,43 @@
 +From 25b67b20379d4b6399e6ab1967b34a3205791f07 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 13 Apr 2026 14:02:18 -0700
@@ -297,17 +276,16 @@ index 00000000..f6353da9
 ++++ b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
 +@@ -90,8 +90,8 @@ add_library(${GOAMDSMI_SHIM_TARGET} SHARED ${go_amd_smi_sources} ${go_amd_smi_he
 + target_link_libraries(${GOAMDSMI_SHIM_TARGET} pthread rt m)
-+ 
++
 + target_link_libraries(${GOAMDSMI_SHIM_TARGET} amd_smi)
 +-target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
 + target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib64)
 ++target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
-+ 
++
 + ## Set the VERSION and SOVERSION values
 + set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
-+-- 
++--
 +2.41.3
-+
 -- 
 2.52.0
 
