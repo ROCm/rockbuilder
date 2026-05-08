@@ -1,23 +1,19 @@
-From 1face8217320439835c685924dc0951816a03984 Mon Sep 17 00:00:00 2001
+From 20beb1b0a230fe8c3ea09fb26f49f298b0dcf402 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
-Date: Mon, 13 Apr 2026 14:35:14 -0700
-Subject: [PATCH 11/23] add patch to fix amdsmi lib64 linking error
+Date: Fri, 8 May 2026 15:11:02 -0700
+Subject: [PATCH 10/21] renumber rocm system patches
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...and-hip-fixes-for-compiler-warnings.patch} | 22 +++++-----
- ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
- ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 +--
- ...-partitions-32-instead-of-default-8.patch} |  8 ++--
- ...-amd-gpus-to-list-of-supported-GPUs.patch} | 16 +++----
- ...ries-before-lib-to-fix-linking-error.patch | 43 +++++++++++++++++++
- 6 files changed, 72 insertions(+), 29 deletions(-)
+ ...and-hip-fixes-for-compiler-warnings.patch} | 22 +++++++++----------
+ ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 ++---
+ ...ing-fix-for-tests-when-ASAN-enabled.patch} |  6 ++---
+ ...-partitions-32-instead-of-default-8.patch} |  8 +++----
+ 4 files changed, 21 insertions(+), 21 deletions(-)
  rename patches/amd-mainline/rocm-systems/{0004-clr-and-hip-fix-various-build-warnings.patch => 0001-clr-and-hip-fixes-for-compiler-warnings.patch} (87%)
  rename patches/amd-mainline/rocm-systems/{0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch => 0002-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch} (92%)
  rename patches/amd-mainline/rocm-systems/{0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch => 0003-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch} (93%)
  rename patches/amd-mainline/rocm-systems/{0009-rccl-use-lto-partitions-32-instead-of-default-8.patch => 0004-rccl-use-lto-partitions-32-instead-of-default-8.patch} (77%)
- rename patches/amd-mainline/rocm-systems/{0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch => 0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch} (90%)
- create mode 100644 patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0001-clr-and-hip-fixes-for-compiler-warnings.patch
 similarity index 87%
@@ -176,116 +172,6 @@ index 38e35ed..d59a92f 100644
       set(num_linker_jobs "1")
     endif()
     message(STATUS "Use ${num_linker_jobs} jobs for linking")
-diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-similarity index 90%
-rename from patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-rename to patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-index 9e37b68..d2a589a 100644
---- a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-+++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-@@ -1,7 +1,7 @@
--From 88e3f0f46c819f5031355c336835d5d6d7fb2305 Mon Sep 17 00:00:00 2001
-+From 037417c9549520e5025eed0e674c5290e748cf94 Mon Sep 17 00:00:00 2001
- From: Mika Laitio <mika.laitio@amd.com>
- Date: Mon, 23 Mar 2026 15:53:36 -0700
--Subject: [PATCH] rccl add more amd gpus to list of supported GPUs
-+Subject: [PATCH 5/6] rccl add more amd gpus to list of supported GPUs
- 
- - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
-   gfx1150 to the list if default GPUs. This fixes the
-@@ -22,10 +22,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-  4 files changed, 16 insertions(+), 3 deletions(-)
- 
- diff --git a/projects/rccl/CMakeLists.txt b/projects/rccl/CMakeLists.txt
--index a3bcbfea..36c8f269 100644
-+index 54518a7c05..0169b4fe37 100644
- --- a/projects/rccl/CMakeLists.txt
- +++ b/projects/rccl/CMakeLists.txt
--@@ -98,9 +98,15 @@ set(DEFAULT_GPUS
-+@@ -146,9 +146,15 @@ set(DEFAULT_GPUS
-        gfx942
-        gfx950
-        gfx1030
-@@ -42,10 +42,10 @@ index a3bcbfea..36c8f269 100644
-        gfx1200
-        gfx1201)
- diff --git a/projects/rccl/src/device/common.h b/projects/rccl/src/device/common.h
--index 4ebacf44..30fbdaf6 100644
-+index 0f6e45d58e..8e09df318f 100644
- --- a/projects/rccl/src/device/common.h
- +++ b/projects/rccl/src/device/common.h
--@@ -26,7 +26,8 @@
-+@@ -29,7 +29,8 @@
-    { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
-  #endif
- 
-@@ -56,7 +56,7 @@ index 4ebacf44..30fbdaf6 100644
-    collTrace->data_0 = 0;
-  #else
- diff --git a/projects/rccl/src/include/rccl_float8.h b/projects/rccl/src/include/rccl_float8.h
--index e8eb675c..cbe20440 100755
-+index e8eb675ce3..7e37fd90e3 100755
- --- a/projects/rccl/src/include/rccl_float8.h
- +++ b/projects/rccl/src/include/rccl_float8.h
- @@ -41,7 +41,11 @@ typedef struct
-@@ -73,7 +73,7 @@ index e8eb675c..cbe20440 100755
-  #include <hip/hip_fp8.h>
- 
- diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
--index 116f60a9..090a9d84 100644
-+index 116f60a963..090a9d842d 100644
- --- a/projects/rccl/tools/JitterBench/Common.hpp
- +++ b/projects/rccl/tools/JitterBench/Common.hpp
- @@ -43,7 +43,9 @@ THE SOFTWARE.
-diff --git a/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
-new file mode 100644
-index 0000000..7ed9e23
---- /dev/null
-+++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
-@@ -0,0 +1,43 @@
-+From 25b67b20379d4b6399e6ab1967b34a3205791f07 Mon Sep 17 00:00:00 2001
-+From: Mika Laitio <mika.laitio@amd.com>
-+Date: Mon, 13 Apr 2026 14:02:18 -0700
-+Subject: [PATCH 6/6] link /lib64 libraries before /lib to fix linking error
-+
-+Linking of amdsmi can fail on systems which have both
-+the 32 and 64 bit libraries installed.
-+
-+In these systems the 32 bit version of libraries are usually
-+installed to /lib-folder and 64-bit versions to /lib64 folder
-+which can lead to linking error if lib-folder is specified
-+before the lib64 folder because then the 32-bit version of libraries
-+are tried to link to 64 bit version of amdsmi.
-+
-+Fix is simply the specify the lib64 folder before the lib-folder.
-+
-+Example of the error that this fixes:
-+
-+0.1	: && /therock/build/compiler/amd-llvm/dist/lib/llvm/bin/clang -fPIC -O3 -DNDEBUG  -L/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,--build-id=sha1   -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o goamdsmi_shim/libgoamdsmi_shim64.so.1.0 goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o  -Wl,-rpath,/therock/build/core/amdsmi/build/src:  -lpthread  -lrt  -lm  src/libamd_smi.so.26.4.0  -L/lib  -L/lib64 && :
-+0.1	ld.lld: error: /usr/lib/gcc/x86_64-mageia-linux/12/../../../../lib64/crti.o is incompatible with elf32-i386
-+0.1	ld.lld: error: /therock/build/compiler/amd-llvm/dist/lib/llvm/lib/clang/23/lib/linux/clang_rt.crtbegin-x86_64.o is incompatible with elf32-i386
-+
-+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-+---
-+ projects/amdsmi/goamdsmi_shim/CMakeLists.txt | 2 +-
-+ 1 file changed, 1 insertion(+), 1 deletion(-)
-+
-+diff --git a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
-+index 3549c8f07f..4f0c7e4d65 100644
-+--- a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
-++++ b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
-+@@ -90,8 +90,8 @@ add_library(${GOAMDSMI_SHIM_TARGET} SHARED ${go_amd_smi_sources} ${go_amd_smi_he
-+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} pthread rt m)
-+
-+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} amd_smi)
-+-target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
-+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib64)
-++target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
-+
-+ ## Set the VERSION and SOVERSION values
-+ set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
-+--
-+2.41.3
 -- 
 2.52.0
 

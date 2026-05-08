@@ -1,7 +1,7 @@
-From 0cbe7adecd363bb4c71143e74a15ad8c0adbd12f Mon Sep 17 00:00:00 2001
+From 085abb99a6172836f60072a0e7262cad686a94cc Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 22:22:56 -0700
-Subject: [PATCH 13/23] add roctracer as a dependency to rocprofiler-systems
+Subject: [PATCH 14/21] add roctracer as a dependency to rocprofiler-systems
 
 Building of roccprofiler-systems in therock can fail
 to error when trying to find the roctracer64 library in
@@ -57,10 +57,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 21703172..abfa1aee 100644
+index 40be1e7..6cb5464 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -328,6 +328,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -327,6 +327,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        BUILD_DEPS
          therock-spdlog
          therock-fmt

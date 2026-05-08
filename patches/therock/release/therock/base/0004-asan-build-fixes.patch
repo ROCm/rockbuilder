@@ -1,7 +1,7 @@
-From 89ebe52be0f1de10c034d69f86e5acc775ede2ee Mon Sep 17 00:00:00 2001
+From f2f2af0aad9f05bea3a9fa9ff4154b496663c494 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
-Subject: [PATCH 03/23] asan build fixes
+Subject: [PATCH 04/21] asan build fixes
 
 Fixes for following components to check if DTHEROCK_SANITIZER=ASAN or
 ASAN_HOST flag is set and then enabling asan specific build flags:
@@ -59,16 +59,16 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  ml-libs/CMakeLists.txt                        |  1 +
  ...ation-R_X86_64_PC32-out-of-range-err.patch | 31 ++++++++++++
- ...king-fix-for-tests-when-ASAN-enabled.patch | 46 +++++++++++++++++
- ...king-fix-for-tests-when-ASAN-enabled.patch | 50 +++++++++++++++++++
+ ...king-fix-for-tests-when-ASAN-enabled.patch | 45 +++++++++++++++++
+ ...king-fix-for-tests-when-ASAN-enabled.patch | 49 +++++++++++++++++++
  profiler/CMakeLists.txt                       |  2 +
- 5 files changed, 130 insertions(+)
+ 5 files changed, 128 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 
 diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
-index 12460c3a..15a57f9d 100644
+index 12460c3..15a57f9 100644
 --- a/ml-libs/CMakeLists.txt
 +++ b/ml-libs/CMakeLists.txt
 @@ -107,6 +107,7 @@ if(THEROCK_ENABLE_MIOPEN)
@@ -81,7 +81,7 @@ index 12460c3a..15a57f9d 100644
      COMPILER_TOOLCHAIN
 diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 new file mode 100644
-index 00000000..f7047b3e
+index 0000000..f7047b3
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 @@ -0,0 +1,31 @@
@@ -118,10 +118,10 @@ index 00000000..f7047b3e
 +2.43.0
 diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
 new file mode 100644
-index 00000000..653d7021
+index 0000000..950f0e6
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,45 @@
 +From e362b3a5af3d593bb66e00f3a805489bca89c0c0 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 9 Mar 2026 23:22:45 -0700
@@ -163,17 +163,16 @@ index 00000000..653d7021
 ++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
 ++endif()
 + target_compile_definitions(testv2 PUBLIC AMD_INTERNAL_BUILD)
-+ 
-+ # Add a PRELOAD environment with libintercept
-+-- 
-+2.41.3
 +
++ # Add a PRELOAD environment with libintercept
++--
++2.41.3
 diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 new file mode 100644
-index 00000000..81a0ed38
+index 0000000..ffd2e2b
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,49 @@
 +From f4705274ca7a0c06f010535c442ab2a059068b85 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Tue, 10 Mar 2026 12:54:17 -0700
@@ -209,9 +208,9 @@ index 00000000..81a0ed38
 +--- a/projects/roctracer/test/CMakeLists.txt
 ++++ b/projects/roctracer/test/CMakeLists.txt
 +@@ -22,6 +22,12 @@
-+ 
++
 + get_property(HSA_RUNTIME_INCLUDE_DIRECTORIES TARGET hsa-runtime64::hsa-runtime64 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
-+ 
++
 ++if(THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
 ++    set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address" )
 ++    set ( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address" )
@@ -221,11 +220,10 @@ index 00000000..81a0ed38
 + # Set the HIP language runtime link flags as FindHIP does not set them.
 + set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG})
 + set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG_SEP ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG_SEP})
-+-- 
++--
 +2.41.3
-+
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 94c6561f..40be1e71 100644
+index 94c6561..40be1e7 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
 @@ -38,6 +38,7 @@ if(THEROCK_ENABLE_ROCPROFV3)

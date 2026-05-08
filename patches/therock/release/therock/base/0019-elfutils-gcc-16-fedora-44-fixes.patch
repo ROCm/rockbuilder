@@ -1,43 +1,63 @@
-From 5130a490e711a730dcfa5d1358a2389d0ad29fb4 Mon Sep 17 00:00:00 2001
+From bd2041d2c79bce7e63b4d5ac863c0cacc41c346d Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 13:17:47 -0700
-Subject: [PATCH 19/23] elfutils gcc 16 fedora 44 fixes
+Subject: [PATCH 19/21] elfutils gcc 16 fedora 44 fixes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 Fixes initialization discards ‘const’ qualifier
-+   from pointer target type [-Werror=discarded-qualifiers]
-+- riscv_disasm.c
-+- dwarf_getsrclines.c
-+- src/readelf.c
+from pointer target type [-Werror=discarded-qualifiers]
+
+- libcpu/riscv_disasm.c
+- libdw/dwarf_getsrclines.c
+- src/readelf.c
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- .../0001-elfutils-gcc-16-build-fixes.patch    | 116 ++++++++++++++++++
+ ...ils-fixes-for-fedora-44-gcc-16-build.patch | 134 ++++++++++++++++++
  .../sysdeps/linux/elfutils/CMakeLists.txt     |   1 +
- 2 files changed, 117 insertions(+)
- create mode 100644 patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
+ 2 files changed, 135 insertions(+)
+ create mode 100644 patches/third-party/elfutils/0001-elfutils-fixes-for-fedora-44-gcc-16-build.patch
 
-diff --git a/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
+diff --git a/patches/third-party/elfutils/0001-elfutils-fixes-for-fedora-44-gcc-16-build.patch b/patches/third-party/elfutils/0001-elfutils-fixes-for-fedora-44-gcc-16-build.patch
 new file mode 100644
-index 00000000..b0013713
+index 0000000..7e6eca5
 --- /dev/null
-+++ b/patches/third-party/elfutils/0001-elfutils-gcc-16-build-fixes.patch
-@@ -0,0 +1,116 @@
-+From a5a358fa84160996c4f3f7f1685c5efed6251678 Mon Sep 17 00:00:00 2001
++++ b/patches/third-party/elfutils/0001-elfutils-fixes-for-fedora-44-gcc-16-build.patch
+@@ -0,0 +1,134 @@
++From a6aefeedb85e6485a96d4db98cebf07fa6897874 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
-+Date: Wed, 29 Apr 2026 12:00:38 -0700
-+Subject: [PATCH] elfutils gcc 16 build fixes
++Date: Fri, 8 May 2026 17:21:00 -0700
++Subject: [PATCH] elfutils fixes for fedora 44/gcc-16 build
 +MIME-Version: 1.0
 +Content-Type: text/plain; charset=UTF-8
 +Content-Transfer-Encoding: 8bit
 +
-+1) initialization discards ‘const’ qualifier
-+   from pointer target type [-Werror=discarded-qualifiers]
-+- riscv_disasm.c
-+- dwarf_getsrclines.c
-+- src/readelf.c
++Fix initialization discards ‘const’ qualifier type of errors.
++
++libcpu/riscv_disasm.c:1259:46: error: initialization discards
++‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
++
++In function ‘attr_callback’:
++src/readelf.c:7962:42: error: initialization discards
++‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
++7962 |                         char *filename = strrchr (valuestr, '/');
++7962 |                         char *filename = strrchr (valuestr, '/');
++
++src/readelf.c: In function ‘print_form_data’:
++src/readelf.c:8822:12: error: assignment discards
++‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
++8822 |       endp = memchr (readp, '\0', readendp - readp);
++
++src/readelf.c: In function ‘print_debug_line_section’:
++src/readelf.c:9209:37: error: initialization discards
++‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
++9209 |               unsigned char *endp = memchr (linep, '\0', lineendp - linep);
++
++src/readelf.c:9443:43: error: initialization discards
++‘const’ qualifier from pointer target type [-Werror=discarded-qualifiers]
++9443 |                     unsigned char *endp = memchr (linep, '\0',
 +
 +Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
@@ -113,7 +133,7 @@ index 00000000..b0013713
 +   switch (form)
 +@@ -8819,7 +8818,7 @@ print_form_data (Dwarf *dbg, int form, const unsigned char *readp,
 +       break;
-+ 
++
 +     case DW_FORM_string:
 +-      endp = memchr (readp, '\0', readendp - readp);
 ++      const unsigned char *endp = memchr (readp, '\0', readendp - readp);
@@ -128,7 +148,7 @@ index 00000000..b0013713
 ++	      const unsigned char *endp = memchr (linep, '\0', lineendp - linep);
 + 	      if (unlikely (endp == NULL))
 + 		goto invalid_unit;
-+ 
++
 +@@ -9440,7 +9439,7 @@ print_debug_line_section (Dwfl_Module *dwflmod, Ebl *ebl, GElf_Ehdr *ehdr,
 + 		case DW_LNE_define_file:
 + 		  {
@@ -138,11 +158,10 @@ index 00000000..b0013713
 + 						  lineendp - linep);
 + 		    if (unlikely (endp == NULL))
 + 		      goto invalid_unit;
-+-- 
-+2.54.0
-+
++--
++2.52.0
 diff --git a/third-party/sysdeps/linux/elfutils/CMakeLists.txt b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
-index a57c92c4..4e497fa2 100644
+index a57c92c..4e497fa 100644
 --- a/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 +++ b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 @@ -11,6 +11,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

@@ -1,7 +1,7 @@
-From 779bf9e6f983855e7f9775573e2f7d80984fd4a0 Mon Sep 17 00:00:00 2001
+From 7269780af0cf45e34377241f5fcab7f3d058c047 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 09/23] rccl add more amd gpus to list of supported GPUs
+Subject: [PATCH 11/21] rccl add more amd gpus to list of supported GPUs
 
 - add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
   gfx1150 to the list if default GPUs. This fixes the
@@ -15,20 +15,20 @@ Subject: [PATCH 09/23] rccl add more amd gpus to list of supported GPUs
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...e-amd-gpus-to-list-of-supported-GPUs.patch | 92 +++++++++++++++++++
- 1 file changed, 92 insertions(+)
- create mode 100644 patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+ ...e-amd-gpus-to-list-of-supported-GPUs.patch | 73 +++++++++++++++++++
+ 1 file changed, 73 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 
-diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+diff --git a/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 new file mode 100644
-index 00000000..31d76cd9
+index 0000000..7c19d1f
 --- /dev/null
-+++ b/patches/amd-mainline/rocm-systems/0010-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-@@ -0,0 +1,92 @@
-+From 88e3f0f46c819f5031355c336835d5d6d7fb2305 Mon Sep 17 00:00:00 2001
++++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+@@ -0,0 +1,73 @@
++From 641ac5c472893574d31f1b04e08450043fa2964f Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Mon, 23 Mar 2026 15:53:36 -0700
-+Subject: [PATCH] rccl add more amd gpus to list of supported GPUs
++Subject: [PATCH 5/5] rccl add more amd gpus to list of supported GPUs
 +
 +- add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
 +  gfx1150 to the list if default GPUs. This fixes the
@@ -44,15 +44,14 @@ index 00000000..31d76cd9
 +---
 + projects/rccl/CMakeLists.txt               | 6 ++++++
 + projects/rccl/src/device/common.h          | 3 ++-
-+ projects/rccl/src/include/rccl_float8.h    | 6 +++++-
 + projects/rccl/tools/JitterBench/Common.hpp | 4 +++-
-+ 4 files changed, 16 insertions(+), 3 deletions(-)
++ 3 files changed, 11 insertions(+), 2 deletions(-)
 +
 +diff --git a/projects/rccl/CMakeLists.txt b/projects/rccl/CMakeLists.txt
-+index a3bcbfea..36c8f269 100644
++index 52062e70..b6e8140f 100644
 +--- a/projects/rccl/CMakeLists.txt
 ++++ b/projects/rccl/CMakeLists.txt
-+@@ -98,9 +98,15 @@ set(DEFAULT_GPUS
++@@ -99,9 +99,15 @@ set(DEFAULT_GPUS
 +       gfx942
 +       gfx950
 +       gfx1030
@@ -67,45 +66,28 @@ index 00000000..31d76cd9
 ++      gfx1150
 +       gfx1151
 +       gfx1200
-+       gfx1201)
++       gfx1201
 +diff --git a/projects/rccl/src/device/common.h b/projects/rccl/src/device/common.h
-+index 4ebacf44..30fbdaf6 100644
++index 32e0cb09..37d15274 100644
 +--- a/projects/rccl/src/device/common.h
 ++++ b/projects/rccl/src/device/common.h
-+@@ -26,7 +26,8 @@
++@@ -29,7 +29,8 @@
 +   { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
 + #endif
-+ 
-+-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__)
++
++-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__)
 ++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
-++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__)
+++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__)
 + #define __trace_hwreg() \
 +   collTrace->data_0 = 0;
 + #else
-+diff --git a/projects/rccl/src/include/rccl_float8.h b/projects/rccl/src/include/rccl_float8.h
-+index e8eb675c..cbe20440 100755
-+--- a/projects/rccl/src/include/rccl_float8.h
-++++ b/projects/rccl/src/include/rccl_float8.h
-+@@ -41,7 +41,11 @@ typedef struct
-+ } rccl_bfloat8;
-+ 
-+ // __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
-+-#elif HIP_VERSION >= 60300000 && !(defined(__gfx1030__) || defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__))
-++#elif HIP_VERSION >= 60300000 && \
-++     !(defined(__gfx1030__) || defined(__gfx1031__) || defined(__gfx1032__) || defined(__gfx1034__) || \
-++       defined(__gfx1035__) || defined(__gfx1036__) || \
-++       defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
-++       defined(__gfx1150__) || defined(__gfx1151__) )
-+ 
-+ #include <hip/hip_fp8.h>
-+ 
 +diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
 +index 116f60a9..090a9d84 100644
 +--- a/projects/rccl/tools/JitterBench/Common.hpp
 ++++ b/projects/rccl/tools/JitterBench/Common.hpp
 +@@ -43,7 +43,9 @@ THE SOFTWARE.
 + #endif
-+ 
++
 + // Macro for collecting HW_REG_HW_ID
 +-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__NVCC__)
 ++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
@@ -114,9 +96,8 @@ index 00000000..31d76cd9
 + #define GetHwId(val) \
 +   val = 0
 + #else
-+-- 
-+2.41.3
-+
++--
++2.43.0
 -- 
 2.52.0
 

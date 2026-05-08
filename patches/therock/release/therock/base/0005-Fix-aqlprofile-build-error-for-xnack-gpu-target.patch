@@ -1,7 +1,7 @@
-From 03088ea68c6cd88fc1cca4d8feeb9a3ca18026f1 Mon Sep 17 00:00:00 2001
+From 31181fcea188cb2d863556ec1c980ed968efedaf Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
-Subject: [PATCH 04/23] Fix aqlprofile build error for xnack+ gpu target
+Subject: [PATCH 05/21] Fix aqlprofile build error for xnack+ gpu target
 
 If the GPU list for build targets contains both the
 base GPU-name and property enabled GPU-name then the
@@ -17,7 +17,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 39 insertions(+)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index c4e80264..867c16f2 100644
+index c4e8026..867c16f 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
 @@ -251,6 +251,42 @@ therock_add_amdgpu_target(gfx1201 "AMD RX 9070 / XT" FAMILY dgpu-all gfx120X-all

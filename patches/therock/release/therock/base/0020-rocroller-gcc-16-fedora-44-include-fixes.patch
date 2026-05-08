@@ -1,7 +1,7 @@
-From bbac8c1d2d9034e0eb95de5d77c80a8def1a4d2c Mon Sep 17 00:00:00 2001
+From 34f7a76391cbb22320f18891110f394cd20367d7 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 17:08:07 -0700
-Subject: [PATCH 20/23] rocroller gcc 16/fedora 44 include fixes
+Subject: [PATCH 20/21] rocroller gcc 16/fedora 44 include fixes
 
 Include cstdint and unistd.h in places
 where they are not anymore included by
@@ -9,15 +9,15 @@ other header files.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...ation-R_X86_64_PC32-out-of-range-err.patch | 11 ++++---
- ...cc-16-fedora-44-uint32_t-include-fix.patch | 30 ++++++++++++++++++
- ...-gcc-16-fedora-44-usleep-include-fix.patch | 31 +++++++++++++++++++
- 3 files changed, 67 insertions(+), 5 deletions(-)
+ ...ation-R_X86_64_PC32-out-of-range-err.patch |  6 ++--
+ ...cc-16-fedora-44-uint32_t-include-fix.patch | 29 ++++++++++++++++++
+ ...-gcc-16-fedora-44-usleep-include-fix.patch | 30 +++++++++++++++++++
+ 3 files changed, 62 insertions(+), 3 deletions(-)
  create mode 100644 patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
  create mode 100644 patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 
 diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-index f7047b3e..a332a6ab 100644
+index f7047b3..8d9173d 100644
 --- a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 +++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
 @@ -1,7 +1,7 @@
@@ -30,30 +30,18 @@ index f7047b3e..a332a6ab 100644
   ASAN builds
  
  Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-@@ -16,7 +16,7 @@ index 989cb438..f5970abd 100644
- @@ -6,6 +6,13 @@ cmake_minimum_required( VERSION 3.15 )
-  #Add a name for the rocm-libraries location
-  set(ROCM_LIBRARIES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../")
--
-+ 
- +# to avoid error
- +# relocation R_X86_64_PC32 out of range: -2294147428 is not in [-2147483648, 2147483647];
- +# due to too bit library size
-@@ -27,5 +27,6 @@ index 989cb438..f5970abd 100644
-  if (POLICY CMP0074)
+@@ -28,4 +28,4 @@ index 989cb438..f5970abd 100644
     cmake_policy(SET CMP0074 NEW)
   endif()
----
+ --
 -2.43.0
-+-- 
 +2.54.0
-+
 diff --git a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
 new file mode 100644
-index 00000000..b57cd9bf
+index 0000000..2baca85
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,29 @@
 +From 014240998790dd30f7ab14d63a5ceff927e47f52 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Wed, 29 Apr 2026 16:57:02 -0700
@@ -78,18 +66,17 @@ index 00000000..b57cd9bf
 + #include <vector>
 + #include <iostream>
 ++#include <cstdint>
-+ 
++
 + namespace amdisa
 + {
-+-- 
++--
 +2.54.0
-+
 diff --git a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
 new file mode 100644
-index 00000000..353cd6d7
+index 0000000..0cb1196
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,30 @@
 +From 302e59233d57da9dc36426636d5b07b5c3f03cc4 Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Wed, 29 Apr 2026 17:01:14 -0700
@@ -115,12 +102,11 @@ index 00000000..353cd6d7
 + #include <omp.h>
 + #include <thread>
 ++#include <unistd.h>
-+ 
++
 + #include "SimpleTest.hpp"
 + #include "common/SourceMatcher.hpp"
-+-- 
++--
 +2.54.0
-+
 -- 
 2.52.0
 

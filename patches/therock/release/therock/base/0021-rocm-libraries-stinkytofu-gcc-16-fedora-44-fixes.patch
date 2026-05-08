@@ -1,7 +1,7 @@
-From 456333806618904ec5b8d279b34e8ea9d15d80d0 Mon Sep 17 00:00:00 2001
+From d3dd8aee7eadad071d9f36962736f60fe2510474 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 2 May 2026 01:04:29 -0700
-Subject: [PATCH 23/23] rocm-libraries stinkytofu gcc 16/fedora 44 fixes
+Subject: [PATCH 21/21] rocm-libraries stinkytofu gcc 16/fedora 44 fixes
 
 Stinkytofu broke the hibBLASLt build on fedora/gcc 16
 due to missing definitions because c++ headers shipped
@@ -17,85 +17,10 @@ and
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...ation-R_X86_64_PC32-out-of-range-err.patch |  9 +-
- ...cc-16-fedora-44-uint32_t-include-fix.patch |  7 +-
- ...-gcc-16-fedora-44-usleep-include-fix.patch |  7 +-
  ...-16-fedora-44-uint32_t-include-fixes.patch | 90 +++++++++++++++++++
- 4 files changed, 103 insertions(+), 10 deletions(-)
+ 1 file changed, 90 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch
 
-diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-index 8d9173d..078ac4e 100644
---- a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-+++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
-@@ -1,7 +1,7 @@
--From 113c0b755d8f57b32b46af3e1285b97e2b794378 Mon Sep 17 00:00:00 2001
-+From a66a15c74d5e63beeb3bff0aa936ae47824cc2d1 Mon Sep 17 00:00:00 2001
- From: Mika Laitio <mika.laitio@amd.com>
- Date: Wed, 18 Mar 2026 17:55:19 -0700
--Subject: [PATCH 1/3] miopen fix relocation R_X86_64_PC32 out of range error on
-+Subject: [PATCH 1/4] miopen fix relocation R_X86_64_PC32 out of range error on
-  ASAN builds
- 
- Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-@@ -10,7 +10,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
-  1 file changed, 7 insertions(+)
- 
- diff --git a/projects/miopen/CMakeLists.txt b/projects/miopen/CMakeLists.txt
--index 989cb438..f5970abd 100644
-+index af87cd1c..950aa697 100644
- --- a/projects/miopen/CMakeLists.txt
- +++ b/projects/miopen/CMakeLists.txt
- @@ -6,6 +6,13 @@ cmake_minimum_required( VERSION 3.15 )
-@@ -28,4 +28,5 @@ index 989cb438..f5970abd 100644
-    cmake_policy(SET CMP0074 NEW)
-  endif()
- --
--2.54.0
-+2.52.0
-+
-diff --git a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
-index 2baca85..7ea442b 100644
---- a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
-+++ b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
-@@ -1,7 +1,7 @@
--From 014240998790dd30f7ab14d63a5ceff927e47f52 Mon Sep 17 00:00:00 2001
-+From 2b0883ba8cf1ceb6375716076082b56241f02022 Mon Sep 17 00:00:00 2001
- From: Mika Laitio <mika.laitio@amd.com>
- Date: Wed, 29 Apr 2026 16:57:02 -0700
--Subject: [PATCH 2/3] rocroller gcc 16/fedora 44 uint32_t include fix
-+Subject: [PATCH 2/4] rocroller gcc 16/fedora 44 uint32_t include fix
- 
- Never gcc versions requires including the
- ctdint.h or cstdint implicitly to resolve
-@@ -26,4 +26,5 @@ index 00b3537b..ac172b89 100644
-  namespace amdisa
-  {
- --
--2.54.0
-+2.52.0
-+
-diff --git a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
-index 0cb1196..01c07ce 100644
---- a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
-+++ b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
-@@ -1,7 +1,7 @@
--From 302e59233d57da9dc36426636d5b07b5c3f03cc4 Mon Sep 17 00:00:00 2001
-+From bc143b7ff772b6e0977e5f76ef5f91e8602febd9 Mon Sep 17 00:00:00 2001
- From: Mika Laitio <mika.laitio@amd.com>
- Date: Wed, 29 Apr 2026 17:01:14 -0700
--Subject: [PATCH 3/3] rocroller gcc 16/fedora 44 usleep include fix
-+Subject: [PATCH 3/4] rocroller gcc 16/fedora 44 usleep include fix
- 
- Never gcc versions requires including the
- unistd.h for usleep function.
-@@ -27,4 +27,5 @@ index a713db76..0bff6d8a 100644
-  #include "SimpleTest.hpp"
-  #include "common/SourceMatcher.hpp"
- --
--2.54.0
-+2.52.0
-+
 diff --git a/patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch b/patches/amd-mainline/rocm-libraries/0004-stinkytofu-gcc-16-fedora-44-uint32_t-include-fixes.patch
 new file mode 100644
 index 0000000..b39f7ae

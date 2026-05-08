@@ -1,7 +1,7 @@
-From 77fe827e378f6c6c1ce2490e19d61211c3749c4c Mon Sep 17 00:00:00 2001
+From 61b63590cefcec30b63cbec5642983a7feee0593 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:45:55 -0700
-Subject: [PATCH 14/23] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
+Subject: [PATCH 15/21] rocprofiler-sdk add ROCPROFILER_BUILD_ELFIO option
 
 Add new build flag ROCPROFILER_BUILD_ELFIO which
 is by default on to support the current way of building.
@@ -24,16 +24,16 @@ fixes for: https://github.com/ROCm/TheRock/issues/3517
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...k-add-ROCPROFILER_BUILD_ELFIO-option.patch | 101 ++++++++++++++++++
- 1 file changed, 101 insertions(+)
+ ...k-add-ROCPROFILER_BUILD_ELFIO-option.patch | 100 ++++++++++++++++++
+ 1 file changed, 100 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch b/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
 new file mode 100644
-index 00000000..3dfb0224
+index 0000000..f28a4bb
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0007-rocprofiler-sdk-add-ROCPROFILER_BUILD_ELFIO-option.patch
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,100 @@
 +From 09ed3b285a3125be6847a96b3cf2337eb5ef34ab Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
 +Date: Tue, 31 Mar 2026 00:50:47 -0700
@@ -72,7 +72,7 @@ index 00000000..3dfb0224
 +@@ -310,9 +310,14 @@ endif()
 + #
 + # ----------------------------------------------------------------------------------------#
-+ 
++
 ++if (NOT ROCPROFILER_BUILD_ELFIO)
 ++    # search system installed elfio
 ++    find_package(elfio CONFIG REQUIRED)
@@ -82,7 +82,7 @@ index 00000000..3dfb0224
 + # get_target_property(ELFIO_INCLUDE_DIR elfio::elfio INTERFACE_INCLUDE_DIRECTORIES)
 + # target_include_directories(rocprofiler-sdk-elfio SYSTEM INTERFACE ${ELFIO_INCLUDE_DIR})
 +-target_link_libraries(rocprofiler-sdk-elfio INTERFACE elfio::elfio)
-+ 
++
 + # ----------------------------------------------------------------------------------------#
 + #
 +diff --git a/projects/rocprofiler-sdk/cmake/rocprofiler_options.cmake b/projects/rocprofiler-sdk/cmake/rocprofiler_options.cmake
@@ -105,7 +105,7 @@ index 00000000..3dfb0224
 +@@ -200,17 +200,19 @@ target_link_libraries(
 +     rocprofiler-sdk-perfetto
 +     INTERFACE $<BUILD_INTERFACE:rocprofiler-sdk-perfetto-static-library>)
-+ 
++
 +-# ELFIO
 +-rocprofiler_checkout_git_submodule(
 +-    RECURSIVE
@@ -121,7 +121,7 @@ index 00000000..3dfb0224
 ++        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 ++        REPO_URL https://github.com/serge1/ELFIO.git
 ++        REPO_BRANCH "Release_3.12")
-+ 
++
 +-set(ELFIO_BUILD_EXAMPLES OFF)
 +-set(ELFIO_BUILD_TESTS OFF)
 +-add_subdirectory(elfio EXCLUDE_FROM_ALL)
@@ -132,9 +132,8 @@ index 00000000..3dfb0224
 + if(TARGET rocprofiler-sdk-elfio)
 +     get_target_property(ELFIO_INCLUDE_DIR elfio::elfio INTERFACE_INCLUDE_DIRECTORIES)
 +     target_include_directories(rocprofiler-sdk-elfio SYSTEM
-+-- 
++--
 +2.52.0
-+
 -- 
 2.52.0
 

@@ -1,7 +1,7 @@
-From 6f21fa71d4f886e562c933d196b2d802975aefdb Mon Sep 17 00:00:00 2001
+From f0a9675c6b74babe6a12687fc78ec96584d41475 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 21 Mar 2026 20:28:40 -0700
-Subject: [PATCH 08/23] rccl use lto-partitions=32 instead of default 8
+Subject: [PATCH 09/21] rccl use lto-partitions=32 instead of default 8
 
 Aims to decrease the rccl libraries linking time.
 
@@ -13,7 +13,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch b/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 new file mode 100644
-index 00000000..38e35ed0
+index 0000000..38e35ed
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
 @@ -0,0 +1,26 @@

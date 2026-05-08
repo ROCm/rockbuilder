@@ -1,7 +1,7 @@
-From 14f660da8a1fe1f6faa02d8f617af2d0da5de6cf Mon Sep 17 00:00:00 2001
+From 609db101e33ed526b03483d2f41c99cb9e9ff116 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
-Subject: [PATCH 01/23] therock patches to python scripts config and build
+Subject: [PATCH 01/21] therock patches to python scripts config and build
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
@@ -15,7 +15,7 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 
 diff --git a/rcb_build.py b/rcb_build.py
 new file mode 100644
-index 00000000..417e56a7
+index 0000000..417e56a
 --- /dev/null
 +++ b/rcb_build.py
 @@ -0,0 +1,44 @@
@@ -65,7 +65,7 @@ index 00000000..417e56a7
 +    main()
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 00000000..ab5a1671
+index 0000000..3576ca7
 --- /dev/null
 +++ b/rcb_config.py
 @@ -0,0 +1,82 @@
@@ -142,7 +142,7 @@ index 00000000..ab5a1671
 +
 +    cmake_cmd_str = " ".join(cmake_cmd)
 +    with open("rcb_config.txt", "w") as f_handle:
-+        f_handle.write(cmake_cmd_str) 
++        f_handle.write(cmake_cmd_str)
 +    print(f"rcb_config.py, therock config_cmd: {cmake_cmd_str}")
 +    result = subprocess.run(cmake_cmd)
 +    print(f"rcb_config.py therock config done, res: {result.returncode}")
@@ -153,7 +153,7 @@ index 00000000..ab5a1671
 +    main()
 diff --git a/rcb_pre_config.py b/rcb_pre_config.py
 new file mode 100644
-index 00000000..864ccbe9
+index 0000000..864ccbe
 --- /dev/null
 +++ b/rcb_pre_config.py
 @@ -0,0 +1,132 @@
