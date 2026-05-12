@@ -1,4 +1,4 @@
-From cdd87e7a0f7a796358b4c94927ea87b0e8c731cf Mon Sep 17 00:00:00 2001
+From e45d9983a1877d3530fb8262db6662ee59d47bd3 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 8 May 2026 15:12:38 -0700
 Subject: [PATCH 12/21] fix amdsmi lib64 linkging errors

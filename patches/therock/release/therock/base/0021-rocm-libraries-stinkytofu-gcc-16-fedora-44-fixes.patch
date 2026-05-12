@@ -1,4 +1,4 @@
-From d3dd8aee7eadad071d9f36962736f60fe2510474 Mon Sep 17 00:00:00 2001
+From 57aa89dd8d65bd88bb2856488315e6e59c45abaf Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Sat, 2 May 2026 01:04:29 -0700
 Subject: [PATCH 21/21] rocm-libraries stinkytofu gcc 16/fedora 44 fixes

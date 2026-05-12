@@ -1,4 +1,4 @@
-From 20beb1b0a230fe8c3ea09fb26f49f298b0dcf402 Mon Sep 17 00:00:00 2001
+From c0832cd5d24f20de21e9de764b9c9301cbd4c617 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 8 May 2026 15:11:02 -0700
 Subject: [PATCH 10/21] renumber rocm system patches

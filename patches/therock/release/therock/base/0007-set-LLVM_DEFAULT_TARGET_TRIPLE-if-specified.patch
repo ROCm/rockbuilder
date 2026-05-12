@@ -1,4 +1,4 @@
-From 33faf38a7ab89467518a7f90cff64b23ec47b831 Mon Sep 17 00:00:00 2001
+From 40c8e7982fc0237bdff1045a1206cb081c84a832 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 27 Nov 2025 03:52:07 +0000
 Subject: [PATCH 07/21] set LLVM_DEFAULT_TARGET_TRIPLE if specified

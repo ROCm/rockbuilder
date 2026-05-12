@@ -1,4 +1,4 @@
-From 1a955be562833effe3f1c3e6581da32bcbdebf3e Mon Sep 17 00:00:00 2001
+From e01d2bc2121f1a32314beaf4e19fb42c34cd0e7f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 8 Oct 2025 00:14:39 +0000
 Subject: [PATCH 06/21] clr and hip fixes for compiler warnings

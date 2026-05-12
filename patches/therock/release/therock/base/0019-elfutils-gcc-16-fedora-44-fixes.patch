@@ -1,4 +1,4 @@
-From bd2041d2c79bce7e63b4d5ac863c0cacc41c346d Mon Sep 17 00:00:00 2001
+From dc7ead9ecf5032b2c2b6897f37f4197adad8c3c4 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 13:17:47 -0700
 Subject: [PATCH 19/21] elfutils gcc 16 fedora 44 fixes
@@ -161,7 +161,7 @@ index 0000000..7e6eca5
 +--
 +2.52.0
 diff --git a/third-party/sysdeps/linux/elfutils/CMakeLists.txt b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
-index a57c92c..4e497fa 100644
+index e5632ed..fae3dba 100644
 --- a/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 +++ b/third-party/sysdeps/linux/elfutils/CMakeLists.txt
 @@ -11,6 +11,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

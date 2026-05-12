@@ -1,4 +1,4 @@
-From f2f2af0aad9f05bea3a9fa9ff4154b496663c494 Mon Sep 17 00:00:00 2001
+From 8dff79023776c8b75dc631e56e60097aeb6e991a Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
 Subject: [PATCH 04/21] asan build fixes
@@ -223,10 +223,10 @@ index 0000000..ffd2e2b
 +--
 +2.41.3
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 94c6561..40be1e7 100644
+index 229d96c..098e4a8 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -38,6 +38,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -39,6 +39,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
      BACKGROUND_BUILD
      CMAKE_ARGS
        -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
@@ -234,7 +234,7 @@ index 94c6561..40be1e7 100644
        -DHIP_PLATFORM="amd"
      COMPILER_TOOLCHAIN
        amd-hip
-@@ -208,6 +209,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -173,6 +174,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        amd-hip
      CMAKE_ARGS
        -DHIP_PLATFORM=amd

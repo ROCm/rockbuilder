@@ -1,4 +1,4 @@
-From 34f7a76391cbb22320f18891110f394cd20367d7 Mon Sep 17 00:00:00 2001
+From e3baaccc7287508c8321465d907d034206bb0163 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 29 Apr 2026 17:08:07 -0700
 Subject: [PATCH 20/21] rocroller gcc 16/fedora 44 include fixes
