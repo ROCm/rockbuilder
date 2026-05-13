@@ -116,7 +116,7 @@ THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "ther
 THEROCK_SDK_SRC__PATCHES_ROOT_DIR                = THEROCK_SDK_SRC__ROOT_DIR / "external-builds/pytorch/patches"
 # can be different location in future if we later deploy the sdk from source dir after build
 THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
-THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.com/v2/"
+THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.prereleases.amd.com/whl/"
 
 def get_rock_builder_root_dir():
 	return RCB__ROOT_DIR

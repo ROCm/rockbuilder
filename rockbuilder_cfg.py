@@ -355,27 +355,7 @@ class UiManager:
 
         self.gpu_pip_wheel_list = []
         self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx101X-dgpu", key_name_gpus, "gfx101X-dgpu", False)
-        )
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx103X-dgpu", key_name_gpus, "gfx103X-dgpu", False)
-        )
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx110X-all", key_name_gpus, "gfx110X-all", False)
-        )
-        self.gpu_pip_wheel_list.append(SelectionItem("gfx1150", key_name_gpus, "gfx1150", False))
-        self.gpu_pip_wheel_list.append(SelectionItem("gfx1151", key_name_gpus, "gfx1151", False))
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx120X-all", key_name_gpus, "gfx120X-all", True)
-        )
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx906", key_name_gpus, "gfx906", False)
-        )
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx908", key_name_gpus, "gfx908", False)
-        )
-        self.gpu_pip_wheel_list.append(
-            SelectionItem("gfx90a", key_name_gpus, "gfx90a", False)
+            SelectionItem("gfx90X-dcgpu", key_name_gpus, "gfx90X-dcgpu", False)
         )
         self.gpu_pip_wheel_list.append(
             SelectionItem("gfx94X-dcgpu", key_name_gpus, "gfx94X-dcgpu", False)
@@ -383,6 +363,23 @@ class UiManager:
         self.gpu_pip_wheel_list.append(
             SelectionItem("gfx950-dcgpu", key_name_gpus, "gfx950-dcgpu", False)
         )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx101X-dgpu", key_name_gpus, "gfx101X-dgpu", False)
+        )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx103X-all", key_name_gpus, "gfx103X-all", False)
+        )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx110X-all", key_name_gpus, "gfx110X-all", False)
+        )
+        self.gpu_pip_wheel_list.append(
+            SelectionItem("gfx120X-all", key_name_gpus, "gfx120X-all", True)
+        )
+        self.gpu_pip_wheel_list.append(SelectionItem("gfx908", key_name_gpus, "gfx908", False))
+        self.gpu_pip_wheel_list.append(SelectionItem("gfx90a", key_name_gpus, "gfx90a", False))
+        self.gpu_pip_wheel_list.append(SelectionItem("gfx1150", key_name_gpus, "gfx1150", False))
+        self.gpu_pip_wheel_list.append(SelectionItem("gfx1151", key_name_gpus, "gfx1151", False))
+        self.gpu_pip_wheel_list.append(SelectionItem("gfx1152", key_name_gpus, "gfx1152", False))
 
         self.gpu_build_target_list = []
         self.gpu_build_target_list.append(SelectionItem("Radeon VII/MI50/Vega20 (gfx906)", key_name_gpus, "gfx906", False))
@@ -402,6 +399,7 @@ class UiManager:
         self.gpu_build_target_list.append(SelectionItem("780M iGPU (gfx1103)", key_name_gpus, "gfx1103", False))
         self.gpu_build_target_list.append(SelectionItem("890M iGPU/Strix Point (gfx1150)", key_name_gpus, "gfx1150", False))
         self.gpu_build_target_list.append(SelectionItem("8040S/8050S/8060S iGPU/Strix Halo (gfx1151)", key_name_gpus, "gfx1151", False))
+        self.gpu_build_target_list.append(SelectionItem("860M/840M iGPU/Krackan Point (gfx1152)", key_name_gpus, "gfx1152", False))
         self.gpu_build_target_list.append(SelectionItem("RX 9060/RX 9060 XT (gfx1200)", key_name_gpus, "gfx1200", False))
         self.gpu_build_target_list.append(SelectionItem("RX 9070/RX 9070 XT (gfx1201)", key_name_gpus, "gfx1201", False))
 
