@@ -1,13 +1,13 @@
-From 35ea3da55ed82697343bd423e95f7eb57ac404dd Mon Sep 17 00:00:00 2001
+From d826a7bf802020038b6b2d849409fd5de17b4a15 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
-Date: Tue, 12 May 2026 11:32:34 -0700
+Date: Wed, 13 May 2026 12:39:26 -0700
 Subject: [PATCH 03/21] enable gfx90a xnack+ and asan build options
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  cmake/therock_amdgpu_targets.cmake | 6 ++++++
- cmake/therock_sanitizers.cmake     | 4 ++--
- 2 files changed, 8 insertions(+), 2 deletions(-)
+ cmake/therock_sanitizers.cmake     | 6 +++---
+ 2 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
 index d0e07b0..c4e8026 100644
@@ -27,7 +27,7 @@ index d0e07b0..c4e8026 100644
  therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
  
 diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
-index 3c6a649..fd73640 100644
+index 384f072..e16e8f1 100644
 --- a/cmake/therock_sanitizers.cmake
 +++ b/cmake/therock_sanitizers.cmake
 @@ -29,7 +29,7 @@ function(therock_sanitizer_configure
@@ -37,17 +37,26 @@ index 3c6a649..fd73640 100644
 -  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx942, gfx950)
 +  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx90a, gfx942, gfx950)
    # HOST_ASAN: Host-only address sanitizer (no device-side instrumentation)
-   # TSAN: Thread sanitizer.
    set(_stanza)
-@@ -68,7 +68,7 @@ function(therock_sanitizer_configure
+   if(_sanitizer STREQUAL "ASAN" OR _sanitizer STREQUAL "HOST_ASAN")
+@@ -51,7 +51,7 @@ function(therock_sanitizer_configure
+     # Device-side ASAN: Only for full ASAN mode, not HOST_ASAN.
      # Filter GPU_TARGETS to enable xnack+ mode only for gfx targets that support it.
-     if(_sanitizer STREQUAL "ASAN" OR _sanitizer STREQUAL "TSAN")
-       # ASAN and TSAN.
+     if(_sanitizer STREQUAL "ASAN")
 -      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
 +      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx90a|gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
        string(APPEND _stanza "set(AMDGPU_TARGETS \"\${GPU_TARGETS}\")\n")
-       string(APPEND _stanza "message(STATUS \"Override \${_sanitizer} GPU_TARGETS = \${GPU_TARGETS}\")\n")
+       string(APPEND _stanza "message(STATUS \"Override ASAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
      else()
+@@ -77,7 +77,7 @@ function(therock_sanitizer_configure
+     string(APPEND _stanza "add_link_options($<$<LINK_LANGUAGE:C,CXX>:-fsanitize=thread>\n")
+     string(APPEND _stanza "  $<$<AND:$<LINK_LANGUAGE:C,CXX>,$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-shared-libsan>)\n")
+     # Filter GPU_TARGETS to enable xnack+ mode only for gfx targets that support it.
+-    string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
++    string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx90a|gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
+     string(APPEND _stanza "set(AMDGPU_TARGETS \"\${GPU_TARGETS}\")\n")
+     string(APPEND _stanza "message(STATUS \"Override TSAN GPU_TARGETS = \${GPU_TARGETS}\")\n")
+     # Action at a distance: Signal that the sub-project should extend its build and install
 -- 
 2.52.0
 

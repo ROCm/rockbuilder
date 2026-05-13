@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 RCB__VERSION                                 = "2026-04-13_01"
-RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION = "7.13.0a20260501"
+RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION = "7.13.0a20260513"
 
 RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH       = "DEVICE_LIB_PATH"
 RCB__ENV_VAR__ROCM_SDK_HIP_DEVICE_LIB_PATH   = "HIP_DEVICE_LIB_PATH"
@@ -116,7 +116,7 @@ THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "ther
 THEROCK_SDK_SRC__PATCHES_ROOT_DIR                = THEROCK_SDK_SRC__ROOT_DIR / "external-builds/pytorch/patches"
 # can be different location in future if we later deploy the sdk from source dir after build
 THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
-THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.prereleases.amd.com/whl/"
+THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.com/v2/"
 
 def get_rock_builder_root_dir():
 	return RCB__ROOT_DIR
