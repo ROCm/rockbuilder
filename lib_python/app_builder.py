@@ -24,40 +24,36 @@ class ConfigReader(configparser.ConfigParser):
             try:
                 self.read(self.cfg_path)
             except:
-                raise ValueError(
-                    "Could not read the configuration file: "
-                    + self.cfg_path.as_posix()
-                )
+                msg_str = "Error, could not read the configuration file:: " + self.cfg_path.as_posix()
+                print(msg_str)
+                raise ValueError(msg_str)
         else:
-            raise ValueError(
-                "Could not find the app configuration file: "
-                + self.cfg_path.as_posix()
-            )
-        if self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
-            self._is_app_config = True
-        else:
-            if (self.has_section(rcb_const.RCB__APPS_CFG__SECTION_APPS) and
-                self.has_option(rcb_const.RCB__APPS_CFG__SECTION_APPS, rcb_const.RCB__APPS_CFG__KEY__APP_LIST)):
-               self._is_app_list_config = True
+            msg_str = "Error, could not find the configuration file: " + self.cfg_path.as_posix()
+            print(msg_str)
+            raise ValueError(msg_str)
 
+        if self.has_section(rcb_const.RCB__APPS_CFG__SECTION_APP_LIST_INFO):
+            # applist config file
+            if self.has_option(rcb_const.RCB__APPS_CFG__SECTION_APP_LIST_INFO, rcb_const.RCB__APPS_CFG__KEY__APP_LIST):
+                self._is_app_list_config = True
+            else:
+                msg_str = "Error, could not find the " + rcb_const.RCB__APPS_CFG__KEY__APP_LIST + " from " + rcb_const.RCB__APPS_CFG__SECTION_APP_LIST_INFO + " section in the application list configuration file: " + self.cfg_path.as_posix()
+                print(msg_str)
+                raise ValueError(msg_str)
+        elif self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
+            # appinfo config file
+            if self.has_option(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__APP_NAME):
+                self._is_app_config = True
+            else:
+                msg_str = "Error, could not find the " + rcb_const.RCB__APP_CFG__KEY__APP_NAME + " from " + rcb_const.RCB__APP_CFG__SECTION_APP_INFO + " section in the application configuration file: " + self.cfg_path.as_posix()
+                print(msg_str)
+                raise ValueError(msg_str)
 
     def is_app_config(self):
         return self._is_app_config
 
-
     def is_app_list_config(self):
         return self._is_app_list_config
-
-
-        # app_info section is mandatory but the
-        # name, repo_url and version information is not
-        # (project could want to run pip install command for example)
-        if not self.has_section(rcb_const.RCB__APP_CFG__SECTION_APP_INFO):
-            raise ValueError(
-                "Could not find the app_info from configuration file: "
-                + self.cfg_path.as_posix()
-            )
-
 
 class RockProjectBuilder(configparser.ConfigParser):
     def _to_boolean(self, value):
@@ -74,9 +70,9 @@ class RockProjectBuilder(configparser.ConfigParser):
             elif lower_value in ("false", "no", "off", "0"):
                 return False
             else:
-                raise ValueError(f"Cannot convert '{value}' to boolean.")
+                raise ValueError(f"Error, failed to convert value '{value}' to boolean.")
         else:
-            raise TypeError(f"Unsupported type: {type(value)}")
+            raise TypeError(f"Unsupported value type, expected bool, float or string: {type(value)}")
 
     # Read the value from the config-file's rcb_const.RCB__APP_CFG__SECTION_APP_INFO section.
     #
@@ -93,12 +89,10 @@ class RockProjectBuilder(configparser.ConfigParser):
             # in the configuration file. (key/value pairs can be optional)
         return ret
 
-
     def _get_app_info_boolean_value(self, config_key):
         val = self._get_app_info_config_value(config_key)
         ret = self._to_boolean(val)
         return ret
-
 
     #return either os specific or generic version of command depending which is available.
     #if both versions of command exist in app-config file, then the os-specific is selected.
@@ -326,7 +320,7 @@ class RockProjectBuilder(configparser.ConfigParser):
         return ret
 
     # add stamp filenames for command_phase and all other commands that would be executed after it
-    def _get_cmd_phase_stamp_filenames_for_pending_commands(self,
+    def _get_pending_cmd_phase_stamp_filename_list(self,
                         cmd_phase_name:str,
                         cmd_init_force_exec:bool,
                         cmd_any_force_exec:bool):
@@ -351,11 +345,11 @@ class RockProjectBuilder(configparser.ConfigParser):
             force_add = self._add_stamp_filename_to_list_if_phase_equal_or_forced(ret, rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL, cmd_phase_name, force_add)
         return ret
 
-    def _clean_pending_cmd_phases_stamp_filenames(self,
+    def _clean_pending_cmd_phases_stamp_filename_list(self,
                            cmd_phase_name:str,
                            cmd_init_force_exec:bool,
                            cmd_any_force_exec:bool):
-        fname_arr = self._get_cmd_phase_stamp_filenames_for_pending_commands(cmd_phase_name,
+        fname_arr = self._get_pending_cmd_phase_stamp_filename_list(cmd_phase_name,
                                            cmd_init_force_exec,
                                            cmd_any_force_exec)
         for fname in fname_arr:
@@ -383,7 +377,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             ret = not fname.exists()
             #print("_is_cmd_phase_exec_required, fname: " + str(fname) + ", res: " + str(ret))
         if ret:
-            self._clean_pending_cmd_phases_stamp_filenames(cmd_phase_name,
+            self._clean_pending_cmd_phases_stamp_filename_list(cmd_phase_name,
                                      cmd_init_force_exec,
                                      cmd_any_force_exec)
         return ret
@@ -395,12 +389,10 @@ class RockProjectBuilder(configparser.ConfigParser):
             fname.touch()
             ret = fname.exists()
             if not res:
-                print("Failed to create operation success stamp file: " + str(fname))
-                sys.exit(1)
+                msg_str = cmd_phase_name + ", failed to write down that cmd phase was executed succesfully: " + str(fname)
+                self.printout_error_and_terminate(msg_str)
         else:
-            if not res:
-                self.printout_error_and_terminate(cmd_phase_name)
-
+            self.printout_error_and_terminate(cmd_phase_name)
 
     def do_env_setup(self):
         rocm_sdk_setup_cmd_list = None
@@ -429,19 +421,10 @@ class RockProjectBuilder(configparser.ConfigParser):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INIT
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
-            if self.CMD_INIT:
-                res = self.app_repo.do_init(self.CMD_INIT)
-            else:
-                res = True
+            res = self.app_repo.do_init(self.CMD_INIT)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def clean(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
-		# delete build directory
-        shutil.rmtree(self.app_build_dir_path)
-        # then create it again
-        cur_p = Path(self.app_build_dir_path)
-        cur_p.mkdir(parents=True, exist_ok=True)
-        # and finally run other optional clean commands
         res = self.app_repo.do_clean(self.CMD_CLEAN)
 
     def checkout(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
@@ -475,7 +458,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
             if res:
                 # in case that project has cmake configure/build/install needs
-                res = self.app_repo.do_CMD_CMAKE_CONFIG(self.CMD_CMAKE_CONFIG)
+                res = self.app_repo.do_cmake_config(self.CMD_CMAKE_CONFIG)
                 self._set_cmd_phase_done_on_success(res, phase_name)
         # cmd_config
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG
@@ -522,7 +505,6 @@ class RockProjectBuilder(configparser.ConfigParser):
             res = self.app_repo.do_install(self.CMD_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-
     def post_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
@@ -543,16 +525,16 @@ class RockExternalProjectListManager(configparser.ConfigParser):
 
         self.prj_list = []
         if config_info:
-            if config_info.is_app_config():
-                self.prj_list = [config_info.cfg_path]
-            elif config_info.is_app_list_config():
+            if config_info.is_app_list_config():
                 self.read(config_info.cfg_path)
-                value = self.get(rcb_const.RCB__APPS_CFG__SECTION_APPS,
+                value = self.get(rcb_const.RCB__APPS_CFG__SECTION_APP_LIST_INFO,
                                  rcb_const.RCB__APPS_CFG__KEY__APP_LIST)
                 # convert to list of project string names
                 self.prj_list = list(
                     filter(None, (x.strip() for x in value.splitlines()))
                 )
+            elif config_info.is_app_config():
+                self.prj_list = [config_info.cfg_path]
 
     def get_external_app_list(self):
         return self.prj_list

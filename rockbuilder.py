@@ -218,8 +218,8 @@ def parse_build_arguments(parser):
     args = parser.parse_args()
     if (
         ("--checkout" in sys.argv)
-        or ("--clean" in sys.argv)
         or ("--init" in sys.argv)
+        or ("--clean" in sys.argv)
         or ("--hipify" in sys.argv)
         or ("--pre_config" in sys.argv)
         or ("--config" in sys.argv)
@@ -246,8 +246,8 @@ def parse_build_arguments(parser):
         # print("Action not specified.(checkout/init/clean/hipify/pre_config/config/post_config/build/install/post_install)")
         # print("Using default values")
         # enable everything except clean
-        args.clean = False
         args.init = True
+        args.clean = False
         args.checkout = True
         args.hipify = True
         args.pre_config = True
@@ -306,10 +306,11 @@ def do_therock(prj_builder, args):
             # then do all possible commands requested for the project
             # multiple steps possible, so do not use else's here
 
-            # init command differs from others
-            # and will be executed always even if not arg flag is specified
-            # It can be used to execute a script that can be used for example
-            # to set an environment variable for the revision to be checked out
+            # init command will create the build directory if it does not exist yet.
+            # therefore we will execute it even if the agrs.init flag is not set to True
+            #print("args.cmd_init_force_exec: " + str(args.cmd_init_force_exec))
+            #print("args.cmd_any_force_exec: " + str(args.cmd_any_force_exec))
+            #sys.exit(1)
             prj_builder.printout("init")
             prj_builder.init(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.cmd_init_force_exec: exec_next_phase = True

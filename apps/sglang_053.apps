@@ -1,6 +1,6 @@
-[apps]
+[app_list_info]
 # depends from the triton and pytorch
-app_list=
+APP_LIST=
     deps_common
     vllm
     aiter

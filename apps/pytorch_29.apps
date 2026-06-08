@@ -1,5 +1,5 @@
-[apps]
-app_list=
+[app_list_info]
+APP_LIST=
     deps_common
     triton_35
     pytorch_29

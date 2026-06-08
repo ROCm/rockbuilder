@@ -63,8 +63,8 @@ RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED  = "rocm_sdk_whl"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION = "rocm_sdk_whl_version"
 RCB__CFG__KEY__GPUS                          = "gpus"
 
-RCB__APPS_CFG__SECTION_APPS                  = "apps"
-RCB__APPS_CFG__KEY__APP_LIST                 = "app_list"
+RCB__APPS_CFG__SECTION_APP_LIST_INFO         = "app_list_info"
+RCB__APPS_CFG__KEY__APP_LIST                 = "APP_LIST"
 
 RCB__THEROCK_CFG_NAME                        = "therock.cfg"
 
