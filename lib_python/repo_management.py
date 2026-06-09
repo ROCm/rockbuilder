@@ -51,6 +51,13 @@ class RockProjectRepo:
         else:
             os.environ[rcb_const.RCB__ENV_VAR__APP_VERSION] = ""
 
+    def printout_env_settings(self, title_str):
+        if "ROCKBUILDER_VERBOSE" in os.environ:
+            print("------ " + title_str + ", env-variable printout started ----------")
+            self._exec_subprocess_cmd("env", ".")
+            print("------ " + title_str + ", env-variable printout done ----------")
+            time.sleep(1)
+
     # private methods
     def _exec_subprocess_cmd(self, exec_cmd, exec_dir):
         ret = True
@@ -60,7 +67,8 @@ class RockProjectRepo:
             if first_token.endswith(".py"):
                 python_cmd = "python" if self.is_posix == False else "python3"
                 exec_cmd = python_cmd + " " + exec_cmd
-            print("exec_cmd: " + exec_cmd + ", exec_dir: " + exec_dir)
+            print("exec_cmd: " + exec_cmd)
+            print("exec_dir: " + exec_dir)
             # capture_output=True --> can print output after process exist, not possible to see the output during the build time
             # capture_output=False --> can print output only during build time
             # result = subprocess.run(exec_cmd, shell=True, capture_output=True, text=True)
@@ -165,7 +173,6 @@ class RockProjectRepo:
             print("Error: 'git' executable not found. Make sure Git is installed and in your system's PATH.")
             ret = False
         return ret
-
 
     def _handle_RCB_CALLBACK__RESET_APP_SRC_REPOSITORY(self, repo_path):
         ret = True
@@ -321,17 +328,11 @@ class RockProjectRepo:
                     ret = self._exec_subprocess_batch_file(str(CMD_BUILD_file))
                 else:
                     # bash can execute multiple commands in same subprocess.run process
-                    print("------ " + exec_phase_name + " start ----------")
-                    self._exec_subprocess_cmd("env", cmd_exec_dir)
-                    print("------ " + exec_phase_name + " end ----------")
-                    time.sleep(1)
+                    self.printout_env_settings(exec_phase_name)
                     ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
             else:
                 # execute just a single command
-                print("------ " + exec_phase_name + " start ----------")
-                self._exec_subprocess_cmd("env", cmd_exec_dir)
-                print("------ " + exec_phase_name + " end ----------")
-                time.sleep(1)
+                self.printout_env_settings(exec_phase_name)
                 ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
         return ret
 
@@ -609,9 +610,7 @@ class RockProjectRepo:
                     sys.exit(1)
         else:
             print("No environment settings specified")
-        print("------ env-settings start ----------")
-        self._exec_subprocess_cmd("env", ".")
-        print("------ env-settings end ----------")
+        self.printout_env_settings("env-setup")
         # create build dir
         ret = self._create_build_dir()
         return ret

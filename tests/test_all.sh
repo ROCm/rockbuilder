@@ -12,14 +12,14 @@ scripts=(
 
 # Loop through each script in the array and execute it
 for script_path in "${scripts[@]}"; do
-    echo "Executing: $script_path"
+    echo "Starting test: $script_path"
     # Use 'bash' to explicitly execute the script, or just "$script_path" if it's executable
     bash "$script_path"
     # Check the exit status of the executed script
     if [ $? -ne 0 ]; then
-        echo "Error executing $script_path. Exiting."
+        echo "Error executing test: $script_path."
         exit 1
     fi
 done
 
-echo "All scripts executed successfully."
+echo "OK: All Tests"

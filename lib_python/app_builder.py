@@ -268,23 +268,24 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     # printout project builder specific info for logging and debug purposes
     def printout(self, phase):
-        print("Project build phase " + phase + ": -----")
-        print("    Project_name:     " + self.app_name)
-        print("    Project cfg name: " + self.app_cfg_base_name)
-        print("    Project cfg file: " + self.app_cfg_path.as_posix())
+        print("------------------------")
+        print(phase + ":")
+        print("    Name:         " + self.app_name)
+        print("    Config Name:  " + self.app_cfg_base_name)
+        print("    Config File:  " + self.app_cfg_path.as_posix())
         if self.app_version:
-            print("    Version:          " + self.app_version)
-        print("    Source dir:       " + self.app_src_dir_path.as_posix())
+            print("    Version:      " + self.app_version)
+        print("    Source Dir:   " + self.app_src_dir_path.as_posix())
         for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
             if self.app_name:
                 if self.app_patch_dir_base_name:
-                    print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name / self.app_patch_dir_base_name))
+                    print("    Patch Dir[" + str(ii) + "]: " + str(cur_patch_dir_root / self.app_name / self.app_patch_dir_base_name))
                 else:
-                    print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name))
+                    print("    Patch Dir[" + str(ii) + "]: " + str(cur_patch_dir_root / self.app_name))
             else:
-                print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name))
+                print("    Patch Dir[" + str(ii) + "]: " + str(cur_patch_dir_root / self.app_name))
                 sys.exit(1)
-        print("    Build dir:        " + self.app_build_dir_path.as_posix())
+        print("    Build Dir:    " + self.app_build_dir_path.as_posix())
         print("------------------------")
 
     def printout_error_and_terminate(self, phase):
@@ -382,7 +383,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                                      cmd_init_force_exec,
                                      cmd_any_force_exec)
         else:
-            self.printout(cmd_phase_name + " skipped, already done")
+            self.printout(cmd_phase_name + " skipped")
         return ret
 
     def _mark_cmd_phase_done_on_success(self, res: bool, cmd_phase_name: str):
