@@ -311,45 +311,35 @@ def do_therock(prj_builder, args):
             #print("args.cmd_init_force_exec: " + str(args.cmd_init_force_exec))
             #print("args.cmd_any_force_exec: " + str(args.cmd_any_force_exec))
             #sys.exit(1)
-            prj_builder.printout("init")
             prj_builder.cmd_init(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.cmd_init_force_exec: exec_next_phase = True
             if args.clean:
-                prj_builder.printout("clean")
                 prj_builder.cmd_clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.checkout or exec_next_phase:
-                prj_builder.printout("checkout")
                 prj_builder.cmd_checkout(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
                 #if args.cmd_any_force_exec: exec_next_phase = True
             if args.hipify or exec_next_phase:
-                prj_builder.printout("hipify")
                 prj_builder.cmd_hipify(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 #if args.cmd_any_force_exec: exec_next_phase = True
             if args.pre_config or exec_next_phase:
-                prj_builder.printout("pre_config")
                 prj_builder.cmd_pre_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.config or exec_next_phase:
-                prj_builder.printout("config")
                 prj_builder.cmd_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.post_config or exec_next_phase:
-                prj_builder.printout("post_config")
                 prj_builder.cmd_post_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.build or exec_next_phase:
-                prj_builder.printout("build")
                 prj_builder.cmd_build(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.install or exec_next_phase:
-                prj_builder.printout("install")
                 prj_builder.cmd_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.post_install or exec_next_phase:
-                prj_builder.printout("post_install")
                 prj_builder.cmd_post_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             # in the end restore original environment variables
@@ -359,11 +349,11 @@ def do_therock(prj_builder, args):
             print("Success: " + prj_builder.app_cfg_base_name)
             ret = True
         else:
-            print("Builing of project disabled in applications config file")
-            print("by using one of the following properties:")
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE)
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_LINUX)
-            print("    " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_WINDOWS)
+            print("Building disabled in applications config file,")
+            print("one of the following properties detected:")
+            print("    - " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE)
+            print("    - " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_LINUX)
+            print("    - " + rcb_const.RCB__APP_CFG__KEY__PROP_BUILD_DISABLE_WINDOWS)
             prj_builder.printout("skip")
             ret = True
     return ret
@@ -374,13 +364,13 @@ def verify_rockbuilder_config(rcb_cfg_reader):
     if not rcb_cfg_reader or not gpu_list:
         if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
             return
-        print("Rockbuilder is not yet configured, launching config UI")
+        print("rockbuilder.cfg missing, launching configuration tool.")
         time.sleep(1)
         saved_cfg = rcb_cfg_writer.show_and_process_selections()
         if saved_cfg:
-            print("ROCM SDK and target GPU configured ok.")
+            print("Created rockbuilder.cfg succesfully for the ROCM SDK and target GPU configuration")
         else:
-            print("ROCM SDK and target GPU configure failed.")
+            print("Failed to save rockbuilder.cfg for the ROCM SDK and target GPU configuration.")
             sys.exit(1)
 
 def _check_cpu_count_env_variable():
