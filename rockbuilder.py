@@ -312,45 +312,45 @@ def do_therock(prj_builder, args):
             #print("args.cmd_any_force_exec: " + str(args.cmd_any_force_exec))
             #sys.exit(1)
             prj_builder.printout("init")
-            prj_builder.init(args.cmd_init_force_exec, args.cmd_any_force_exec)
+            prj_builder.cmd_init(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.cmd_init_force_exec: exec_next_phase = True
             if args.clean:
                 prj_builder.printout("clean")
-                prj_builder.clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
             if args.checkout or exec_next_phase:
                 prj_builder.printout("checkout")
-                prj_builder.checkout(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_checkout(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 # enable hipify always when doing the code checkout
                 # even if it is not requested explicitly to be it's own command
                 args.hipify = True
                 #if args.cmd_any_force_exec: exec_next_phase = True
             if args.hipify or exec_next_phase:
                 prj_builder.printout("hipify")
-                prj_builder.hipify(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_hipify(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 #if args.cmd_any_force_exec: exec_next_phase = True
             if args.pre_config or exec_next_phase:
                 prj_builder.printout("pre_config")
-                prj_builder.pre_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_pre_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.config or exec_next_phase:
                 prj_builder.printout("config")
-                prj_builder.config(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.post_config or exec_next_phase:
                 prj_builder.printout("post_config")
-                prj_builder.post_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_post_config(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.build or exec_next_phase:
                 prj_builder.printout("build")
-                prj_builder.build(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_build(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.install or exec_next_phase:
                 prj_builder.printout("install")
-                prj_builder.install(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             if args.post_install or exec_next_phase:
                 prj_builder.printout("post_install")
-                prj_builder.post_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
+                prj_builder.cmd_post_install(args.cmd_init_force_exec, args.cmd_any_force_exec)
                 if args.cmd_any_force_exec: exec_next_phase = True
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled

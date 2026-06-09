@@ -417,17 +417,17 @@ class RockProjectBuilder(configparser.ConfigParser):
         if not res:
             self.printout_error_and_terminate("undo_env_setup")
 
-    def init(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_init(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_INIT
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_init(self.CMD_INIT)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def clean(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_clean(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         res = self.app_repo.do_clean(self.CMD_CLEAN)
 
-    def checkout(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_checkout(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         if self.repo_url:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT
             res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
@@ -435,7 +435,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 res = self.app_repo.do_checkout(repo_fetch_depth=self.repo_depth, repo_fetch_tags=self.repo_tags)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def hipify(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_hipify(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         if self.repo_url:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY
             res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
@@ -443,7 +443,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 res = self.app_repo.do_hipify(self.CMD_HIPIFY)
                 self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def pre_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_pre_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
@@ -451,7 +451,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             # print("res: " + str(res))
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
 		# cmd_config_cmake
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG
@@ -467,14 +467,14 @@ class RockProjectBuilder(configparser.ConfigParser):
             res = self.app_repo.do_config(self.CMD_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def post_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_post_config(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
             res = self.app_repo.do_post_config(self.CMD_POST_CONFIG)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def build(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_build(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         # cmd_build_cmake is done only if cmake config exist
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD
@@ -490,7 +490,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             res = self.app_repo.do_build(self.CMD_BUILD)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         # do cmd_install_cmake is done only if cmake config exist
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL
@@ -505,7 +505,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             res = self.app_repo.do_install(self.CMD_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
 
-    def post_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+    def cmd_post_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL
         res = self._is_cmd_phase_exec_required(phase_name, cmd_init_force_exec, cmd_any_force_exec)
         if res:
