@@ -1,32 +1,34 @@
 # RockBuilder
 
-RockBuilder is a configuration-based build system that simplifies the process of integrating and building one or multiple AI applications on top of AMD’s ROCm SDK. 
+RockBuilder is a configuration-based build system that simplifies the process of integrating and building one
+or multiple AI applications on top of AMD’s ROCm SDK. 
 
-[TheRock](https://github.com/ROCm/TheRock) provides the official ROCm images, while RockBuilder supports building additional applications on top of the ROCm SDK that are not tightly integrated with TheRock. RockBuilder is mainly targeted at developers and users who want to add support for building or using these additional applications.
+[TheRock](https://github.com/ROCm/TheRock) provides the official ROCm images, while RockBuilder supports building
+additional applications on top of the ROCm SDK that are not tightly integrated with TheRock.
+RockBuilder is mainly targeted at developers and users who want to add support for building or using these additional applications.
 
 > **Note:** RockBuilder currently supports all stable ROCm versions from TheRock where applicable.
 
-RockBuilder can use:
+RockBuilder can use tools and libraries provied by the ROCM_SDK from following locations:
 
-- An existing ROCm SDK installation.
-
-- A new ROCm SDK, either:
-
-    - Built from source, or
-
-    - Installed from Python wheels.
+- An existing ROCm SDK installation
+- A new ROCm SDK installation build from TheRock source code
+- A new ROCm SDK intstallation from the TheRock provided python wheels
 
 RockBuilder supports both Linux and Windows for building the applications.
 
 >**Note:** Windows support is still less tested compared to Linux. You may encounter issues that haven’t been fully validated yet.
 
-## Download RockBuilder
+## Downloading RockBuilder
 
 ```
 git clone https://github.com/roCm/rockbuilder
 ```
 
-## ROCm SDK and Target GPU Configuration
+## Configuring ROCM_SDK and Target GPUs
+
+To build applications with the Rockbuilder you need to select first
+the ROCM_SDK used and Target AMD GPUs for which you are doing the build.
 
 Initialize and activate the Python virtual environment with all Python dependencies required by RockBuilder:
 
@@ -44,7 +46,8 @@ Initialize and activate the Python virtual environment with all Python dependenc
     init_rcb_env.bat
     ```
 
-The `init_rcb_env` script checks if the Python virtual environment is active. If not, it will initialize and activate one in **.venv-directory** and install all the Python packages required by RockBuilder.
+The `init_rcb_env` script checks if the Python virtual environment is active.
+If not, it will initialize and activate one in **.venv-directory** and install all the Python packages required by RockBuilder.
 
 After the Python virtual environment is activated, you can start RockBuilder:
 
@@ -52,9 +55,11 @@ After the Python virtual environment is activated, you can start RockBuilder:
 python rockbuilder.py
 ```
 
-When you run RockBuilder for the first time, it checks whether a `rockbuilder.cfg` configuration file exists to decide if it needs to build or install the ROCm SDK before proceeding to build applications: 
+When you run RockBuilder for the first time, it checks whether a `rockbuilder.cfg` configuration file exists to decide
+if it needs to build or install the ROCm SDK before proceeding to build applications: 
 
-- If the file exists, RockBuilder automatically selects a stable, tested version of the ROCm SDK as the base environment, and you can proceed directly to building your applications.
+- If the file exists, RockBuilder automatically selects a stable, tested version of the ROCm SDK as the base environment,
+and you can proceed directly to building your applications.
 
 - If the file does not exist, you will be prompted to choose how to install the ROCm SDK and specify your target GPUs:
 
@@ -68,11 +73,14 @@ When you run RockBuilder for the first time, it checks whether a `rockbuilder.cf
 
 Once confirmed (by pressing **Enter**), your selections will be saved to `rockbuilder.cfg`.
 
-> **Note:** Building the ROCm SDK allows for greater customization, but the process can take anywhere from one to several hours, depending on your system.
+> **Note:** Building the ROCm SDK allows for greater customization,
+but the process can take anywhere from one to several hours, depending on your system.
 
-## Build an Application Set
+## Building a List of Applications
 
-In many cases, multiple applications need to be built to achieve full functionality. RockBuilder handles this by listing all related applications and their corresponding versions in an `.apps` file.
+In many cases, multiple applications need to be built to achieve full functionality.
+RockBuilder handles this by listing all related applications and their corresponding versions in an
+Application List Configuration Files. (*.apps`)
 
 Example usage to build PyTorch nightly and its dependencies:
 
@@ -94,11 +102,13 @@ app_list=
     pytorch_audio_nightly
 ```
 
-Applications are built and installed in the listed order above. Each application will be installed into the currently active Python virtual environment. Any additional libraries or executables built by CMake will be installed to the configured ROCm SDK.
+Applications are built and installed in the listed order above.
+Each application will be installed into the currently active Python virtual environment.
+Any additional libraries or executables built by CMake will be installed to the configured ROCm SDK.
 
 Built Python wheels will be copied to the `packages/wheels` directory in RockBuilder.
 
-## Build Applications One By One
+## Building Applications One By One
 
 Instead of building a set of applications, you can also build them one by one in the correct dependency order.
 
@@ -112,13 +122,17 @@ Instead of building a set of applications, you can also build them one by one in
 ./rockbuilder.py apps/pytorch_audio_nightly.cfg
 ```
 
-Each of these `.cfg` files provides an application-specific configuration. These files define the application name, version, source repository, and the commands required to configure, build, and install the application.
+Each of these `.cfg` files provides an application-specific configuration.
+These files define the application name, version, source repository,
+and the commands required to configure, build, and install the application.
 
 Configuration file format is specified in [CONFIG.md](CONFIG.md).
 
-## Test the Applications Build
+## Testing the Applications Build
 
-RockBuilder includes simple example applications to verify that the PyTorch build was successful. If you are running the tests from a new terminal window, you’ll need to activate the Python virtual environment first. If it’s already active, you can skip this step:
+RockBuilder includes simple example applications to verify that the PyTorch build was successful.
+If you are running the tests from a new terminal window, you’ll need to activate the Python virtual environment first.
+If it’s already active, you can skip this step:
 
 ```
 source ./init_rcb_env.sh 
@@ -177,15 +191,16 @@ python examples/torch_attention_check.py
 
 RockBuilder also supports optional build arguments as follows:
 
-### Checkout Only the Source Code
+### Checkout Only the Applications Source Code
 
-This command checks out the source code for the PyTorch 2.8–related applications without building them. The source code will be checked out to the `src_apps` directory.
+This command checks out the source code for the PyTorch 2.8–related applications without building them.
+The source code will be checked out to the `src_apps` directory.
 
 ```bash
 python rockbuilder.py --checkout apps/pytorch_28_amd.apps
 ```
 
-### Checkout Source Code to a Custom Directory
+### Checkout Applications Source Code to a Custom Directory
 
 This command checks out the source code for each project to the `custom_src_location` directory instead of the default `src_apps` directory.
 
@@ -195,7 +210,8 @@ python rockbuilder.py --checkout --src-base-dir custom_src_location apps/pytorch
 
 ### Build and Install Python Wheel to a Custom Directory
 
-This command builds and installs only PyTorch Audio and copies the produced PyTorch Audio wheel to the `test` directory instead of the default `packages/wheels` directory.
+This command builds and installs only PyTorch Audio and copies the produced PyTorch Audio wheel to the `test` directory
+instead of the default `packages/wheels` directory.
 
 >**Note:** PyTorch Audio requires PyTorch to be built and installed first.
 
@@ -229,13 +245,51 @@ This command executes only the install phase for a previously built PyTorch Audi
 python rockbuilder.py --install apps/pytorch_audio.cfg
 ```
 
-## Add a New Application to RockBuilder
+## RockBuilder Configuration
+
+Rockbuilder configuration allows user to configure
+1) ROCM_SDK
+2) Target GPUs used for building the applications
+
+Rockbuilder configuration is saved to rockbuilder.cfg file.
+
+If rockbuilder.cfg file is missing, the rockbuilder will
+automatically launch the rockbuilder_cfg tool to allow user to select the
+configuration.
+
+User can also change the configuration afterwards by launching the rockbuilder_cfg manually.
+
+### RockBuilder ROCM_SDK Configuration
+
+ROCM_SDK will provide the compiler and libraries required to build, install and run
+machine learning applications targeting the AMD's GPUs.
+
+ROCM_SDK can be one of the following:
+
+1) Directory where the existing ROCM_SDK is installed.
+   (rockbuilder_cfg will find this if ROCM_HOME environment variable is set to location where ROCM_SDK is installed)
+2) Directory where the rockbuilder will build and install the ROCM_SDK by using
+   therock project source-code.
+3) Directory where the rockbuilder will build and install the ROCM_SDK by using
+   by using the python pip command to install the therock
+
+### RockBuilder Target GPU Configuration
+
+Different AMD GPUs are having different set of features like amount and type of the memory and supported instruction sets.
+Therefore libraries provided by the ROCM_SDK will have GPU specific code and the compiler and linker provided by the ROCM_SDK must also
+be able to produce the binaries from same source for different target GPUs.
+
+Target GPUs for which the ROCM_SDK binaries are installed and code is compiled can be selected with the rockbuilder_cfg tool
+and selections are saved to rockbuilder.cfg file.
+
+## RockBuilder Application List and Application Configuration Files
 
 RockBuilder uses two types of configuration files stored under the applications directory.
+More detailed specification can be found from the [CONFIGURATION Guide](CONFIG.md).
 
-### Application Set Configuration File
+### Application List Configuration File
 
-`apps/core.apps` is an example of an application set configuration file, listing applications that RockBuilder can build:
+`apps/core.apps` is an example of an application list configuration file, listing applications that RockBuilder can build:
 
 ```bash
 [apps]
@@ -247,9 +301,9 @@ app_list=
 
 ### Application Configuration File
 
-`apps/pytorch.cfg` is an example of an application configuration file, defining the actions that RockBuilder executes for a specific project, including:
-
-- inut
+`apps/pytorch.cfg` is an example of an application configuration file,
+defining the actions that RockBuilder executes for a specific project, including:
+- init
 - checkout
 - clean
 - pre-configure
@@ -259,7 +313,10 @@ app_list=
 - install
 - post-install
 
-By default the RockBuilder executes init, checkout, pre-configure, configure, post-configure, build, install, and post-install phases for the application. You can override this by specifying the desired command phase. For example:
+By default the RockBuilder executes init, checkout, pre-configure, configure, post-configure,
+build, install, and post-install phases for the application. You can override this by specifying the desired command phase.
+
+Example to execute only the checkout command phase for the pytorch application:
 
 ```bash
 python rockbuilder.py --checkout apps/pytorch.cfg
