@@ -1,0 +1,168 @@
+From f32f311f3856296a4f2aa93e9461ef06bb6404ef Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 20 Jul 2026 15:38:23 -0700
+Subject: [PATCH 2/2] add gfx906 and gfx103x gpus
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ CMakeLists.txt          |  2 +-
+ include/aotriton/util.h |  6 ++++++
+ python/compile.py       |  4 ++--
+ python/gpu_targets.py   | 18 ++++++++++++++++++
+ tritonsrc/tuned_bwd.py  |  2 +-
+ v3src/util.cc           | 14 +++++++++++++-
+ 6 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index aba57b4..9d81d02 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -114,7 +114,7 @@ option(AOTRITON_INHERIT_SYSTEM_SITE_TRITON "Use system site packages and verify
+ set(AOTRITON_USE_LOCAL_TRITON_WHEEL "" CACHE STRING "Substitute install from third_party/triton with install from local pip wheel package.")
+ set(AOTRITON_GPU_BUILD_TIMEOUT "8.0" CACHE STRING "GPU kernel compiler times out after X minutes. 0 for indefinite. Highly recommended if AOTRITON_BUILD_FOR_TUNING=On.")
+ option(AOTRITON_TERMINATE_WHEN_GPU_BUILD_TIMEOUT "compile.py will return error when GPU built timeout. Defensive option for CI" OFF)
+-set(AOTRITON_TARGET_ARCH "gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1153;gfx1201;gfx1200;gfx1250" CACHE STRING "Target GPU Architecture. Select all GPUs within the given list")
++set(AOTRITON_TARGET_ARCH "gfx906;gfx90a;gfx942;gfx950;gfx1030;gfx1031;gfx1032;gfx1034;gfx1035;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1153;gfx1201;gfx1200;gfx1250" CACHE STRING "Target GPU Architecture. Select all GPUs within the given list")
+ set(TARGET_GPUS "OBSOLETE" CACHE STRING "OBSOLETE. To select only one GPU, use AOTRITON_TARGET_ARCH or AOTRITON_OVERRIDE_TARGET_GPUS.")
+ set(AOTRITON_OVERRIDE_TARGET_GPUS "" CACHE STRING "Override AOTRITON_TARGET_ARCH, and only build for GPUs within this list.")
+ set(AOTRITON_ALT_TRITON_WHEEL_CONFIG_FILE "" CACHE STRING "Specify how to use alternative Triton wheels for different architectures in a YAML config file.")
+diff --git a/include/aotriton/util.h b/include/aotriton/util.h
+index 279032a..18266bc 100644
+--- a/include/aotriton/util.h
++++ b/include/aotriton/util.h
+@@ -52,10 +52,16 @@ enum AOTRITON_API GpuVendor : uint16_t {
+ // More bits for potential non-PCI architectures
+ enum AOTRITON_API Gpu : uint64_t {
+   GPU_ARCH_UNKNOWN = 0,
++  GPU_AMD_ARCH_GFX906_MOD0  = TRICAT(GpuVendor::kAMD,  0x906, 0),
+   GPU_AMD_ARCH_GFX90A_MOD0  = TRICAT(GpuVendor::kAMD,  0x90a, 0),
+   GPU_AMD_ARCH_GFX942_MOD0  = TRICAT(GpuVendor::kAMD,  0x942, 0),
+   GPU_AMD_ARCH_GFX942_MOD1  = TRICAT(GpuVendor::kAMD,  0x942, 1),
+   GPU_AMD_ARCH_GFX942_MOD2  = TRICAT(GpuVendor::kAMD,  0x942, 2),
++  GPU_AMD_ARCH_GFX1030_MOD0 = TRICAT(GpuVendor::kAMD, 0x1030, 0),
++  GPU_AMD_ARCH_GFX1031_MOD0 = TRICAT(GpuVendor::kAMD, 0x1031, 0),
++  GPU_AMD_ARCH_GFX1032_MOD0 = TRICAT(GpuVendor::kAMD, 0x1032, 0),
++  GPU_AMD_ARCH_GFX1034_MOD0 = TRICAT(GpuVendor::kAMD, 0x1034, 0),
++  GPU_AMD_ARCH_GFX1035_MOD0 = TRICAT(GpuVendor::kAMD, 0x1035, 0),
+   GPU_AMD_ARCH_GFX1100_MOD0 = TRICAT(GpuVendor::kAMD, 0x1100, 0),
+   GPU_AMD_ARCH_GFX1101_MOD0 = TRICAT(GpuVendor::kAMD, 0x1101, 0),
+   GPU_AMD_ARCH_GFX1102_MOD0 = TRICAT(GpuVendor::kAMD, 0x1102, 0),
+diff --git a/python/compile.py b/python/compile.py
+index 18b3560..4109119 100644
+--- a/python/compile.py
++++ b/python/compile.py
+@@ -14,8 +14,8 @@ import json
+ 
+ from triton.backends.compiler import GPUTarget
+ 
+-KNOWN_TARGETS_64 = ['gfx90a', 'gfx942', 'gfx950']
+-KNOWN_TARGETS_32 = ['gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1150', 'gfx1151', 'gfx1152', 'gfx1153', 'gfx1200', 'gfx1201', 'gfx1250']
++KNOWN_TARGETS_64 = ['gfx906', 'gfx90a', 'gfx942', 'gfx950']
++KNOWN_TARGETS_32 = ['gfx1030', 'gfx1031', 'gfx1032', 'gfx1034', 'gfx1035', 'gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1150', 'gfx1151', 'gfx1152', 'gfx1153', 'gfx1200', 'gfx1201', 'gfx1250']
+ 
+ KNOWN_TARGETS = {
+   arch : GPUTarget('hip', arch, 64) for arch in KNOWN_TARGETS_64
+diff --git a/python/gpu_targets.py b/python/gpu_targets.py
+index 1d93869..fc1a605 100644
+--- a/python/gpu_targets.py
++++ b/python/gpu_targets.py
+@@ -4,11 +4,17 @@
+ from collections import defaultdict
+ 
+ AOTRITON_SUPPORTED_GPUS = (
++    'gfx906_mod0',
+     'gfx90a_mod0',
+     'gfx942_mod0',
+     # 'gfx942_mod1',
+     # 'gfx942_mod2',
+     'gfx950_mod0',
++    'gfx1030_mod0',
++    'gfx1031_mod0',
++    'gfx1032_mod0',
++    'gfx1034_mod0',
++    'gfx1035_mod0',
+     'gfx1100_mod0',
+     'gfx1101_mod0',
+     'gfx1102_mod0',
+@@ -37,9 +43,15 @@ AOTRITON_TUNING_DATABASE_REUSE = {
+ }
+ 
+ AOTRITON_ARCH_TO_PACK = {
++    'gfx906'    : 'gfx906',
+     'gfx90a'    : 'gfx90a',
+     'gfx942'    : 'gfx942',
+     'gfx950'    : 'gfx950',
++    'gfx1030'   : 'gfx10xx',
++    'gfx1031'   : 'gfx10xx',
++    'gfx1032'   : 'gfx10xx',
++    'gfx1034'   : 'gfx10xx',
++    'gfx1035'   : 'gfx10xx',
+     'gfx1100'   : 'gfx110x',
+     'gfx1101'   : 'gfx110x',
+     'gfx1102'   : 'gfx110x',
+@@ -58,9 +70,15 @@ AOTRITON_ARCH_TO_DIRECTORY = {
+ }
+ 
+ AOTRITON_ARCH_WARPSIZE = {
++    'gfx906'     : 64,
+     'gfx90a'     : 64,
+     'gfx942'     : 64,
+     'gfx950'     : 64,
++    'gfx1030'    : 32,
++    'gfx1031'    : 32,
++    'gfx1032'    : 32,
++    'gfx1034'    : 32,
++    'gfx1035'    : 32,
+     'gfx1100'    : 32,
+     'gfx1101'    : 32,
+     'gfx1102'    : 32,
+diff --git a/tritonsrc/tuned_bwd.py b/tritonsrc/tuned_bwd.py
+index 2df5cfc..de064ef 100644
+--- a/tritonsrc/tuned_bwd.py
++++ b/tritonsrc/tuned_bwd.py
+@@ -14,7 +14,7 @@ def evaluate_gfx_arch_within(arch_list):
+     return any(arch in gcn_arch_name for arch in arch_list)
+ 
+ def is_rdna():
+-    return evaluate_gfx_arch_within(['gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1150', 'gfx1151', 'gfx1152', 'gfx1153', 'gfx1200', 'gfx1201'])
++    return evaluate_gfx_arch_within(['gfx1030', 'gfx1031', 'gfx1032', 'gfx1034', 'gfx1035', 'gfx1100', 'gfx1101', 'gfx1102', 'gfx1103', 'gfx1150', 'gfx1151', 'gfx1152', 'gfx1153', 'gfx1200', 'gfx1201'])
+ 
+ IS_RDNA = is_rdna()
+ 
+diff --git a/v3src/util.cc b/v3src/util.cc
+index 47bebdf..e056166 100644
+--- a/v3src/util.cc
++++ b/v3src/util.cc
+@@ -46,8 +46,14 @@ private:
+ };
+ 
+ std::unordered_map<std::string, GpuClassifier> LazyGpu::string_to_classifier = {
++  { "gfx906", DummyClassifier<GPU_AMD_ARCH_GFX906_MOD0 >() },
+   { "gfx90a", DummyClassifier<GPU_AMD_ARCH_GFX90A_MOD0 >() },
+   { "gfx942", DummyClassifier<GPU_AMD_ARCH_GFX942_MOD0 >() },
++  {"gfx1030", DummyClassifier<GPU_AMD_ARCH_GFX1030_MOD0>() },
++  {"gfx1031", DummyClassifier<GPU_AMD_ARCH_GFX1031_MOD0>() },
++  {"gfx1032", DummyClassifier<GPU_AMD_ARCH_GFX1032_MOD0>() },
++  {"gfx1034", DummyClassifier<GPU_AMD_ARCH_GFX1034_MOD0>() },
++  {"gfx1035", DummyClassifier<GPU_AMD_ARCH_GFX1035_MOD0>() },
+   {"gfx1100", DummyClassifier<GPU_AMD_ARCH_GFX1100_MOD0>() },
+   {"gfx1101", DummyClassifier<GPU_AMD_ARCH_GFX1101_MOD0>() },
+   {"gfx1102", DummyClassifier<GPU_AMD_ARCH_GFX1102_MOD0>() },
+@@ -77,7 +83,13 @@ getGpuFromStream(hipStream_t stream) {
+ bool isArchExperimentallySupported(hipStream_t stream) {
+   auto gpu = getGpuFromStream(stream);
+   uint32_t vendor_arch = Gpu2VendorArch(gpu);
+-  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
++  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1031) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1032) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1034) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1035) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
++          vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1152) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1153) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1101) ||
+-- 
+2.43.0
+
