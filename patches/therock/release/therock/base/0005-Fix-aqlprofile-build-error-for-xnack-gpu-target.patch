@@ -1,4 +1,4 @@
-From 31181fcea188cb2d863556ec1c980ed968efedaf Mon Sep 17 00:00:00 2001
+From 000e0a5a78323590314b1d73cc3b03e2647c8000 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 19 Mar 2026 17:11:12 -0700
 Subject: [PATCH 05/21] Fix aqlprofile build error for xnack+ gpu target
@@ -17,10 +17,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 39 insertions(+)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index c4e8026..867c16f 100644
+index 8095ad6..f367285 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
-@@ -251,6 +251,42 @@ therock_add_amdgpu_target(gfx1201 "AMD RX 9070 / XT" FAMILY dgpu-all gfx120X-all
+@@ -266,6 +266,42 @@ therock_add_amdgpu_target(gfx1250 "AMD Instinct MI450/MI450X/MI455X CDNA" FAMILY
  # Optional extension targets (used for out of tree target development).
  include(therock_custom_amdgpu_targets OPTIONAL)
  
@@ -63,7 +63,7 @@ index c4e8026..867c16f 100644
  # Validates and normalizes AMDGPU target selection cache variables.
  #
  # This function handles three separate target lists:
-@@ -355,6 +391,9 @@ function(therock_validate_amdgpu_targets)
+@@ -370,6 +406,9 @@ function(therock_validate_amdgpu_targets)
      endforeach()
      list(REMOVE_DUPLICATES _test_expanded_targets)
    endif()
@@ -74,5 +74,5 @@ index c4e8026..867c16f 100644
    # Report test targets if different from per-arch targets.
    if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")
 -- 
-2.52.0
+2.43.0
 

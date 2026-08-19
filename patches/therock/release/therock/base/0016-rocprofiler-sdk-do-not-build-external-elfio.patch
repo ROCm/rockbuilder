@@ -1,4 +1,4 @@
-From 2a3f31e910d55c88be0d249c590eed896b623617 Mon Sep 17 00:00:00 2001
+From 8b057c7bdc3695829af97a22ccc4d2b901d70741 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Wed, 15 Apr 2026 19:30:54 -0700
 Subject: [PATCH 16/21] rocprofiler-sdk do not build external elfio
@@ -11,18 +11,18 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 6cb5464..b4eb541 100644
+index dc7fd07..fb1ec51 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -101,6 +101,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -121,6 +121,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        -DROCPROFILER_BUILD_TESTS=${THEROCK_BUILD_TESTING}
        -DROCPROFILER_BUILD_INTEGRATION_TESTS=OFF
        -DROCPROFILER_BUILD_SAMPLES=OFF
 +      -DROCPROFILER_BUILD_ELFIO=OFF
        -DCMAKE_PREFIX_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
        -DROCM_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
-       -DROCPROFILER_PYTHON_VERSIONS:STRING="${_detected_python_versions_str}"
-@@ -113,6 +114,8 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       -DROCPROFILER_BUILD_YAML_CPP=OFF
+@@ -134,6 +135,8 @@ if(THEROCK_ENABLE_ROCPROFV3)
        rocprofiler-sdk-tests
      COMPILER_TOOLCHAIN
        amd-hip
@@ -32,5 +32,5 @@ index 6cb5464..b4eb541 100644
        aqlprofile
        hip-clr
 -- 
-2.52.0
+2.43.0
 

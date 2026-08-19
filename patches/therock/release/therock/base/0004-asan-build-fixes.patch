@@ -1,4 +1,4 @@
-From f2f2af0aad9f05bea3a9fa9ff4154b496663c494 Mon Sep 17 00:00:00 2001
+From c2a5041069898c5ba1c02eb9e49e59a78d1dbaf3 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 12:08:06 -0700
 Subject: [PATCH 04/21] asan build fixes
@@ -68,10 +68,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
 
 diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
-index 12460c3..15a57f9 100644
+index 8aa5c30..8b144a7 100644
 --- a/ml-libs/CMakeLists.txt
 +++ b/ml-libs/CMakeLists.txt
-@@ -107,6 +107,7 @@ if(THEROCK_ENABLE_MIOPEN)
+@@ -42,6 +42,7 @@ if(THEROCK_ENABLE_MIOPEN)
        -DMIOPEN_USE_MLIR=OFF # TODO: enable
        -DMIOPEN_TEST_DISCRETE=OFF
        "-DMIOPEN_INSTALL_GPU_DATABASES=\"${THEROCK_AMDGPU_TARGETS}\""
@@ -97,12 +97,13 @@ index 0000000..f7047b3
 + 1 file changed, 7 insertions(+)
 +
 +diff --git a/projects/miopen/CMakeLists.txt b/projects/miopen/CMakeLists.txt
-+index 989cb438..f5970abd 100644
++index 2c8c60c3..ace454a6 100644
 +--- a/projects/miopen/CMakeLists.txt
 ++++ b/projects/miopen/CMakeLists.txt
-+@@ -6,6 +6,13 @@ cmake_minimum_required( VERSION 3.15 )
++@@ -6,7 +6,14 @@ cmake_minimum_required( VERSION 3.15 )
 + #Add a name for the rocm-libraries location
 + set(ROCM_LIBRARIES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../")
++ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 +
 ++# to avoid error
 ++# relocation R_X86_64_PC32 out of range: -2294147428 is not in [-2147483648, 2147483647];
@@ -223,10 +224,10 @@ index 0000000..ffd2e2b
 +--
 +2.41.3
 diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
-index 94c6561..40be1e7 100644
+index 9ffb1e3..a895740 100644
 --- a/profiler/CMakeLists.txt
 +++ b/profiler/CMakeLists.txt
-@@ -38,6 +38,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -55,6 +55,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
      BACKGROUND_BUILD
      CMAKE_ARGS
        -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
@@ -234,7 +235,7 @@ index 94c6561..40be1e7 100644
        -DHIP_PLATFORM="amd"
      COMPILER_TOOLCHAIN
        amd-hip
-@@ -208,6 +209,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+@@ -197,6 +198,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
        amd-hip
      CMAKE_ARGS
        -DHIP_PLATFORM=amd
@@ -243,5 +244,5 @@ index 94c6561..40be1e7 100644
        # All old clients of roctx64 expect to just be able to find its include
        # with no further qualification. Bad design, but also deprecated, so meh.
 -- 
-2.52.0
+2.43.0
 
