@@ -26,49 +26,107 @@ RockBuilder supports both Linux and Windows for building the applications.
 git clone https://github.com/roCm/rockbuilder
 ```
 
-## ROCm SDK and Target GPU Configuration
+## Rockbuilder Initialization
 
-Initialize and activate the Python virtual environment with all Python dependencies required by RockBuilder:
+Initialize and activate the Python virtual environment with all Python dependencies required by RockBuilder.
 
 - Linux (Ubuntu 24.04):
 
-    ```
+    ```bash
     cd rockbuilder
     source ./init_rcb_env.sh
     ```
 
 - Windows (x86_64, Visual Studio Command Prompt):
 
-    ```
+    ```bat
     cd rockbuilder
     init_rcb_env.bat
     ```
 
-The `init_rcb_env` script checks if the Python virtual environment is active. If not, it will initialize and activate one in **.venv-directory** and install all the Python packages required by RockBuilder.
+On Linux, the script **must be sourced** (`source ./init_rcb_env.sh`), not executed directly.
 
-After the Python virtual environment is activated, you can start RockBuilder:
+The `init_rcb_env` script checks whether a Python virtual environment is already active. If not, it creates and activates one in the **`.venv`** directory and installs the packages from `requirements.txt`.
 
+Run `source ./init_rcb_env.sh` again in any new terminal before using RockBuilder.
+
+## Rockbuilder Configuration
+
+Configuration is stored in **`rockbuilder.cfg`** at the RockBuilder root. This file records:
+
+- which ROCm SDK RockBuilder should use (local build, existing install, or Python wheels), and
+- which AMD GPU target(s) to build for.
+
+Configuration is separate from initialization. Init sets up Python; config selects the ROCm SDK source and GPU targets.
+
+### Interactive configuration
+
+After the virtual environment is active, run RockBuilder without an application config file:
+
+```bash
+python rockbuilder.py --help
 ```
-python rockbuilder.py
+
+If `rockbuilder.cfg` does not exist, RockBuilder launches an interactive UI to choose the ROCm SDK source and GPU target(s):
+
+- **New ROCm SDK Build** — build TheRock from source (lists all supported GPUs).
+
+    <img src="docs/pics/readme/cfg_new_build_60pct.png" width="100%" height="100%">
+
+- **ROCm SDK from Python Wheels** — install from nightly wheels (lists GPUs with available packages).
+
+    <img src="docs/pics/readme/cfg_python_wheel_60pct.png" width="100%" height="100%">
+
+Press **Enter** to save selections to `rockbuilder.cfg`.
+
+### Manual configuration (headless / automation)
+
+In non-interactive environments (CI, remote shells, AI agents), create or edit `rockbuilder.cfg` directly instead of using the UI.
+
+**New ROCm SDK build** (TheRock built by RockBuilder), targeting MI210 (`gfx90a`):
+
+```ini
+[rocm_sdk]
+rocm_sdk_build = ['<rockbuilder-root>/src_apps/therock/build/dist/rocm']
+
+[build_targets]
+gpus = ['gfx90a']
 ```
 
-When you run RockBuilder for the first time, it checks whether a `rockbuilder.cfg` configuration file exists to decide if it needs to build or install the ROCm SDK before proceeding to build applications: 
+Replace `<rockbuilder-root>` with the absolute path to your RockBuilder checkout.
 
-- If the file exists, RockBuilder automatically selects a stable, tested version of the ROCm SDK as the base environment, and you can proceed directly to building your applications.
+**ROCm SDK from Python wheels** (example):
 
-- If the file does not exist, you will be prompted to choose how to install the ROCm SDK and specify your target GPUs:
+```ini
+[rocm_sdk]
+rocm_sdk_whl_server = ['https://rocm.nightlies.amd.com/v2/']
+rocm_sdk_whl_version = 7.13.0a20260501
 
-    - **New ROCm SDK Build**: Lists all supported AMD GPUs.
+[build_targets]
+gpus = ['gfx90a']
+```
 
-        <img src="docs/pics/readme/cfg_new_build_60pct.png" width="100%" height="100%">
+**Use an existing ROCm SDK install**:
 
-    - **ROCm SDK from Python Wheels**: Lists only GPUs with available wheel packages (some GPUs may share the same package).
+```ini
+[rocm_sdk]
+rocm_sdk_home = ['/opt/rocm']
 
-        <img src="docs/pics/readme/cfg_python_wheel_60pct.png" width="100%" height="100%">
+[build_targets]
+gpus = ['gfx90a']
+```
 
-Once confirmed (by pressing **Enter**), your selections will be saved to `rockbuilder.cfg`.
+### Verify configuration
 
-> **Note:** Building the ROCm SDK allows for greater customization, but the process can take anywhere from one to several hours, depending on your system.
+With the virtual environment active and `rockbuilder.cfg` in place:
+
+```bash
+python rockbuilder.py --help
+```
+
+This should print usage text without launching the configuration UI.
+
+> **Note:** Init and config do **not** build the ROCm SDK. The SDK is built or installed later, when you run RockBuilder to build therock or other applications. A local ROCm SDK build can take one to several hours depending on your system.
 
 ## Build an Application Set
 
