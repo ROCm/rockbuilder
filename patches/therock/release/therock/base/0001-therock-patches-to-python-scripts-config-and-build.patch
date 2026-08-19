@@ -1,4 +1,4 @@
-From 609db101e33ed526b03483d2f41c99cb9e9ff116 Mon Sep 17 00:00:00 2001
+From 0e21099cef9efcf756718eb58432725060906160 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Tue, 16 Sep 2025 17:02:28 -0700
 Subject: [PATCH 01/21] therock patches to python scripts config and build
@@ -6,9 +6,9 @@ Subject: [PATCH 01/21] therock patches to python scripts config and build
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.py      |  44 ++++++++++++++++
- rcb_config.py     |  82 ++++++++++++++++++++++++++++
+ rcb_config.py     |  85 +++++++++++++++++++++++++++++
  rcb_pre_config.py | 132 ++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 258 insertions(+)
+ 3 files changed, 261 insertions(+)
  create mode 100644 rcb_build.py
  create mode 100644 rcb_config.py
  create mode 100644 rcb_pre_config.py
@@ -68,7 +68,7 @@ new file mode 100644
 index 0000000..3576ca7
 --- /dev/null
 +++ b/rcb_config.py
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,85 @@
 +#!/usr/bin/env python3
 +
 +import os
@@ -138,6 +138,9 @@ index 0000000..3576ca7
 +        cmake_cmd.append(f"-DLLVM_PARALLEL_LINK_JOBS={safe_cpu_count_link}")
 +    if IS_WINDOWS:
 +        cmake_cmd.append("-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME=windows")
++    elif ";" in amdgpu_targets:
++        bundle_name = amdgpu_targets.replace(";", "_")
++        cmake_cmd.append(f"-DTHEROCK_AMDGPU_DIST_BUNDLE_NAME={bundle_name}")
 +    cmake_cmd.append(".")
 +
 +    cmake_cmd_str = " ".join(cmake_cmd)
@@ -290,5 +293,5 @@ index 0000000..864ccbe
 +if __name__ == "__main__":
 +    main()
 -- 
-2.52.0
+2.43.0
 
