@@ -1,11 +1,7 @@
-From 7d4686cd656dee749026e743976f0ebabd4e11a3 Mon Sep 17 00:00:00 2001
+From a6b804deafd735e41b34e8af487fff32b490fe38 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
-Date: Wed, 5 Nov 2025 04:58:28 -0800
-Subject: [PATCH 1/2] add MAX_JOBS environment variable for cpu count
-
-MAX_JOBS can be used to limit the amount of CPU cores
-used for building. Helps for not running out of memory
-on systems where there is not enought memory.
+Date: Thu, 20 Aug 2026 10:14:32 -0700
+Subject: [PATCH] add MAX_JOBS environment variable for cpu count
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
@@ -13,7 +9,7 @@ Signed-off-by: Mika Laitio <lamikr@gmail.com>
  1 file changed, 12 insertions(+)
 
 diff --git a/v3src/CMakeLists.txt b/v3src/CMakeLists.txt
-index 574ff89..0a33b89 100644
+index 0423df1..279c2a5 100644
 --- a/v3src/CMakeLists.txt
 +++ b/v3src/CMakeLists.txt
 @@ -12,6 +12,17 @@ set(AOTRITON_KERNEL_STORAGE_V2_DIR "${AOTRITON_V2_BUILD_DIR}/aotriton.images")
@@ -33,8 +29,8 @@ index 574ff89..0a33b89 100644
 +
  execute_process(COMMAND ${CMAKE_COMMAND}
    -E env VIRTUAL_ENV=${VENV_DIR}
-   "${VENV_BIN_PYTHON}" -m v3python.gpu_targets
-@@ -199,6 +210,7 @@ if(NOT AOTRITON_NOIMAGE_MODE)
+   "${VENV_BIN_PYTHON}" -m aotriton.gpu_targets
+@@ -215,6 +226,7 @@ if(NOT AOTRITON_NOIMAGE_MODE)
        "--timeout" "${AOTRITON_GPU_BUILD_TIMEOUT}"
        ${HSACO_COMPILE_OPTION}
        DEPENDS aotriton_venv_triton

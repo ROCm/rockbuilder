@@ -1,64 +1,51 @@
-From e26ffa1f0f1acaaaa2e6addb79732f24458f5682 Mon Sep 17 00:00:00 2001
+From 332cd93cb0d24f3c51893ee796e26d75aede4681 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
-Date: Wed, 5 Nov 2025 16:19:37 -0800
-Subject: [PATCH 2/2] printout warning if GPU is not supported
+Date: Thu, 20 Aug 2026 11:10:52 -0700
+Subject: [PATCH] printout warning if GPU is not supported
 
-Printout a warning message if GPU is not
-in the list of experimentally supported GPUs.
-(Pytorch aotriton integration uses this method)
+Print out a warning message if the GPU is not in the list of
+experimentally supported GPUs. PyTorch's AOTriton integration
+uses this method.
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
- v2src/util.cc | 6 +++++-
- v3src/util.cc | 6 +++++-
- 2 files changed, 10 insertions(+), 2 deletions(-)
+ v3src/util.cc | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
 
-diff --git a/v2src/util.cc b/v2src/util.cc
-index a66488e..7e927a7 100644
---- a/v2src/util.cc
-+++ b/v2src/util.cc
-@@ -68,11 +68,15 @@ getGpuFromStream(hipStream_t stream) {
- }
- 
- bool isArchExperimentallySupported(hipStream_t stream) {
-+  bool ret;
-   auto gpu = getGpuFromStream(stream);
-   uint32_t vendor_arch = Gpu2VendorArch(gpu);
--  return (vendor_arch == CAT32(GpuVendor::kAMD,  0x950) ||
-+  ret = (vendor_arch == CAT32(GpuVendor::kAMD,  0x950) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1201));
-+  if (!ret)
-+    printf("aotriton/v2src/isArchExperimentallySupported, NO: 0x%x\n", vendor_arch);
-+  return ret;
- }
- 
- int getMultiProcessorCount(hipStream_t stream) {
 diff --git a/v3src/util.cc b/v3src/util.cc
-index f70804e..7db2090 100644
+index f27e4cf..6389a92 100644
 --- a/v3src/util.cc
 +++ b/v3src/util.cc
-@@ -71,15 +71,19 @@ getGpuFromStream(hipStream_t stream) {
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: MIT
+ 
+ #include <aotriton/util.h>
++#include <cstdio>
+ #include <string>
+ #include <unordered_map>
+ #include <string_view>
+@@ -81,9 +82,10 @@ getGpuFromStream(hipStream_t stream) {
  }
  
  bool isArchExperimentallySupported(hipStream_t stream) {
 +  bool ret;
    auto gpu = getGpuFromStream(stream);
    uint32_t vendor_arch = Gpu2VendorArch(gpu);
--  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
-+  ret = (vendor_arch == CAT32(GpuVendor::kAMD, 0x1150) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1151) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1100) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1101) ||
+-  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
++  ret = (vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1031) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1032) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1034) ||
+@@ -95,6 +97,9 @@ bool isArchExperimentallySupported(hipStream_t stream) {
            vendor_arch == CAT32(GpuVendor::kAMD, 0x1102) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1200) ||
-           vendor_arch == CAT32(GpuVendor::kAMD, 0x1250));
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1103) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1200));
 +  if (!ret)
-+    printf("aotriton/v3src/isArchExperimentallySupported: NO: 0x%x\n", vendor_arch);
++    std::printf("aotriton/v3src/isArchExperimentallySupported: NO: 0x%x\n", vendor_arch);
 +  return ret;
  }
  
- int getMultiProcessorCount(hipStream_t stream) {
+ bool isArchTechPreview(hipStream_t stream) {
 -- 
 2.43.0
 

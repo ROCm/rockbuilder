@@ -1,0 +1,46 @@
+From 58bf9f62d28080e3185296c874b94acd8b73548c Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 20 Aug 2026 16:07:04 -0700
+Subject: [PATCH 2/2] link HIP assertion tests with HSA runtime
+
+The c10 HIP assertion test executables link to libamdhip64 indirectly
+through c10_hip, but their executable link lines do not contain
+libhsa-runtime64. GNU ld uses --no-copy-dt-needed-entries by default, so
+it does not traverse libamdhip64's DT_NEEDED dependency to use HSA
+symbols while resolving the executable link.
+
+Without this explicit dependency, the build fails with:
+
+FAILED: [code=1] bin/c10_cuda_HIPAssertionsTest_1_var_test
+/usr/bin/ld: /home/butler/rockbuilder_ai_workspace/rockbuilder/src_apps/therock/build/dist/rocm/lib/libamdhip64.so.7.15.99004-0000000: undefined reference to `hsa_amd_vmem_import_fabric_handle@ROCR_1'
+/usr/bin/ld: /home/butler/rockbuilder_ai_workspace/rockbuilder/src_apps/therock/build/dist/rocm/lib/libamdhip64.so.7.15.99004-0000000: undefined reference to `hsa_amd_vmem_map@ROCR_1'
+collect2: error: ld returned 1 exit status
+
+Add hsa-runtime64 as an explicit link dependency when USE_ROCM is
+enabled. Apply this change to the CUDA CMake source before hipify so
+hipify carries it into c10/hip/test/CMakeLists.txt while changing
+C10_CUDA_LIB to C10_HIP_LIB. The hsa-runtime64 CMake target is already
+provided by the required package loaded in cmake/public/LoadHIP.cmake.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ c10/cuda/test/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/c10/cuda/test/CMakeLists.txt b/c10/cuda/test/CMakeLists.txt
+index 5b7023a8da6..e10c71c2700 100644
+--- a/c10/cuda/test/CMakeLists.txt
++++ b/c10/cuda/test/CMakeLists.txt
+@@ -22,6 +22,9 @@ if(BUILD_TEST)
+       add_executable(${test_name} "${test_src}")
+     endif()
+     target_link_libraries(${test_name} ${C10_CUDA_LIB} ${C10_LIB} gmock gtest gtest_main)
++    if(USE_ROCM)
++      target_link_libraries(${test_name} hsa-runtime64::hsa-runtime64)
++    endif()
+     add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${test_name}>)
+     if(INSTALL_TEST)
+       set_target_properties(${test_name} PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_RPATH}:${_rpath_portable_origin}/../lib")
+-- 
+2.43.0
+
