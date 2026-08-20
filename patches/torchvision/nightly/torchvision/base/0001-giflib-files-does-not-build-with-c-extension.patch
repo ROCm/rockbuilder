@@ -1,13 +1,15 @@
-From 3f9ffcc0bd819e88d7949ebc5fb5a53374a7f1dd Mon Sep 17 00:00:00 2001
+From dd9c565466a72820846ff49f461b240cbb8b039e Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
-Date: Tue, 6 Aug 2024 15:34:06 -0700
-Subject: [PATCH 1/2] giflib files does not build with c-extension
+Date: Thu, 20 Aug 2026 11:40:01 -0700
+Subject: [PATCH] giflib files does not build with c-extension
 
-pytorch_vision registers them as a CppExtension files
-in setup.py and this causes the pytorch builder
-to add the -std=c++17 build flag. That flag
-will then cause build break at least on
-mac, Fedora 40 and Mageia 9.
+pytorch_vision registers the bundled giflib sources
+as CppExtension files in setup.py. This causes the
+PyTorch builder to add the -std=c++17 build flag.
+
+That flag causes build failures on at least macOS,
+Fedora 40, and Mageia 9. Compile the bundled giflib
+sources as C++ to avoid those failures.
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
@@ -23,18 +25,18 @@ Signed-off-by: Mika Laitio <lamikr@gmail.com>
  rename torchvision/csrc/io/image/cpu/giflib/{openbsd-reallocarray.c => openbsd-reallocarray.cpp} (100%)
 
 diff --git a/setup.py b/setup.py
-index d9e023c..1d7f301 100644
+index 6568d25..914e948 100644
 --- a/setup.py
 +++ b/setup.py
-@@ -292,7 +292,7 @@ def make_image_extension():
-     define_macros, extra_compile_args = get_macros_and_flags()
+@@ -401,7 +401,7 @@ def make_image_stable_extension():
+     sources = (
+         list(image_dir.glob("*.cpp"))
+         + list(image_dir.glob("cpu/*.cpp"))
+-        + list(image_dir.glob("cpu/giflib/*.c"))
++        + list(image_dir.glob("cpu/giflib/*.cpp"))
+         + list(image_dir.glob("cuda/*.cpp"))
+     )
  
-     image_dir = CSRS_DIR / "io/image"
--    sources = list(image_dir.glob("*.cpp")) + list(image_dir.glob("cpu/*.cpp")) + list(image_dir.glob("cpu/giflib/*.c"))
-+    sources = list(image_dir.glob("*.cpp")) + list(image_dir.glob("cpu/*.cpp")) + list(image_dir.glob("cpu/giflib/*.cpp"))
- 
-     if IS_ROCM:
-         sources += list(image_dir.glob("hip/*.cpp"))
 diff --git a/torchvision/csrc/io/image/cpu/giflib/dgif_lib.c b/torchvision/csrc/io/image/cpu/giflib/dgif_lib.cpp
 similarity index 100%
 rename from torchvision/csrc/io/image/cpu/giflib/dgif_lib.c
@@ -52,5 +54,5 @@ similarity index 100%
 rename from torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.c
 rename to torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.cpp
 -- 
-2.41.3
+2.43.0
 

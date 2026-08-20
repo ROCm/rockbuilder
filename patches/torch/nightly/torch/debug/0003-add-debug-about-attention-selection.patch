@@ -1,70 +1,86 @@
-From e76025758decb1134dec96340b016a8f7f73e4c0 Mon Sep 17 00:00:00 2001
+From 4faee7ed00f6c5622fd6d1fa3fe9b48371bbb717 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
 Date: Wed, 15 Oct 2025 19:41:24 -0700
-Subject: [PATCH 3/3] add debug about attention selection
+Subject: [PATCH] add debug about attention selection
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
- .../ATen/native/transformers/cuda/sdp_utils.cpp    | 14 ++++++++++++++
- 1 file changed, 14 insertions(+)
+ .../native/transformers/cuda/sdp_utils.cpp    | 31 +++++++++++++++++++
+ 1 file changed, 31 insertions(+)
 
 diff --git a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-index 2fed41f5db5..9775c2ed3b4 100644
+index 8472ec4..0ca7025 100644
 --- a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
 +++ b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-@@ -766,6 +766,7 @@ bool is_flash_attention_available() {
- }
- 
- bool can_use_flash_attention(sdp_params const& params, bool debug) {
-+  int ii;
- #ifndef USE_FLASH_ATTENTION
-   if (debug) {
-     TORCH_WARN("Torch was not compiled with flash attention.");
-@@ -784,10 +785,14 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
-       check_requires_grad_and_head_dim_gt192_constraints_on_sm86_89_or_120,
+@@ -1083,6 +1083,7 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
+   }
+   return false;
+ #else // defined(USE_FLASH_ATTENTION)
++  size_t constraint_index = 0;
+   // Define gate functions that determine if a flash kernel can be ran
+   constexpr auto general_constraints = std::to_array<bool (*)(sdp_params const&, bool)>({
+       check_runtime_disabled_flash,
+@@ -1096,9 +1097,18 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
        check_flash_causal_non_square_seqlens,
-       check_dtypes_low_precision);
-+  ii = 0;
+       check_dtypes_flash_attention});
    for (auto& constraint : general_constraints) {
-+	TORCH_WARN("can_use_flash_attention, test1 check[%d]:", ii);
++    TORCH_WARN(
++        "can_use_flash_attention: checking general constraint[",
++        constraint_index,
++        "]");
      if (!constraint(params, debug)) {
-+      TORCH_WARN("can_use_flash_attention, test1 check[%d] failed:", ii);
++      TORCH_WARN(
++          "can_use_flash_attention: general constraint[",
++          constraint_index,
++          "] failed");
        return false;
      }
-+	ii++;
++    ++constraint_index;
    }
  
    if (has_for_nested_inputs(params)) {
-@@ -795,10 +800,14 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
+@@ -1106,10 +1116,20 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
          check_batch_size_nested,
          check_head_dim_size_flash_nested<false /*caller_is_meff*/>,
-         check_for_seq_len_0_nested_tensor);
-+    ii = 0;
+         check_for_seq_len_0_nested_tensor});
++    constraint_index = 0;
      for (auto& constraint : nested_constraints) {
-+      TORCH_WARN("can_use_flash_attention, test2 check[%d]:", ii);
++      TORCH_WARN(
++          "can_use_flash_attention: checking nested constraint[",
++          constraint_index,
++          "]");
        if (!constraint(params, debug)) {
-+		TORCH_WARN("can_use_flash_attention, test1 check[%d] failed:", ii);
++        TORCH_WARN(
++            "can_use_flash_attention: nested constraint[",
++            constraint_index,
++            "] failed");
          return false;
        }
-+      ii++;
++      ++constraint_index;
      }
    }
    constexpr bool backend_supports_grouped_query_attention = true;
-@@ -807,12 +816,17 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
-         check_batch_size_and_num_heads_dense<backend_supports_grouped_query_attention>,
+@@ -1118,12 +1138,23 @@ bool can_use_flash_attention(sdp_params const& params, bool debug) {
+         check_batch_size_and_num_heads_dense<backend_supports_grouped_query_attention, true, true /*supports_mqa*/>,
          check_nonzero_sequence_lengths_dense,
-         check_last_dim_stride_equals_1_dense<true /*ignore_singleton_dim=*/>);
-+    ii = 0;
+         check_last_dim_stride_equals_1_dense<true /*ignore_singleton_dim=*/>});
++    constraint_index = 0;
      for (auto& constraint : dense_constraints) {
-+      TORCH_WARN("can_use_flash_attention, test3 check[%d]:", ii);
++      TORCH_WARN(
++          "can_use_flash_attention: checking dense constraint[",
++          constraint_index,
++          "]");
        if (!constraint(params, debug)) {
-+		TORCH_WARN("can_use_flash_attention, test3 check[%d] failed:", ii);
++        TORCH_WARN(
++            "can_use_flash_attention: dense constraint[",
++            constraint_index,
++            "] failed");
          return false;
        }
-+      ii++;
++      ++constraint_index;
      }
    }
-+  TORCH_WARN("can_use_flash_attention, ret true");
++  TORCH_WARN("can_use_flash_attention: all constraints passed");
    return true;
  #endif // defined(USE_FLASH_ATTENTION)
  }
