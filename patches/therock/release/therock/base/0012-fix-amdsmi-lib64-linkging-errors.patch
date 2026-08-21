@@ -1,11 +1,32 @@
-From cdd87e7a0f7a796358b4c94927ea87b0e8c731cf Mon Sep 17 00:00:00 2001
+From cf43ddb6831f1a2796f13f14ca61078fc5d5630f Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 8 May 2026 15:12:38 -0700
-Subject: [PATCH 12/21] fix amdsmi lib64 linkging errors
+Subject: [PATCH 12/21] fix amdsmi lib64
+ linking errors
+
+- Linking amdsmi can fail on systems that have
+  both 32-bit and 64-bit libraries installed.
+- On these systems, 32-bit libraries are
+  usually under /lib, while 64-bit libraries
+  are under /lib64.
+- Searching /lib before /lib64 can select a
+  32-bit library when linking the 64-bit amdsmi
+  library.
+- The original fix searched /lib64 before /lib.
+- rocm-systems 10.0 now uses
+  find_package(amd_smi CONFIG), so the old
+  library-ordering change is no longer needed.
+- Keep a placeholder patch so the amd-mainline
+  patch series numbering remains stable.
+- The original error included:
+  ld.lld: error: crti.o is incompatible with
+  elf32-i386
+  ld.lld: error: clang_rt.crtbegin-x86_64.o is
+  incompatible with elf32-i386
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...ries-before-lib-to-fix-linking-error.patch | 43 +++++++++++++++++++
+ ...ries-before-lib-to-fix-linking-error.patch | 43 +++++++++++++++++++++++
  1 file changed, 43 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 
@@ -15,49 +36,48 @@ index 0000000..7ed9e23
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0006-link-lib64-libraries-before-lib-to-fix-linking-error.patch
 @@ -0,0 +1,43 @@
-+From 25b67b20379d4b6399e6ab1967b34a3205791f07 Mon Sep 17 00:00:00 2001
++From 8d1349c442ba13110f3a1238223bed3f7d49c46e Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
-+Date: Mon, 13 Apr 2026 14:02:18 -0700
-+Subject: [PATCH 6/6] link /lib64 libraries before /lib to fix linking error
++Date: Wed, 19 Aug 2026 14:50:29 -0700
++Subject: [PATCH] fix amdsmi lib64 linking errors
 +
-+Linking of amdsmi can fail on systems which have both
-+the 32 and 64 bit libraries installed.
-+
-+In these systems the 32 bit version of libraries are usually
-+installed to /lib-folder and 64-bit versions to /lib64 folder
-+which can lead to linking error if lib-folder is specified
-+before the lib64 folder because then the 32-bit version of libraries
-+are tried to link to 64 bit version of amdsmi.
-+
-+Fix is simply the specify the lib64 folder before the lib-folder.
-+
-+Example of the error that this fixes:
-+
-+0.1	: && /therock/build/compiler/amd-llvm/dist/lib/llvm/bin/clang -fPIC -O3 -DNDEBUG  -L/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib -L/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,-rpath-link,/therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib -Wl,--build-id=sha1   -Xlinker --dependency-file=goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/link.d -shared -Wl,-soname,libgoamdsmi_shim64.so.1 -o goamdsmi_shim/libgoamdsmi_shim64.so.1.0 goamdsmi_shim/CMakeFiles/goamdsmi_shim64.dir/smiwrapper/amdsmi_go_shim.c.o  -Wl,-rpath,/therock/build/core/amdsmi/build/src:  -lpthread  -lrt  -lm  src/libamd_smi.so.26.4.0  -L/lib  -L/lib64 && :
-+0.1	ld.lld: error: /usr/lib/gcc/x86_64-mageia-linux/12/../../../../lib64/crti.o is incompatible with elf32-i386
-+0.1	ld.lld: error: /therock/build/compiler/amd-llvm/dist/lib/llvm/lib/clang/23/lib/linux/clang_rt.crtbegin-x86_64.o is incompatible with elf32-i386
++- Linking amdsmi can fail on systems that have
++  both 32-bit and 64-bit libraries installed.
++- On these systems, 32-bit libraries are
++  usually under /lib, while 64-bit libraries
++  are under /lib64.
++- Searching /lib before /lib64 can select a
++  32-bit library when linking the 64-bit amdsmi
++  library.
++- The original fix searched /lib64 before /lib.
++- rocm-systems 10.0 now uses
++  find_package(amd_smi CONFIG), so the old
++  library-ordering change is no longer needed.
++- Keep a placeholder patch so the amd-mainline
++  patch series numbering remains stable.
++- The original error included:
++  ld.lld: error: crti.o is incompatible with
++  elf32-i386
++  ld.lld: error: clang_rt.crtbegin-x86_64.o is
++  incompatible with elf32-i386
 +
 +Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
-+ projects/amdsmi/goamdsmi_shim/CMakeLists.txt | 2 +-
-+ 1 file changed, 1 insertion(+), 1 deletion(-)
++ projects/amdsmi/goamdsmi_shim/CMakeLists.txt | 2 ++
++ 1 file changed, 2 insertions(+)
 +
 +diff --git a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
-+index 3549c8f07f..4f0c7e4d65 100644
++index 164937e6..77538bd4 100644
 +--- a/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
 ++++ b/projects/amdsmi/goamdsmi_shim/CMakeLists.txt
-+@@ -90,8 +90,8 @@ add_library(${GOAMDSMI_SHIM_TARGET} SHARED ${go_amd_smi_sources} ${go_amd_smi_he
-+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} pthread rt m)
-+
++@@ -107,6 +107,8 @@ endif()
++ # Link the amd_smi target (in-tree target or the config package's imported
++ # target). It propagates both the link path and the public include dir.
 + target_link_libraries(${GOAMDSMI_SHIM_TARGET} amd_smi)
-+-target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
-+ target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib64)
-++target_link_libraries(${GOAMDSMI_SHIM_TARGET} -L${AMDSMI_DIR}/lib)
-+
-+ ## Set the VERSION and SOVERSION values
-+ set_property(TARGET ${GOAMDSMI_SHIM_TARGET} PROPERTY SOVERSION "${VERSION_MAJOR}")
-+--
-+2.41.3
--- 
-2.52.0
-
+++# rockbuilder: the lib64 ordering fix is obsolete because
+++# find_package handles the correct library directory.
++ 
++ # The smiwrapper OBJECT library compiles the same source and #includes
++ # <amd_smi/amdsmi.h>. Cross-directory target_link_libraries requires CMP0079
+--
+2.43.0

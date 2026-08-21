@@ -1,22 +1,24 @@
-From 7269780af0cf45e34377241f5fcab7f3d058c047 Mon Sep 17 00:00:00 2001
+From 58f40d29532d97fe02ba645f18bcf9f89ac95bab Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Thu, 25 Sep 2025 13:34:38 -0700
-Subject: [PATCH 11/21] rccl add more amd gpus to list of supported GPUs
+Subject: [PATCH 11/21] rccl add more AMD GPUs
+ to list of supported GPUs
 
-- add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
-  gfx1150 to the list if default GPUs. This fixes the
-  building for those target which earlied defaulted
-  for building the binary instead for gfx906 when those
-  gpus where not in the list of supported gpus.
-- disable trace_hwreg command as the assembly command
-  s_getreg_b32 HW_REG_HW_ID is not supported in the
-  iGPUs like gfx1103, gfx1150, gfx1151 and newer gpus
-  like gfx1200 and gfx1201
+- Add gfx1031, gfx1032, gfx1034, gfx1035,
+  gfx1103, and gfx1150 to the default GPU list.
+- Fix builds for targets that previously fell
+  back to gfx906 because they were missing from
+  the supported list.
+- Disable GetHwId on iGPUs and newer GPUs
+  where s_getreg_b32 HW_REG_HW_ID is not
+  supported.
+- Drop the obsolete trace_hwreg hunk because it
+  was removed from rocm-systems 10.0.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- ...e-amd-gpus-to-list-of-supported-GPUs.patch | 73 +++++++++++++++++++
- 1 file changed, 73 insertions(+)
+ ...e-amd-gpus-to-list-of-supported-GPUs.patch | 56 +++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
  create mode 100644 patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
 
 diff --git a/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
@@ -24,34 +26,33 @@ new file mode 100644
 index 0000000..7c19d1f
 --- /dev/null
 +++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
-@@ -0,0 +1,73 @@
-+From 641ac5c472893574d31f1b04e08450043fa2964f Mon Sep 17 00:00:00 2001
+@@ -0,0 +1,56 @@
++From de9d78b915f7b774aff14f07e6ebd31320de203c Mon Sep 17 00:00:00 2001
 +From: Mika Laitio <mika.laitio@amd.com>
-+Date: Mon, 23 Mar 2026 15:53:36 -0700
-+Subject: [PATCH 5/5] rccl add more amd gpus to list of supported GPUs
++Date: Wed, 19 Aug 2026 14:48:09 -0700
++Subject: [PATCH] rccl add more AMD GPUs to list
++ of supported GPUs
 +
-+- add gfx1030, gfx1031, gfx1032, gfx1034, gfx1035,gfx1036,
-+  gfx1150 to the list if default GPUs. This fixes the
-+  building for those target which earlied defaulted
-+  for building the binary instead for gfx906 when those
-+  gpus where not in the list of supported gpus.
-+- disable trace_hwreg command as the assembly command
-+  s_getreg_b32 HW_REG_HW_ID is not supported in the
-+  iGPUs like gfx1103, gfx1150, gfx1151 and newer gpus
-+  like gfx1200 and gfx1201
++- Add gfx1031, gfx1032, gfx1034, gfx1035,
++  gfx1103, and gfx1150 to the default GPU list.
++- Fix builds for targets that previously fell
++  back to gfx906 because they were missing from
++  the supported list.
++- Disable GetHwId on iGPUs and newer GPUs
++  where s_getreg_b32 HW_REG_HW_ID is not
++  supported.
 +
 +Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 +---
 + projects/rccl/CMakeLists.txt               | 6 ++++++
-+ projects/rccl/src/device/common.h          | 3 ++-
 + projects/rccl/tools/JitterBench/Common.hpp | 4 +++-
-+ 3 files changed, 11 insertions(+), 2 deletions(-)
++ 2 files changed, 9 insertions(+), 1 deletion(-)
 +
 +diff --git a/projects/rccl/CMakeLists.txt b/projects/rccl/CMakeLists.txt
-+index 52062e70..b6e8140f 100644
++index d64f120f..38c35282 100644
 +--- a/projects/rccl/CMakeLists.txt
 ++++ b/projects/rccl/CMakeLists.txt
-+@@ -99,9 +99,15 @@ set(DEFAULT_GPUS
++@@ -120,9 +120,15 @@ set(DEFAULT_GPUS
 +       gfx942
 +       gfx950
 +       gfx1030
@@ -67,27 +68,13 @@ index 0000000..7c19d1f
 +       gfx1151
 +       gfx1200
 +       gfx1201
-+diff --git a/projects/rccl/src/device/common.h b/projects/rccl/src/device/common.h
-+index 32e0cb09..37d15274 100644
-+--- a/projects/rccl/src/device/common.h
-++++ b/projects/rccl/src/device/common.h
-+@@ -29,7 +29,8 @@
-+   { __atomic_store_n((DST), (SRC), __ATOMIC_SEQ_CST); }
-+ #endif
-+
-+-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__)
-++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
-++    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__)
-+ #define __trace_hwreg() \
-+   collTrace->data_0 = 0;
-+ #else
 +diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
 +index 116f60a9..090a9d84 100644
 +--- a/projects/rccl/tools/JitterBench/Common.hpp
 ++++ b/projects/rccl/tools/JitterBench/Common.hpp
 +@@ -43,7 +43,9 @@ THE SOFTWARE.
 + #endif
-+
++ 
 + // Macro for collecting HW_REG_HW_ID
 +-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__NVCC__)
 ++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
@@ -96,8 +83,5 @@ index 0000000..7c19d1f
 + #define GetHwId(val) \
 +   val = 0
 + #else
-+--
-+2.43.0
--- 
-2.52.0
-
+--
+2.43.0

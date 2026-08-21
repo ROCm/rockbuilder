@@ -1,4 +1,4 @@
-From 6df4f9a9a35dae5a7933027d26bb43a357596d28 Mon Sep 17 00:00:00 2001
+From c824afd168db71d3157039443b1221b3bc0238b9 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 13 Apr 2026 22:17:12 -0700
 Subject: [PATCH 13/21] add debug to find_library cmake call
@@ -50,5 +50,5 @@ index fca2690..8c92b3a 100644
          return()
        endif()
 -- 
-2.52.0
+2.43.0
 
