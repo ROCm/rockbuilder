@@ -1,0 +1,36 @@
+From b890a920c39ea162c23fd0300f911ae25314dad1 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 20 Aug 2026 08:28:42 -0700
+Subject: [PATCH] fix CUDA=0 by checking CMAKE_ARGS
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tools/setup_helpers/cmake.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/tools/setup_helpers/cmake.py b/tools/setup_helpers/cmake.py
+index da48473..7d283a3 100644
+--- a/tools/setup_helpers/cmake.py
++++ b/tools/setup_helpers/cmake.py
+@@ -8,6 +8,7 @@ import multiprocessing
+ import os
+ import platform
+ import re
++import shlex
+ import shutil
+ import sys
+ import sysconfig
+@@ -310,6 +311,10 @@ class CMake:
+             **build_options,
+         )
+ 
++        extra_cmake_args = os.environ.get("CMAKE_ARGS")
++        if extra_cmake_args:
++            args.extend(shlex.split(extra_cmake_args))
++
+         expected_wrapper = "/usr/local/opt/ccache/libexec"
+         if IS_DARWIN and os.path.exists(expected_wrapper):
+             if "CMAKE_C_COMPILER" not in build_options and "CC" not in os.environ:
+-- 
+2.43.0
+
