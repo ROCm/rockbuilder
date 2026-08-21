@@ -1,0 +1,60 @@
+From fdc455c5a5c7b20fc2ff7ae2d0741cafa3b22a77 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Thu, 20 Aug 2026 10:14:32 -0700
+Subject: [PATCH] giflib files does not build with c-extension
+
+pytorch_vision registers them as CppExtension files in setup.py,
+which adds the -std=c++17 build flag. Compile the bundled giflib
+sources as C++ to avoid build failures.
+
+This c++17 build flag causes failures on at least macOS,
+Fedora 40, and Mageia 9 because c++ flags should not be used
+for compiling c-source code. Fix is to rename the file extension to cpp
+so that they are considered as C++ files and this will avoid those
+build failures.
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ setup.py                                                        | 2 +-
+ .../csrc/io/image/cpu/giflib/{dgif_lib.c => dgif_lib.cpp}       | 0
+ .../csrc/io/image/cpu/giflib/{gif_hash.c => gif_hash.cpp}       | 0
+ .../csrc/io/image/cpu/giflib/{gifalloc.c => gifalloc.cpp}       | 0
+ .../giflib/{openbsd-reallocarray.c => openbsd-reallocarray.cpp} | 0
+ 5 files changed, 1 insertion(+), 1 deletion(-)
+ rename torchvision/csrc/io/image/cpu/giflib/{dgif_lib.c => dgif_lib.cpp} (100%)
+ rename torchvision/csrc/io/image/cpu/giflib/{gif_hash.c => gif_hash.cpp} (100%)
+ rename torchvision/csrc/io/image/cpu/giflib/{gifalloc.c => gifalloc.cpp} (100%)
+ rename torchvision/csrc/io/image/cpu/giflib/{openbsd-reallocarray.c => openbsd-reallocarray.cpp} (100%)
+
+diff --git a/setup.py b/setup.py
+index 3782bda..f65a0a9 100644
+--- a/setup.py
++++ b/setup.py
+@@ -391,7 +391,7 @@ def make_image_stable_extension():
+     sources = (
+         list(image_dir.glob("*.cpp"))
+         + list(image_dir.glob("cpu/*.cpp"))
+-        + list(image_dir.glob("cpu/giflib/*.c"))
++        + list(image_dir.glob("cpu/giflib/*.cpp"))
+         + list(image_dir.glob("cuda/*.cpp"))
+     )
+ 
+diff --git a/torchvision/csrc/io/image/cpu/giflib/dgif_lib.c b/torchvision/csrc/io/image/cpu/giflib/dgif_lib.cpp
+similarity index 100%
+rename from torchvision/csrc/io/image/cpu/giflib/dgif_lib.c
+rename to torchvision/csrc/io/image/cpu/giflib/dgif_lib.cpp
+diff --git a/torchvision/csrc/io/image/cpu/giflib/gif_hash.c b/torchvision/csrc/io/image/cpu/giflib/gif_hash.cpp
+similarity index 100%
+rename from torchvision/csrc/io/image/cpu/giflib/gif_hash.c
+rename to torchvision/csrc/io/image/cpu/giflib/gif_hash.cpp
+diff --git a/torchvision/csrc/io/image/cpu/giflib/gifalloc.c b/torchvision/csrc/io/image/cpu/giflib/gifalloc.cpp
+similarity index 100%
+rename from torchvision/csrc/io/image/cpu/giflib/gifalloc.c
+rename to torchvision/csrc/io/image/cpu/giflib/gifalloc.cpp
+diff --git a/torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.c b/torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.cpp
+similarity index 100%
+rename from torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.c
+rename to torchvision/csrc/io/image/cpu/giflib/openbsd-reallocarray.cpp
+-- 
+2.43.0
+

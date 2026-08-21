@@ -1,0 +1,72 @@
+From c24b4615fd3acd46bd76f8cdbc475f3423d0904b Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 6 Apr 2026 13:53:55 -0700
+Subject: [PATCH 1/2] enable attention for experimental amd gpus by default
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../native/transformers/cuda/sdp_utils.cpp    | 28 +++++++++++--------
+ 1 file changed, 16 insertions(+), 12 deletions(-)
+
+diff --git a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
+index ffd9258e747..1fcc252c3cd 100644
+--- a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
++++ b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
+@@ -433,9 +433,11 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
+     if (aotriton::isArchExperimentallySupported(stream)) {
+       static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
+       if (!enable_experimental) {
+-        TORCH_WARN_ONCE("Flash Efficient attention on Current AMD GPU is still experimental."
+-            " Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1.");
+-        return false;
++        TORCH_WARN_ONCE("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=0, warning: Flash attention on current AMD GPU is still experimental.");
++        return true;
++      }
++      else {
++        return true;
+       }
+     }
+ #endif
+@@ -471,7 +473,7 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+   using sm50 = SMVersion<5, 0>;
+   using sm121 = SMVersion<12, 1>;
+ #if USE_ROCM
+-#if USE_ROCM_ATTENTION
++  #if USE_ROCM_ATTENTION
+   if (at::cuda::device_count() == 0) {
+     return false;
+   }
+@@ -489,20 +491,22 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+         }
+         return false;
+     }
+-#if AOTRITON_VERSION_MINOR >= 9
++    #if AOTRITON_VERSION_MINOR >= 9
+     if (aotriton::isArchExperimentallySupported(stream)) {
+       static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
+       if (!enable_experimental) {
+-        TORCH_WARN_ONCE("Mem Efficient attention on Current AMD GPU is still experimental."
+-            " Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1.");
+-        return false;
++        TORCH_WARN_ONCE("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=0, warning: Mem Efficient attention on current AMD GPU is still experimental.");
++        return true;
++      }
++      else {
++        return true;
+       }
+     }
+-#endif
++    #endif
+   }
+-#else
+-  return false;
+-#endif
++  #else
++    return false;
++  #endif
+ #else
+   if (!at::cuda::is_available()) {
+     if (debug) {
+-- 
+2.43.0
+
