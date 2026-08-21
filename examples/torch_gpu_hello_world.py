@@ -3,7 +3,6 @@ import torch
 print("Pytorch version: " + torch.__version__)
 print("ROCM HIP version: " + torch.version.hip)
 print("Default cuda device name: " + torch.cuda.get_device_name())
-X_train = torch.FloatTensor([0.0, 1.0, 2.0])
 dev_cnt=torch.cuda.device_count()
 print("cuda device count: " + str(dev_cnt))
 err_devices = ""
