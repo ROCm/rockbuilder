@@ -1,4 +1,4 @@
-From d46b9ae020a3fa71bf65a2c5ca852aa982703ad4 Mon Sep 17 00:00:00 2001
+From 2450fded0600c3d31a194f846d33a6c625f97daa Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 6 Apr 2026 13:53:55 -0700
 Subject: [PATCH] enable attention for experimental amd gpus by default
@@ -9,10 +9,10 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 16 insertions(+), 12 deletions(-)
 
 diff --git a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-index 79b5df3f302..67fdcfa5c0b 100644
+index 297a172..8472ec4 100644
 --- a/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
 +++ b/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp
-@@ -319,9 +319,11 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
+@@ -498,9 +498,11 @@ bool check_flash_attention_hardware_support(sdp_params const& params, bool debug
      if (aotriton::isArchExperimentallySupported(stream)) {
        static const bool enable_experimental = c10::utils::check_env("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL") == true;
        if (!enable_experimental) {
@@ -27,7 +27,7 @@ index 79b5df3f302..67fdcfa5c0b 100644
        }
      }
  #endif
-@@ -357,7 +359,7 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+@@ -536,7 +538,7 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
    using sm50 = SMVersion<5, 0>;
    using sm121 = SMVersion<12, 1>;
  #if USE_ROCM
@@ -36,7 +36,7 @@ index 79b5df3f302..67fdcfa5c0b 100644
    if (at::cuda::device_count() == 0) {
      return false;
    }
-@@ -375,20 +377,22 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
+@@ -554,20 +556,22 @@ bool check_mem_efficient_hardware_support(sdp_params const& params, bool debug)
          }
          return false;
      }

@@ -3,6 +3,10 @@ From: Mika Laitio <lamikr@gmail.com>
 Date: Thu, 20 Aug 2026 10:14:32 -0700
 Subject: [PATCH] add MAX_JOBS environment variable for cpu count
 
+MAX_JOBS limits the number of CPU cores used by the
+build. This helps avoid running out of memory on
+systems with many cores but insufficient memory.
+
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
  v3src/CMakeLists.txt | 12 ++++++++++++

@@ -1,58 +1,64 @@
-From ef1e0757d24df22dafc698117ba777db89215dcc Mon Sep 17 00:00:00 2001
+From b1f340338319826a7c3cd875fbb2873a44694c26 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <lamikr@gmail.com>
 Date: Thu, 30 Oct 2025 17:10:33 -0700
-Subject: [PATCH 2/2] printout stacktrace on error case
+Subject: [PATCH] printout stacktrace on error case
 
 Signed-off-by: Mika Laitio <lamikr@gmail.com>
 ---
- c10/hip/HIPMiscFunctions.cpp | 17 +++++++++++++++++
- 1 file changed, 17 insertions(+)
+ c10/cuda/CUDAMiscFunctions.cpp | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
 
-diff --git a/c10/hip/HIPMiscFunctions.cpp b/c10/hip/HIPMiscFunctions.cpp
-index ebdcd3a0705..e1916c654f5 100644
---- a/c10/hip/HIPMiscFunctions.cpp
-+++ b/c10/hip/HIPMiscFunctions.cpp
-@@ -3,9 +3,24 @@
+diff --git a/c10/cuda/CUDAMiscFunctions.cpp b/c10/cuda/CUDAMiscFunctions.cpp
+index 95a424f..98f1713 100644
+--- a/c10/cuda/CUDAMiscFunctions.cpp
++++ b/c10/cuda/CUDAMiscFunctions.cpp
+@@ -2,8 +2,26 @@
  #include <c10/util/env.h>
- #include <hip/hip_runtime.h>
  #include <string>
-+#include <ostream>
+ 
++#if defined(USE_ROCM)
++#include <c10/util/Backtrace.h>
 +#include <iostream>
-+#include <execinfo.h>
- 
- namespace c10::hip {
- 
-+void print_stack_trace() {
-+    const int max_frames = 64;
-+    void* callstack[max_frames];
-+    int frames = backtrace(callstack, max_frames);
-+    char** symbols = backtrace_symbols(callstack, frames);
++#endif
 +
-+    for (int i = 0; i < frames; ++i) {
-+        std::cout << symbols[i] << std::endl;
-+    }
-+    free(symbols); // Free the memory allocated by backtrace_symbols
+ namespace c10::cuda {
+ 
++#if defined(USE_ROCM)
++namespace {
++
++void print_stack_trace() noexcept {
++  try {
++    std::cerr << c10::get_backtrace(1);
++  } catch (...) {
++  }
 +}
 +
- // Explain common HIP errors
++} // namespace
++#endif
++
+ // Explain common CUDA errors
  // NOLINTNEXTLINE(bugprone-exception-escape,-warnings-as-errors)
- std::string get_hip_error_help(hipError_t error) noexcept {
-@@ -16,6 +31,7 @@ std::string get_hip_error_help(hipError_t error) noexcept {
+ std::string get_cuda_error_help(cudaError_t error) noexcept {
+@@ -14,6 +32,9 @@ std::string get_cuda_error_help(cudaError_t error) noexcept {
            "\nGPU device may be out of range, do you have enough GPUs?");
        break;
      default:
++#if defined(USE_ROCM)
 +      print_stack_trace();
++#endif
        help_text.append("\nSearch for `")
-           .append(hipGetErrorName(error))
-           .append(
-@@ -34,6 +50,7 @@ const char* get_hip_check_suffix() noexcept {
-   if (blocking_enabled) {
-     return "";
-   } else {
-+    print_stack_trace();
-     return "\nHIP kernel errors might be asynchronously reported at some"
-            " other API call, so the stacktrace below might be incorrect."
-            "\nFor debugging consider passing AMD_SERIALIZE_KERNEL=3";
+           .append(cudaGetErrorName(error))
+ #if defined(USE_ROCM)
+@@ -85,6 +106,9 @@ const char* get_cuda_blocking_message() noexcept {
+ 
+ // NOLINTNEXTLINE(bugprone-exception-escape,-warnings-as-errors)
+ const char* get_cuda_check_suffix() noexcept {
++#if defined(USE_ROCM)
++  print_stack_trace();
++#endif
+   return get_cuda_blocking_message();
+ }
+ 
 -- 
 2.43.0
 
