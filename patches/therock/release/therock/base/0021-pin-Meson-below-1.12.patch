@@ -1,0 +1,44 @@
+From 2d3ce90dacd9fa3262bba99dafc81e347f461ea6 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 20 Aug 2026 20:38:59 -0700
+Subject: [PATCH] pin Meson below 1.12
+
+Meson 1.12.0 duplicates LDFLAGS when constructing its compiler sanity
+check command. TheRock passes a linker version script through LDFLAGS
+for the libpciaccess and libdrm sysdeps builds. Passing that script twice
+makes GNU ld process the AMDROCM_SYSDEPS_1.0 version node twice.
+
+A fresh TheRock virtual environment currently installs Meson 1.12.0
+because requirements.txt only specifies meson>=1.7.0. The affected
+sysdeps then fail during Meson setup with the exact error:
+
+Sanity check compile stderr:
+/usr/bin/ld: duplicate version tag `AMDROCM_SYSDEPS_1.0'
+collect2: error: ld returned 1 exit status
+
+meson.build:21:0: ERROR: Compiler /usr/bin/cc cannot compile programs.
+
+The same libpciaccess configuration succeeds with Meson 1.11.0. Add an
+upper bound excluding Meson 1.12 until its duplicated-linker-argument
+regression is fixed.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ requirements.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/requirements.txt b/requirements.txt
+index c626b0b..5b1a176 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,6 @@
+ CppHeaderParser>=2.7.4
+ build>=1.2.2
+-meson>=1.7.0
++meson>=1.7.0,<1.12.0
+ pre-commit>=4.3.0
+ python-magic>=0.4.27; platform_system != "Windows"
+ PyYAML==6.0.2
+-- 
+2.43.0
+
