@@ -3,6 +3,7 @@
 # curses works both on linux and windows
 #   linux: pip3 install curses
 #   windows: pip3 install windows-curses
+import ast
 import configparser
 import curses
 import os
@@ -45,6 +46,30 @@ def get_local_rocm_sdk_path_if_available():
     if is_valid_rocm_home_path(rocm_home):
         ret = rocm_home
     return ret
+
+
+def parse_config_values(raw_value):
+    """Parse a scalar or Python-style sequence from rockbuilder.cfg."""
+    try:
+        parsed_value = ast.literal_eval(raw_value)
+    except (SyntaxError, ValueError):
+        parsed_value = raw_value
+
+    if isinstance(parsed_value, (list, tuple, set)):
+        return [str(value) for value in parsed_value]
+    return [str(parsed_value)]
+
+
+def load_existing_config(config_file=None):
+    """Load rockbuilder.cfg when it exists."""
+    if config_file is None:
+        config_file = rcb_const.get_rock_builder_config_file()
+
+    config = configparser.ConfigParser()
+    config_path = Path(config_file)
+    if config_path.is_file():
+        config.read(config_path)
+    return config
 
 
 class SelectionItem:
@@ -113,6 +138,41 @@ class BaseSelectionList:
 
     def get_item(self, indx):
         return self.item_list[indx]
+
+    def get_selected_item(self):
+        for item in self.item_list:
+            if item.is_selected():
+                return item
+        return None
+
+    def restore_selection(self, config):
+        """Restore selections which are still available in this list."""
+        section = self.get_config_header()
+        if not config.has_section(section):
+            return []
+
+        matched_items = []
+        for item in self.item_list:
+            if not config.has_option(section, item.get_key()):
+                continue
+            configured_values = parse_config_values(
+                config.get(section, item.get_key())
+            )
+            if str(item.get_value()) in configured_values:
+                matched_items.append(item)
+                if not self.multi_selection:
+                    break
+
+        if not matched_items:
+            return []
+
+        for item in self.item_list:
+            item.set_selected(item in matched_items)
+
+        for item in matched_items:
+            if item.extra_key and config.has_option(section, item.extra_key):
+                item.extra_val = config.get(section, item.extra_key)
+        return matched_items
 
     def fire_item_selection_event(self, item, selected):
         for listener in self.item_selection_listeners:
@@ -277,6 +337,60 @@ class SDKSelectionList(BaseSelectionList):
             )
         )
 
+    def add_configured_rocm_homes(self, config):
+        section = self.get_config_header()
+        home_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME
+        if not config.has_option(section, home_key):
+            return
+
+        existing_paths = {
+            str(item.get_value())
+            for item in self.item_list
+            if item.get_key() == home_key
+        }
+        insert_index = 0
+        configured_paths = parse_config_values(
+            config.get(section, home_key)
+        )
+        for configured_path in configured_paths:
+            rocm_home = Path(configured_path).expanduser()
+            if not is_valid_rocm_home_path(rocm_home):
+                continue
+            rocm_home_value = rocm_home.resolve().as_posix()
+            if rocm_home_value in existing_paths:
+                continue
+            self.item_list.insert(
+                insert_index,
+                SelectionItem(
+                    "Previously configured ROCm SDK: " + rocm_home_value,
+                    home_key,
+                    rocm_home_value,
+                    False,
+                ),
+            )
+            existing_paths.add(rocm_home_value)
+            insert_index += 1
+
+    def restore_selection(self, config):
+        restored_items = super().restore_selection(config)
+        if restored_items:
+            return restored_items
+
+        section = self.get_config_header()
+        build_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD
+        home_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME
+        if not config.has_option(section, build_key):
+            return []
+
+        configured_paths = parse_config_values(config.get(section, build_key))
+        for item in self.item_list:
+            is_existing_build = item.get_key() == home_key
+            if is_existing_build and str(item.get_value()) in configured_paths:
+                for candidate in self.item_list:
+                    candidate.set_selected(candidate is item)
+                return [item]
+        return []
+
     # Override the default selection logic because we should only allow
     # one SDK to be selected at a time.
     # When one SDK location is selected, previous selections are disabled.
@@ -347,7 +461,7 @@ class SelectionListManager:
 
 
 class UiManager:
-    def __init__(self, stdscr):
+    def __init__(self, stdscr, existing_config=None):
         key_name_gpus = rcb_const.RCB__CFG__KEY__GPUS
         self.stdscr = stdscr
         # init curses based display to show text based ui
@@ -409,6 +523,35 @@ class UiManager:
         self.gpu_list = GpuSelectionList(stdscr)
         self.gpu_list.set_item_list(self.gpu_build_target_list)
 
+        if existing_config is None:
+            existing_config = load_existing_config()
+        self.sdk_list.add_configured_rocm_homes(existing_config)
+        self.restore_selections(existing_config)
+
+    def configure_gpu_list(self, sdk_item, clear_display):
+        if sdk_item is None:
+            return
+
+        if sdk_item.get_key() == rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER:
+            self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
+            self.gpu_list.set_multi_selection(False)
+        else:
+            self.gpu_list.set_item_list(self.gpu_build_target_list)
+            self.gpu_list.set_multi_selection(True)
+
+        if clear_display:
+            self.stdscr.clear()
+
+    def restore_selections(self, config):
+        restored_sdk_items = self.sdk_list.restore_selection(config)
+        if restored_sdk_items:
+            selected_sdk_item = restored_sdk_items[0]
+        else:
+            selected_sdk_item = self.sdk_list.get_selected_item()
+
+        self.configure_gpu_list(selected_sdk_item, False)
+        self.gpu_list.restore_selection(config)
+
     def show(self):
         ret = None
         self.sdk_list.add_item_selection_listener(self)
@@ -447,15 +590,7 @@ class UiManager:
         return ret
 
     def handle_item_selected(self, sender, item, selected):
-        key = item.get_key()
-        if key == rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER:
-            self.stdscr.clear()
-            self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
-            self.gpu_list.set_multi_selection(False)
-        else:
-            self.stdscr.clear()
-            self.gpu_list.set_item_list(self.gpu_build_target_list)
-            self.gpu_list.set_multi_selection(True)
+        self.configure_gpu_list(item, True)
 
 
 def show_config_ui():
