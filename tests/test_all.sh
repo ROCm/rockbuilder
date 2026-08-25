@@ -3,6 +3,13 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 
+python_test="test_rockbuilder_cfg.py"
+echo "Executing: $python_test"
+if ! PYTHONPATH="$SCRIPT_DIR/.." python -m pytest "$python_test"; then
+    echo "Error executing $python_test. Exiting."
+    exit 1
+fi
+
 # Declare an array of shell script paths
 scripts=(
     "./test1_check_build_steps.sh"
