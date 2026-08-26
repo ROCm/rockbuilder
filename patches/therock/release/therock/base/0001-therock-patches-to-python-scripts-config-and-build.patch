@@ -6,9 +6,9 @@ Subject: [PATCH 01/21] therock patches to python scripts config and build
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
  rcb_build.py      |  44 ++++++++++++++++
- rcb_config.py     |  85 +++++++++++++++++++++++++++++
+ rcb_config.py     | 174 +++++++++++++++++++++++++++++++++++++++++++++
  rcb_pre_config.py | 132 ++++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 261 insertions(+)
+ 3 files changed, 350 insertions(+)
  create mode 100644 rcb_build.py
  create mode 100644 rcb_config.py
  create mode 100644 rcb_pre_config.py
@@ -65,16 +65,17 @@ index 0000000..417e56a
 +    main()
 diff --git a/rcb_config.py b/rcb_config.py
 new file mode 100644
-index 0000000..3576ca7
+index 0000000..a7061d2
 --- /dev/null
 +++ b/rcb_config.py
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,174 @@
 +#!/usr/bin/env python3
 +
 +import os
 +import platform
 +import subprocess
 +import sys
++import time
 +
 +IS_WINDOWS = (platform.system() == "Windows")
 +
@@ -91,6 +92,81 @@ index 0000000..3576ca7
 +    os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 +    os.environ.pop("PYTHONHOME", None)
 +    print(f"rcb_config.py python venv activated: {venv_path}")
++
++
++def input_with_timeout(prompt, timeout_seconds, default=""):
++    # Non-interactive processes cannot answer a prompt, so use
++    # the default immediately. Interactive input is delegated to
++    # the implementation supported by the current platform.
++    if not sys.stdin.isatty():
++        print(prompt)
++        ret = default
++    elif IS_WINDOWS:
++        ret = _input_with_timeout_windows(
++            prompt, timeout_seconds, default
++        )
++    else:
++        ret = _input_with_timeout_posix(
++            prompt, timeout_seconds, default
++        )
++    return ret
++
++
++def _input_with_timeout_posix(prompt, timeout_seconds, default):
++    # select() waits for terminal input without blocking beyond
++    # the requested timeout.
++    import select
++
++    ret = default
++    print(prompt, end="", flush=True)
++    readable, _, _ = select.select(
++        [sys.stdin], [], [], timeout_seconds
++    )
++    if readable:
++        answer = sys.stdin.readline()
++        if answer:
++            ret = answer.strip() or default
++        else:
++            print()
++    else:
++        print()
++    return ret
++
++
++def _input_with_timeout_windows(prompt, timeout_seconds, default):
++    # Windows console input cannot be monitored with select(),
++    # so poll it until input arrives or the deadline expires.
++    import msvcrt
++
++    ret = default
++    print(prompt, end="", flush=True)
++    answer = []
++    deadline = time.monotonic() + timeout_seconds
++    while time.monotonic() < deadline:
++        if not msvcrt.kbhit():
++            time.sleep(0.05)
++            continue
++        character = msvcrt.getwch()
++        if character in ("\r", "\n"):
++            print()
++            ret = "".join(answer).strip() or default
++            break
++        if character == "\x03":
++            raise KeyboardInterrupt
++        if character in ("\x00", "\xe0"):
++            msvcrt.getwch()
++            continue
++        if character == "\b":
++            if answer:
++                answer.pop()
++                print("\b \b", end="", flush=True)
++            continue
++        if character.isprintable():
++            answer.append(character)
++            print(character, end="", flush=True)
++    else:
++        print()
++    return ret
 +
 +
 +def main():
@@ -121,8 +197,21 @@ index 0000000..3576ca7
 +    else:
 +        for asan_gpu_item in asan_gpu_families:
 +            if asan_gpu_item in amdgpu_targets:
-+                answer = input(f"RCB_THEROCK_SANITIZER is not set and target is {amdgpu_targets}. "
-+                       "Enable ASAN build? [y/N]: ").strip().lower()
++                separator = "------------------"
++                timeout_seconds = 30
++                prompt = (
++                    f"{separator}\n"
++                    "RCB_THEROCK_SANITIZER is not set and target is "
++                    f"{amdgpu_targets}.\n"
++                    "Enable ASAN build? [y/N] "
++                    f"(default after {timeout_seconds} seconds): "
++                )
++                answer = input_with_timeout(
++                    prompt, timeout_seconds, default="N"
++                ).strip().lower()
++                print(f"Selected value: {answer.lower()}")
++                print(separator)
++                time.sleep(3)
 +                if answer == "y":
 +                    cmake_cmd.append("-DTHEROCK_SANITIZER=ASAN")
 +                    break
