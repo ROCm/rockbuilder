@@ -469,6 +469,9 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
     default_src_base_dir = rcb_const.get_app_src_base_dir()
     rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
     if rocm_home:
+        os.environ[
+            rcb_const.RCB__ENV_VAR__ROCM_SDK_INSTALL_DIR
+        ] = rocm_home
         print("Rockbuilder is configured to use ROCM_SDK build by the rockbuilder itself")
         # rocm sdk is wanted to be used from locally build therock dir
         # if none is returned, SDK is not yet build

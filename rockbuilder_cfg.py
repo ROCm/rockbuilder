@@ -42,7 +42,7 @@ def get_rocm_home_path_if_available():
 # return either Path to ROCM_SDK or None
 def get_local_rocm_sdk_path_if_available():
     ret = None
-    rocm_home = rcb_const.THEROCK_SDK__ROCM_HOME_BUILD_DIR
+    rocm_home = rcb_const.get_therock_rocm_sdk_install_dir()
     if is_valid_rocm_home_path(rocm_home):
         ret = rocm_home
     return ret
@@ -315,7 +315,9 @@ class SDKSelectionList(BaseSelectionList):
             def_sel = False
         else:
             # add an option/selection to build the rocm sdk locally
-            the_rock_sdk_root_dir = rcb_const.THEROCK_SDK__ROCM_HOME_BUILD_DIR
+            the_rock_sdk_root_dir = (
+                rcb_const.get_therock_rocm_sdk_install_dir()
+            )
             self.item_list.append(
                 SelectionItem(
                     "New ROCm SDK Build: " + the_rock_sdk_root_dir.as_posix(),
@@ -340,7 +342,14 @@ class SDKSelectionList(BaseSelectionList):
     def add_configured_rocm_homes(self, config):
         section = self.get_config_header()
         home_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME
-        if not config.has_option(section, home_key):
+        build_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD
+        configured_paths = []
+        for config_key in (home_key, build_key):
+            if config.has_option(section, config_key):
+                configured_paths.extend(
+                    parse_config_values(config.get(section, config_key))
+                )
+        if not configured_paths:
             return
 
         existing_paths = {
@@ -349,9 +358,6 @@ class SDKSelectionList(BaseSelectionList):
             if item.get_key() == home_key
         }
         insert_index = 0
-        configured_paths = parse_config_values(
-            config.get(section, home_key)
-        )
         for configured_path in configured_paths:
             rocm_home = Path(configured_path).expanduser()
             if not is_valid_rocm_home_path(rocm_home):
