@@ -7,6 +7,7 @@ RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION = "7.13.0a20260501"
 RCB__ENV_VAR__ROCM_SDK_DEVICE_LIB_PATH       = "DEVICE_LIB_PATH"
 RCB__ENV_VAR__ROCM_SDK_HIP_DEVICE_LIB_PATH   = "HIP_DEVICE_LIB_PATH"
 RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK          = "RCB_DISABLE_ROCM_SDK_CHECK"
+RCB__ENV_VAR__ROCM_SDK_INSTALL_DIR           = "RCB_ROCM_SDK_INSTALL_DIR"
 
 RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR         = "ROCM_HOME"
 RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_BIN_DIR     = "ROCM_HOME_BIN_DIR"
@@ -116,7 +117,32 @@ THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "ther
 THEROCK_SDK_SRC__PATCHES_ROOT_DIR                = THEROCK_SDK_SRC__ROOT_DIR / "external-builds/pytorch/patches"
 # can be different location in future if we later deploy the sdk from source dir after build
 THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
+THEROCK_SDK__ROCM_HOME_INSTALL_PARENT            = Path("/opt/rcb")
 THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.com/v2/"
+
+def get_therock_rocm_sdk_install_dir(
+    preferred_parent=THEROCK_SDK__ROCM_HOME_INSTALL_PARENT,
+    home_dir=None,
+):
+    """Select the system install path when its existing parent is writable."""
+    preferred_dir = preferred_parent / "rocm"
+    if preferred_dir.exists():
+        writable_path = preferred_dir
+    else:
+        writable_path = preferred_parent
+    write_mode = os.W_OK | os.X_OK
+    use_preferred_dir = (
+        os.name != "nt"
+        and preferred_parent.is_dir()
+        and os.access(writable_path, write_mode)
+    )
+    if use_preferred_dir:
+        return preferred_dir
+
+    if home_dir is None:
+        home_dir = Path.home()
+    return Path(home_dir) / "rcb/rocm"
+
 
 def get_rock_builder_root_dir():
 	return RCB__ROOT_DIR
