@@ -72,6 +72,37 @@ def load_existing_config(config_file=None):
     return config
 
 
+def get_config_value_map(config):
+    """Return configuration values independent of section ordering."""
+    return {
+        section: dict(config.items(section))
+        for section in config.sections()
+    }
+
+
+def invalidate_therock_phase_stamps(build_root_dir=None):
+    """Invalidate TheRock checkout and all later build phases."""
+    if build_root_dir is None:
+        build_root_dir = rcb_const.RCB__APP_BUILD_ROOT_DIR
+    therock_build_dir = Path(build_root_dir) / "therock"
+    phase_names = [
+        rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT,
+        rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY,
+        rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG,
+        rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG,
+        rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG,
+        rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG,
+        rcb_const.RCB__APP_CFG__KEY__CMD_BUILD,
+        rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD,
+        rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL,
+        rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL,
+        rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL,
+    ]
+    for phase_name in phase_names:
+        stamp_path = therock_build_dir / f"{phase_name}.done"
+        stamp_path.unlink(missing_ok=True)
+
+
 class SelectionItem:
     def __init__(self,
                  name,
@@ -446,6 +477,8 @@ class SelectionListManager:
             indx_first_item = indx_last_item
 
     def save_selection(self):
+        fname = rcb_const.get_rock_builder_config_file()
+        existing_config = load_existing_config(fname)
         config = configparser.ConfigParser()
         # add sections and options
         for ii, selection_list in enumerate(self.selection_list_arr):
@@ -460,9 +493,14 @@ class SelectionListManager:
                 print("new_key: " + str(new_key))
                 print("new_val: " + str(new_val))
         # save the configuration to a file
-        fname = rcb_const.get_rock_builder_config_file()
         with open(fname.as_posix(), "w") as configfile:
             config.write(configfile)
+        existing_values = get_config_value_map(existing_config)
+        new_values = get_config_value_map(config)
+        if existing_values != new_values:
+            print("RockBuilder configuration changed.")
+            print("Restarting TheRock from the checkout phase.")
+            invalidate_therock_phase_stamps()
         return config
 
 
