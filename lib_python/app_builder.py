@@ -60,6 +60,21 @@ class ConfigReader(configparser.ConfigParser):
 
 
 class RockProjectBuilder(configparser.ConfigParser):
+    @staticmethod
+    def _get_change_dir_root_arr():
+        ret_arr = []
+        env_root = os.environ.get(
+            rcb_const.RCB__ENV_VAR__USER_CHANGES_ROOT_DIR
+        )
+        if env_root:
+            ret_arr.append(
+                Path(os.path.expandvars(env_root)).expanduser().resolve()
+            )
+        ret_arr.append(
+            rcb_const.RCB__CHANGES_ROOT_DIR.resolve()
+        )
+        return ret_arr
+
     def _to_boolean(self, value):
         if not value:
             return False
@@ -253,11 +268,7 @@ class RockProjectBuilder(configparser.ConfigParser):
         if self.cmd_execution_dir is None:
             # default value if not specified in the config-file
             self.cmd_execution_dir = self.app_src_dir_path
-        self.patch_dir_root_arr = []
-        self.patch_dir_root_arr.append(rcb_const.RCB__APP_PATCHES_ROOT_DIR)
-        self.patch_dir_root_arr.append(rcb_const.THEROCK_SDK_SRC__PATCHES_ROOT_DIR)
-        for ii, element in enumerate(self.patch_dir_root_arr):
-            self.patch_dir_root_arr[ii] = self.patch_dir_root_arr[ii].resolve()
+        self.change_dir_root_arr = self._get_change_dir_root_arr()
         self.app_repo = RockProjectRepo(
             self.package_output_dir,
             self.app_name,
@@ -269,7 +280,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.repo_url,
             self.app_version,
             self.app_patch_dir_base_name,
-            self.patch_dir_root_arr,
+            self.change_dir_root_arr,
         )
 
     # printout project builder specific info for logging and debug purposes
@@ -281,15 +292,13 @@ class RockProjectBuilder(configparser.ConfigParser):
         if self.app_version:
             print("    Version:          " + self.app_version)
         print("    Source dir:       " + self.app_src_dir_path.as_posix())
-        for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-            if self.app_name:
-                if self.app_patch_dir_base_name:
-                    print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name / self.app_patch_dir_base_name))
-                else:
-                    print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name))
-            else:
-                print("    Patch dir[" + str(ii) + "]:     " + str(cur_patch_dir_root / self.app_name))
-                sys.exit(1)
+        for ii, change_dir_root in enumerate(self.change_dir_root_arr):
+            print(
+                "    Changes dir["
+                + str(ii)
+                + "]:      "
+                + str(change_dir_root)
+            )
         print("    Build dir:        " + self.app_build_dir_path.as_posix())
         print("------------------------")
 

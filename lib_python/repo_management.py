@@ -13,8 +13,10 @@ import subprocess
 import lib_python.rcb_constants as rcb_const
 from lib_python.utils import truncate_string
 
-TAG_UPSTREAM_DIFFBASE = "THEROCK_UPSTREAM_DIFFBASE"
+TAG_CHECKOUT = "RCB_TAG_CHECKOUT"
+TAG_FILE_COPY = "RCB_TAG_FILE_COPY"
 TAG_HIPIFY_DIFFBASE = "THEROCK_HIPIFY_DIFFBASE"
+FILE_COPY_COMMIT_MESSAGE = "DO NOT SUBMIT: ROCKBUILDER FILE COPY"
 HIPIFY_COMMIT_MESSAGE = "DO NOT SUBMIT: HIPIFY"
 
 class RockProjectRepo:
@@ -30,7 +32,7 @@ class RockProjectRepo:
         app_repo_url:str,
         app_version_hashtag:str,
         app_patch_dir_base_name: str,
-        patch_dir_root_arr: Path,
+        change_dir_root_arr: list[Path],
     ):
         self.wheel_install_base_dir = wheel_install_base_dir
         self.app_name = app_name
@@ -41,7 +43,7 @@ class RockProjectRepo:
         self.app_repo_url = app_repo_url
         self.app_version_hashtag = app_version_hashtag
         self.app_patch_dir_base_name = app_patch_dir_base_name
-        self.patch_dir_root_arr = patch_dir_root_arr
+        self.change_dir_root_arr = change_dir_root_arr
         self.orig_env_variables_hashtable = dict()
         self.is_posix = not any(platform.win32_ver())
         os.environ[rcb_const.RCB__ENV_VAR__APP_SRC_DIR] = app_src_dir.as_posix()
@@ -326,6 +328,7 @@ class RockProjectRepo:
             stdout=subprocess.DEVNULL if stdout_devnull else None,
         )
 
+    @staticmethod
     def rev_parse(repo_path: Path, rev: str) -> str | None:
         """Parses a revision to a commit hash, returning None if not found."""
         try:
@@ -336,6 +339,7 @@ class RockProjectRepo:
             return None
         return raw_output.decode().strip()
 
+    @staticmethod
     def rev_list(repo_path: Path, revlist: str) -> list[str]:
         raw_output = subprocess.check_output(
             ["git", "rev-list", revlist], cwd=str(repo_path)
@@ -418,22 +422,24 @@ class RockProjectRepo:
         if patches_path.exists():
             shutil.rmtree(patches_path)
         # Get key revisions.
-        upstream_rev = rev_parse(repo_path, TAG_UPSTREAM_DIFFBASE)
-        hipify_rev = rev_parse(repo_path, TAG_HIPIFY_DIFFBASE)
-        if upstream_rev is None:
+        file_copy_rev = self.rev_parse(repo_path, TAG_FILE_COPY)
+        hipify_rev = self.rev_parse(repo_path, TAG_HIPIFY_DIFFBASE)
+        if file_copy_rev is None:
             print(
-                f"error: Could not find upstream diffbase tag {TAG_UPSTREAM_DIFFBASE}"
+                f"error: Could not find file-copy tag {TAG_FILE_COPY}"
             )
             sys.exit(1)
         hipified_count = 0
         if hipify_rev:
             hipified_revlist = f"{hipify_rev}..HEAD"
-            base_revlist = f"{upstream_rev}..{hipify_rev}^"
-            hipified_count = len(rev_list(repo_path, hipified_revlist))
+            base_revlist = f"{file_copy_rev}..{hipify_rev}^"
+            hipified_count = len(
+                self.rev_list(repo_path, hipified_revlist)
+            )
         else:
             hipified_revlist = None
-            base_revlist = f"{upstream_rev}..HEAD"
-        base_count = len(rev_list(repo_path, base_revlist))
+            base_revlist = f"{file_copy_rev}..HEAD"
+        base_count = len(self.rev_list(repo_path, base_revlist))
         if hipified_count == 0 and base_count == 0:
             return
         print(
@@ -549,11 +555,118 @@ class RockProjectRepo:
 
     # repo_hashtag_to_patches_dir_name('2.7.0-rc9') -> '2.7.0'
     def get_app_patch_dir_root(self,
-                  patch_dir_root: Path,
+                  change_dir_root: Path,
                   app_name: str,
                   app_patch_dir_name: str) -> Path:
         app_patch_dir_name = self.repo_hashtag_to_patches_dir_name(app_patch_dir_name)
-        return Path(patch_dir_root / app_name / app_patch_dir_name)
+        return Path(
+            change_dir_root
+            / rcb_const.RCB__APP_PATCHES_DIR_BASENAME
+            / app_name
+            / app_patch_dir_name
+        )
+
+    def force_tag(self, repo_path: Path, tag_name: str):
+        """Move a Rockbuilder-managed tag to the repository HEAD."""
+        self.exec(
+            ["git", "tag", "-f", tag_name, "--no-sign"],
+            cwd=repo_path,
+        )
+
+    def delete_tag_if_present(self, repo_path: Path, tag_name: str):
+        """Delete a stale Rockbuilder-managed tag when it exists."""
+        result = self.run_git_command(
+            ["rev-parse", "--verify", f"refs/tags/{tag_name}"],
+            cwd=repo_path,
+        )
+        if result is None:
+            raise RuntimeError(f"Failed to check Git tag {tag_name}")
+        if result.returncode == 0:
+            self.exec(
+                ["git", "tag", "--delete", tag_name],
+                cwd=repo_path,
+            )
+
+    def get_repo_update_path(self, repo_path: Path) -> Path:
+        """Return the repository path used below changes files and patches."""
+        if repo_path.resolve() == self.app_src_dir.resolve():
+            return Path(self.app_name)
+        return repo_path.resolve().relative_to(self.app_src_dir.resolve())
+
+    def get_repo_file_source_dirs(self, repo_path: Path) -> list[Path]:
+        """Find common and version-specific file trees for a repository."""
+        repo_update_path = self.get_repo_update_path(repo_path)
+        version_dir_name = self.repo_hashtag_to_patches_dir_name(
+            self.app_patch_dir_base_name
+        )
+        for change_dir_root in self.change_dir_root_arr:
+            app_files_root = (
+                change_dir_root
+                / rcb_const.RCB__APP_FILES_DIR_BASENAME
+                / self.app_name
+            )
+            source_dirs = [
+                app_files_root / "common" / repo_update_path,
+                app_files_root / version_dir_name / repo_update_path,
+            ]
+            existing_dirs = [
+                source_dir
+                for source_dir in source_dirs
+                if source_dir.is_dir()
+            ]
+            if existing_dirs:
+                return existing_dirs
+        return []
+
+    def copy_repo_files(self, repo_path: Path) -> int:
+        """Copy selected new files, commit them, and tag the result."""
+        selected_files = {}
+        for source_dir in self.get_repo_file_source_dirs(repo_path):
+            for source_path in source_dir.rglob("*"):
+                if not source_path.is_file():
+                    continue
+                relative_path = source_path.relative_to(source_dir)
+                if ".git" in relative_path.parts:
+                    raise ValueError(
+                        f"File update path cannot contain .git: {source_path}"
+                    )
+                selected_files[relative_path] = source_path
+
+        for relative_path in selected_files:
+            destination_path = repo_path / relative_path
+            if destination_path.exists():
+                raise FileExistsError(
+                    "File update destination already exists: "
+                    f"{destination_path}"
+                )
+
+        for relative_path, source_path in selected_files.items():
+            destination_path = repo_path / relative_path
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, destination_path)
+
+        if selected_files:
+            copied_paths = [str(path) for path in selected_files]
+            self.exec(
+                ["git", "add", "--"] + copied_paths,
+                cwd=repo_path,
+            )
+            self.exec(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Rockbuilder",
+                    "-c",
+                    "user.email=rockbuilder@localhost",
+                    "commit",
+                    "--no-gpg-sign",
+                    "-m",
+                    FILE_COPY_COMMIT_MESSAGE,
+                ],
+                cwd=repo_path,
+            )
+        self.force_tag(repo_path, TAG_FILE_COPY)
+        return len(selected_files)
 
     def do_env_setup(self, rocm_sdk_setup_cmd_list, prj_env_setup_cmd_list):
         env_setup_cmd_list = []
@@ -701,13 +814,20 @@ class RockProjectRepo:
             except:
                 print("Failed to checkout source code.")
                 sys.exit(1)
+        self.force_tag(self.app_src_dir, TAG_CHECKOUT)
+        self.delete_tag_if_present(
+            self.app_src_dir,
+            TAG_HIPIFY_DIFFBASE,
+        )
+        self.copy_repo_files(self.app_src_dir)
+
         if apply_patches_enabled:
             # Apply base patches to main repository. Patches to
             # submodules will be applied later. This enables patches
             # to modify submodule version to be checked out.
             print("    do_checkout, app_src_dir: " + str(self.app_src_dir))
-            for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-                full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+            for change_dir_root in self.change_dir_root_arr:
+                full_patch_dir = self.get_app_patch_dir_root(change_dir_root,
                                                             self.app_name,
                                                             self.app_patch_dir_base_name)
                 print("    do_checkout, full patch dir: " + str(full_patch_dir))
@@ -721,11 +841,6 @@ class RockProjectRepo:
                     # apply patches only from the first directory that exist
                     break
 
-        # add our own git tag to help with the create patches command
-        self.exec(
-            ["git", "tag", "-f", TAG_UPSTREAM_DIFFBASE, "--no-sign"],
-            cwd=self.app_src_dir,
-        )
         try:
             self.exec(
                 ["git", "submodule", "update", "--init", "--recursive"] + fetch_args,
@@ -746,22 +861,18 @@ class RockProjectRepo:
                 print("    do_checkout, failed to fetch git submodules even after resetting them")
                 sys.exit(1)
         print("    do_checkout, tagging git submodules")
-        self.exec(
-            [
-                "git",
-                "submodule",
-                "foreach",
-                "--recursive",
-                f"git tag -f {TAG_UPSTREAM_DIFFBASE} --no-sign",
-            ],
-            cwd=self.app_src_dir,
-            stdout_devnull=True,
-        )
+        for submodule_path in self.list_submodules(self.app_src_dir):
+            self.force_tag(submodule_path, TAG_CHECKOUT)
+            self.delete_tag_if_present(
+                submodule_path,
+                TAG_HIPIFY_DIFFBASE,
+            )
+            self.copy_repo_files(submodule_path)
         self.git_config_ignore_submodules(self.app_src_dir)
         if apply_patches_enabled:
             print(f"    do_checkout, applying patches for {self.app_name} submodules")
-            for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-                full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+            for change_dir_root in self.change_dir_root_arr:
+                full_patch_dir = self.get_app_patch_dir_root(change_dir_root,
                                                             self.app_name,
                                                             self.app_patch_dir_base_name)
                 print("    do_checkout, submodule patch dir: " + str(full_patch_dir))
@@ -804,8 +915,8 @@ class RockProjectRepo:
             print("    do_hipify, committed changes to hipified files")
         # always apply the patches from hipified directory. (even if CMD_HIPIFY was not specified in config file for project)
         print(f"    do_hipify, applying patches for {self.app_name} submodules")
-        for ii, cur_patch_dir_root in enumerate(self.patch_dir_root_arr):
-            full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+        for change_dir_root in self.change_dir_root_arr:
+            full_patch_dir = self.get_app_patch_dir_root(change_dir_root,
                                                         self.app_name,
                                                         self.app_patch_dir_base_name)
             print("    do_hipify, submodule patch dir: " + str(full_patch_dir))
@@ -874,10 +985,9 @@ class RockProjectRepo:
 
     def do_save_patches(self):
         ret = True
-        # even if there are multiple patch dirs from where to patches can be applied,
-        # patches are always wanted to be saved to first dir in the list
-        cur_patch_dir_root = self.patch_dir_root_arr[0]
-        full_patch_dir = self.get_app_patch_dir_root(cur_patch_dir_root,
+        # Patches are always saved under the first changes root.
+        change_dir_root = self.change_dir_root_arr[0]
+        full_patch_dir = self.get_app_patch_dir_root(change_dir_root,
                                                     self.app_name,
                                                     self.app_patch_dir_base_name)
         self.save_repo_patches(self.app_src_dir, full_patch_dir / self.app_name)

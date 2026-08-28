@@ -31,21 +31,30 @@ RCB__ENV_VAR__AMDGPU_TARGETS                 = "RCB_AMDGPU_TARGETS"
 RCB__ENV_VAR__APP_SRC_DIR                    = "RCB_APP_SRC_DIR"
 RCB__ENV_VAR__APP_BUILD_DIR                  = "RCB_APP_BUILD_DIR"
 RCB__ENV_VAR__APP_VERSION                    = "RCB_APP_VERSION"
+RCB__ENV_VAR__USER_CHANGES_ROOT_DIR          = "RCB__USER_CHANGES_ROOT_DIR"
 
 RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_COMPILE = "RCB_MODERATE_CPU_JOB_COUNT_COMPILE"
 RCB__ENV_VAR__MODERATE_CPU_JOB_COUNT_LINK    = "RCB_MODERATE_CPU_JOB_COUNT_LINK"
 RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_COMPILE     = "RCB_SAFE_CPU_JOB_COUNT_COMPILE"
 RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK        = "RCB_SAFE_CPU_JOB_COUNT_LINK"
 
-RCB__APP_CFG_DEFAULT_BASE_DIR                = "apps"
-RCB__APP_SRC_BASE_DIR                        = "src_apps"
-RCB__APP_BUILD_BASE_DIR                      = "build"
-RCB__APP_PATCHES_BASE_DIR                    = "patches"
+RCB__APP_CFG_DEFAULT_DIR_BASENAME            = "apps"
+RCB__APP_SRC_DIR_BASENAME                    = "src_apps"
+RCB__APP_BUILD_DIR_BASENAME                  = "build"
+RCB__CHANGES_DIR_BASENAME                    = "changes"
+RCB__APP_FILES_DIR_BASENAME                  = "files"
+RCB__APP_PATCHES_DIR_BASENAME                = "patches"
 
 RCB__ROOT_DIR                                = Path(os.path.dirname(os.path.abspath(__file__))).parent.resolve()
-RCB__APP_SRC_ROOT_DIR                        = RCB__ROOT_DIR / RCB__APP_SRC_BASE_DIR
-RCB__APP_BUILD_ROOT_DIR                      = RCB__ROOT_DIR / RCB__APP_BUILD_BASE_DIR
-RCB__APP_PATCHES_ROOT_DIR                    = RCB__ROOT_DIR / RCB__APP_PATCHES_BASE_DIR
+RCB__APP_SRC_ROOT_DIR = (
+    RCB__ROOT_DIR / RCB__APP_SRC_DIR_BASENAME
+)
+RCB__APP_BUILD_ROOT_DIR = (
+    RCB__ROOT_DIR / RCB__APP_BUILD_DIR_BASENAME
+)
+RCB__CHANGES_ROOT_DIR = (
+    RCB__ROOT_DIR / RCB__CHANGES_DIR_BASENAME
+)
 
 RCB__APP_CFG_FILE_SUFFIX                     = ".cfg"
 RCB__APP_LIST_CFG_FILE_SUFFIX                = ".apps"
@@ -114,7 +123,6 @@ RCB_CALLBACK__DELETE_APP_SRC_SUBDIR              = "RCB_CALLBACK__DELETE_APP_SRC
 RCB_CALLBACK__RESET_APP_SRC_REPOSITORY           = "RCB_CALLBACK__RESET_APP_SRC_REPOSITORY"
 
 THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "therock"
-THEROCK_SDK_SRC__PATCHES_ROOT_DIR                = THEROCK_SDK_SRC__ROOT_DIR / "external-builds/pytorch/patches"
 # can be different location in future if we later deploy the sdk from source dir after build
 THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
 THEROCK_SDK__ROCM_HOME_INSTALL_PARENT            = Path("/opt/rcb")

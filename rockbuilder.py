@@ -59,7 +59,7 @@ def get_app_cfg_path(rock_builder_home_dir: Path, fname: str):
             fname_base = f"{fname}" + rcb_const.RCB__APP_CFG_FILE_SUFFIX
             ret = (
                 Path(rock_builder_home_dir) /
-                     rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR /
+                     rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME /
                      fname_base
             )
         ret = ret.resolve()
@@ -77,7 +77,7 @@ def get_app_list_cfg_path(rock_builder_home_dir: Path, fname: str):
             fname_base = f"{fname}" + rcb_const.RCB__APP_LIST_CFG_FILE_SUFFIX
             ret = (
                 Path(rock_builder_home_dir) /
-                     rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR /
+                     rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME /
                      fname_base
             )
         ret = ret.resolve()
@@ -184,7 +184,7 @@ def get_app_list_manager(rock_builder_home_dir: Path, default_src_base_dir: Path
     parser = create_argument_parser_with_basic_options(rock_builder_home_dir, default_src_base_dir)
     args, unknown = parser.parse_known_args()
     if not args.config_file:
-	    args.config_file = rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR / "core.apps"
+	    args.config_file = rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME / "core.apps"
     cfg_info = get_app_or_app_list_config(rock_builder_home_dir, args.config_file)
     ret = app_builder.RockExternalProjectListManager(rock_builder_home_dir,
                                                      cfg_info)

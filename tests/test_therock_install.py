@@ -8,10 +8,9 @@ from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-PATCH_PATH = (
+INSTALL_SCRIPT_PATH = (
     REPOSITORY_ROOT
-    / "patches/therock/release/therock/base"
-    / "0001-therock-patches-to-python-scripts-config-and-build.patch"
+    / "changes/files/therock/common/therock/rcb_install.py"
 )
 
 
@@ -20,24 +19,9 @@ class TheRockInstallScriptTest(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.therock_dir = Path(cls.temp_dir.name)
-        subprocess.run(
-            ["git", "init", "-q", str(cls.therock_dir)],
-            check=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(cls.therock_dir),
-                "apply",
-                str(PATCH_PATH),
-            ],
-            check=True,
-        )
-        module_path = cls.therock_dir / "rcb_install.py"
         spec = importlib.util.spec_from_file_location(
             "rcb_install_under_test",
-            module_path,
+            INSTALL_SCRIPT_PATH,
         )
         cls.install_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.install_module)
@@ -77,11 +61,16 @@ class TheRockInstallScriptTest(unittest.TestCase):
 
         with mock.patch.dict(os.environ, environment, clear=True):
             with mock.patch.object(
-                self.install_module.subprocess,
-                "run",
-                return_value=completed_process,
-            ) as run:
-                self.install_module.main()
+                self.install_module,
+                "__file__",
+                str(self.therock_dir / "rcb_install.py"),
+            ):
+                with mock.patch.object(
+                    self.install_module.subprocess,
+                    "run",
+                    return_value=completed_process,
+                ) as run:
+                    self.install_module.main()
 
         run.assert_called_once_with(
             [

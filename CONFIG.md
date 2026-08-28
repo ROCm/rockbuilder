@@ -177,18 +177,50 @@ CMD_EXEC_DIR=${RCB_APP_SRC_DIR}/py
 #### Note About the HIPIFY Command
 
 The `CMD_HIPIFY` is somewhat special compared to other commands.
-It is partially tied to the source code checkout phase, where patches are split into:
+It is partially tied to source checkout, where updates are split into copied
+files, base patches, and HIPIFY patches.
 
-- Base patches (applied immediately after checkout)
+- Copied files (committed immediately after checkout)
+- Base patches (applied after the file-copy commit)
 - HIPIFY patches (applied after the hipify command is run)
+
+Set `RCB__USER_CHANGES_ROOT_DIR` to use one alternative changes root.
+RockBuilder searches that root first, followed by its built-in `changes/`
+directory. Each root contains both `files/` and `patches/` subdirectories.
+Saved patches are written to the first root.
 
 If a hipify command is specified, the execution flow is:
 
 1. Source code checkout
-1. Tagging of source code base
-1. Applying base patches
-1. Executing `CMD_HIPIFY`
-1. Tagging HIPIFY patches
+2. Tag the original checkout as `RCB_TAG_CHECKOUT`
+3. Copy and commit files, then tag the result as `RCB_TAG_FILE_COPY`
+4. Apply base patches
+5. Execute `CMD_HIPIFY`
+6. Commit the HIPIFY changes
+7. Apply HIPIFY patches
+
+Files copied to every version are read from:
+
+```
+changes/files/<application_name>/common/<repository>/<destination_path>
+```
+
+Version-specific files are read from:
+
+```
+changes/files/<application_name>/<PATCH_DIR>/<repository>/<destination_path>
+```
+
+Version-specific files override common files with the same relative path.
+Copied files must be new files; checkout fails if a destination already exists.
+When there are no files to copy, `RCB_TAG_FILE_COPY` points to the same commit
+as `RCB_TAG_CHECKOUT`.
+
+Base patches are applied from:
+
+```
+changes/patches/<application_name>/<PATCH_DIR>/<repository>/base
+```
 
 The ROCm SDK provides a hipify tool that converts CUDA files and APIs to ROCm-compatible equivalents.
 Some applications, like PyTorch, can also provide their own HIPIFY command.
@@ -202,7 +234,7 @@ CMD_HIPIFY = python tools/amd_build/build_amd.py
 HIPIFIED patches are applied from the directory:
 
 ```
-patches/<application_name>/<application_version>/<application_name>/hipified
+changes/patches/<application_name>/<PATCH_DIR>/<repository>/hipified
 ```
 
 #### Python Wheel Management
