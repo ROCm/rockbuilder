@@ -1,0 +1,280 @@
+import stat
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import lib_python.rcb_constants as rcb_const
+from lib_python.app_builder import RockProjectBuilder
+from lib_python.repo_management import RockProjectRepo
+from lib_python.repo_management import TAG_CHECKOUT
+from lib_python.repo_management import TAG_FILE_COPY
+
+
+def run_git(repo_path, *args):
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+class RepoFileUpdatesTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_path = Path(self.temp_dir.name)
+        self.repo_path = self.temp_path / "source"
+        self.changes_root = self.temp_path / "changes"
+        self.files_root = self.changes_root / "files"
+        self.repo_path.mkdir()
+        run_git(self.repo_path, "init", "-q")
+        (self.repo_path / "upstream.txt").write_text(
+            "upstream\n",
+            encoding="utf-8",
+        )
+        run_git(self.repo_path, "add", "upstream.txt")
+        run_git(
+            self.repo_path,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "Upstream",
+        )
+
+        self.repo = object.__new__(RockProjectRepo)
+        self.repo.app_src_dir = self.repo_path
+        self.repo.app_name = "demo"
+        self.repo.app_patch_dir_base_name = "1.0"
+        self.repo.change_dir_root_arr = [self.changes_root]
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def write_update_file(self, version, relative_path, contents):
+        update_path = (
+            self.files_root
+            / "demo"
+            / version
+            / "demo"
+            / relative_path
+        )
+        update_path.parent.mkdir(parents=True, exist_ok=True)
+        update_path.write_text(contents, encoding="utf-8")
+        return update_path
+
+    def test_version_files_override_common_files(self):
+        self.write_update_file("common", "shared.txt", "common\n")
+        executable = self.write_update_file(
+            "common",
+            "tools/common.py",
+            "common\n",
+        )
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        self.write_update_file("1.0", "shared.txt", "version\n")
+
+        checkout_commit = run_git(self.repo_path, "rev-parse", "HEAD")
+        self.repo.force_tag(self.repo_path, TAG_CHECKOUT)
+        copied_count = self.repo.copy_repo_files(self.repo_path)
+
+        self.assertEqual(copied_count, 2)
+        self.assertEqual(
+            (self.repo_path / "shared.txt").read_text(encoding="utf-8"),
+            "version\n",
+        )
+        copied_mode = (self.repo_path / "tools/common.py").stat().st_mode
+        self.assertTrue(copied_mode & stat.S_IXUSR)
+        self.assertEqual(
+            run_git(self.repo_path, "rev-parse", "HEAD^"),
+            checkout_commit,
+        )
+        self.assertEqual(
+            run_git(self.repo_path, "rev-parse", TAG_CHECKOUT),
+            checkout_commit,
+        )
+        self.assertEqual(
+            run_git(self.repo_path, "rev-parse", TAG_FILE_COPY),
+            run_git(self.repo_path, "rev-parse", "HEAD"),
+        )
+        self.assertEqual(run_git(self.repo_path, "status", "--porcelain"), "")
+
+    def test_environment_changes_root_has_highest_precedence(self):
+        env_root = self.temp_path / "alternative-changes"
+        env_name = rcb_const.RCB__ENV_VAR__USER_CHANGES_ROOT_DIR
+        with patch.dict(
+            "os.environ",
+            {env_name: str(env_root)},
+        ):
+            change_dir_roots = (
+                RockProjectBuilder._get_change_dir_root_arr()
+            )
+
+        self.assertEqual(change_dir_roots[0], env_root.resolve())
+        self.assertEqual(len(change_dir_roots), 2)
+        self.assertEqual(
+            change_dir_roots[1],
+            rcb_const.RCB__CHANGES_ROOT_DIR.resolve(),
+        )
+        patch_dir = self.repo.get_app_patch_dir_root(
+            change_dir_roots[0],
+            "demo",
+            "1.0",
+        )
+        self.assertEqual(
+            patch_dir,
+            env_root / "patches/demo/1.0",
+        )
+
+    def test_no_files_points_both_tags_to_checkout(self):
+        checkout_commit = run_git(self.repo_path, "rev-parse", "HEAD")
+
+        self.repo.force_tag(self.repo_path, TAG_CHECKOUT)
+        copied_count = self.repo.copy_repo_files(self.repo_path)
+
+        self.assertEqual(copied_count, 0)
+        self.assertEqual(
+            run_git(self.repo_path, "rev-parse", TAG_CHECKOUT),
+            checkout_commit,
+        )
+        self.assertEqual(
+            run_git(self.repo_path, "rev-parse", TAG_FILE_COPY),
+            checkout_commit,
+        )
+
+    def test_existing_destination_fails_before_copy(self):
+        self.write_update_file("common", "upstream.txt", "replacement\n")
+        self.write_update_file("common", "not-copied.txt", "new\n")
+
+        self.repo.force_tag(self.repo_path, TAG_CHECKOUT)
+        with self.assertRaisesRegex(
+            FileExistsError,
+            "upstream.txt",
+        ):
+            self.repo.copy_repo_files(self.repo_path)
+
+        self.assertFalse((self.repo_path / "not-copied.txt").exists())
+        self.assertEqual(
+            (self.repo_path / "upstream.txt").read_text(encoding="utf-8"),
+            "upstream\n",
+        )
+
+    def test_saved_patches_exclude_file_copy_commit(self):
+        self.write_update_file("common", "copied.txt", "copied\n")
+        self.repo.force_tag(self.repo_path, TAG_CHECKOUT)
+        self.repo.copy_repo_files(self.repo_path)
+        (self.repo_path / "copied.txt").write_text(
+            "updated\n",
+            encoding="utf-8",
+        )
+        run_git(self.repo_path, "add", "copied.txt")
+        run_git(
+            self.repo_path,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "Update copied file",
+        )
+        patches_path = self.temp_path / "saved-patches"
+
+        self.repo.save_repo_patches(self.repo_path, patches_path)
+
+        patch_files = list((patches_path / "base").glob("*.patch"))
+        self.assertEqual(len(patch_files), 1)
+        patch_text = patch_files[0].read_text(encoding="utf-8")
+        self.assertIn("Subject: [PATCH] Update copied file", patch_text)
+        self.assertNotIn("ROCKBUILDER FILE COPY", patch_text)
+
+    def test_repeated_checkout_moves_tags(self):
+        origin_path = self.temp_path / "origin"
+        checkout_path = self.temp_path / "checkout"
+        origin_path.mkdir()
+        run_git(origin_path, "init", "-q")
+        (origin_path / "upstream.txt").write_text(
+            "first\n",
+            encoding="utf-8",
+        )
+        run_git(origin_path, "add", "upstream.txt")
+        run_git(
+            origin_path,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "First upstream",
+        )
+        run_git(origin_path, "tag", "v1")
+        self.write_update_file("common", "copied.txt", "copied\n")
+        checkout_repo = object.__new__(RockProjectRepo)
+        checkout_repo.app_src_dir = checkout_path
+        checkout_repo.app_name = "demo"
+        checkout_repo.app_patch_dir_base_name = "1.0"
+        checkout_repo.change_dir_root_arr = [self.changes_root]
+        checkout_repo.app_version_hashtag = "v1"
+        checkout_repo.app_repo_url = str(origin_path)
+
+        checkout_repo.do_checkout(repo_fetch_depth=0)
+        first_checkout = run_git(
+            checkout_path,
+            "rev-parse",
+            TAG_CHECKOUT,
+        )
+        first_file_copy = run_git(
+            checkout_path,
+            "rev-parse",
+            TAG_FILE_COPY,
+        )
+
+        (origin_path / "upstream.txt").write_text(
+            "second\n",
+            encoding="utf-8",
+        )
+        run_git(origin_path, "add", "upstream.txt")
+        run_git(
+            origin_path,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "Second upstream",
+        )
+        run_git(origin_path, "tag", "-f", "v1")
+
+        checkout_repo.do_checkout(repo_fetch_depth=0)
+        second_checkout = run_git(
+            checkout_path,
+            "rev-parse",
+            TAG_CHECKOUT,
+        )
+        second_file_copy = run_git(
+            checkout_path,
+            "rev-parse",
+            TAG_FILE_COPY,
+        )
+
+        self.assertNotEqual(first_checkout, second_checkout)
+        self.assertNotEqual(first_file_copy, second_file_copy)
+        self.assertEqual(
+            run_git(checkout_path, "rev-parse", "HEAD^"),
+            second_checkout,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

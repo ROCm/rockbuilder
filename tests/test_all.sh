@@ -4,6 +4,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 
 python_tests=(
+    "test_repo_file_updates.py"
     "test_rockbuilder_cfg.py"
     "test_therock_install.py"
 )

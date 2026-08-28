@@ -623,7 +623,11 @@ def show_config_ui():
 def process_therock_rocm_sdk_build():
     ret = True
     try:
-        fname_cfg = rcb_const.RCB__APP_CFG_DEFAULT_BASE_DIR + "/" + rcb_const.RCB__THEROCK_CFG_NAME
+        fname_cfg = (
+            rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME
+            + "/"
+            + rcb_const.RCB__THEROCK_CFG_NAME
+        )
         therock_cmd_build = [sys.executable, "rockbuilder.py", fname_cfg]
         subprocess.run(therock_cmd_build)
     except  Exception as ex:
