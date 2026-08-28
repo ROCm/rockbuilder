@@ -159,6 +159,99 @@ class ConfigSelectionTest(unittest.TestCase):
         self.assertEqual(selected_values(selection_list), ["gfx1201"])
 
 
+class ConfigStampInvalidationTest(unittest.TestCase):
+    def save_gpu_selection(self, config_path, build_root, gpu):
+        selection_list = mock.Mock()
+        selection_list.get_config_selections.return_value = (
+            rockbuilder_cfg.ConfigSelection(
+                rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
+                {rcb_const.RCB__CFG__KEY__GPUS: [gpu]},
+            )
+        )
+        manager = rockbuilder_cfg.SelectionListManager(None)
+        manager.add_selection_list(selection_list)
+        with (
+            mock.patch.object(
+                rcb_const,
+                "get_rock_builder_config_file",
+                return_value=config_path,
+            ),
+            mock.patch.object(
+                rcb_const,
+                "RCB__APP_BUILD_ROOT_DIR",
+                build_root,
+            ),
+        ):
+            manager.save_selection()
+
+    def test_changed_config_invalidates_therock_phases(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            config_path = temp_path / "rockbuilder.cfg"
+            config_path.write_text(
+                "[build_targets]\ngpus = ['gfx90a']\n",
+                encoding="utf-8",
+            )
+            therock_build_dir = temp_path / "build/therock"
+            therock_build_dir.mkdir(parents=True)
+            phase_names = [
+                rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT,
+                rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY,
+                rcb_const.RCB__APP_CFG__KEY__CMD_PRE_CONFIG,
+                rcb_const.RCB__APP_CFG__KEY__CMD_CONFIG,
+                rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_CONFIG,
+                rcb_const.RCB__APP_CFG__KEY__CMD_POST_CONFIG,
+                rcb_const.RCB__APP_CFG__KEY__CMD_BUILD,
+                rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_BUILD,
+                rcb_const.RCB__APP_CFG__KEY__CMD_INSTALL,
+                rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL,
+                rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL,
+            ]
+            phase_stamps = [
+                therock_build_dir / f"{phase_name}.done"
+                for phase_name in phase_names
+            ]
+            init_stamp = (
+                therock_build_dir
+                / f"{rcb_const.RCB__APP_CFG__KEY__CMD_INIT}.done"
+            )
+            for stamp_path in [init_stamp, *phase_stamps]:
+                stamp_path.touch()
+
+            self.save_gpu_selection(
+                config_path,
+                temp_path / "build",
+                "gfx1100",
+            )
+
+            self.assertTrue(init_stamp.exists())
+            self.assertFalse(any(path.exists() for path in phase_stamps))
+
+    def test_unchanged_config_preserves_therock_phases(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            config_path = temp_path / "rockbuilder.cfg"
+            config_path.write_text(
+                "[build_targets]\ngpus = ['gfx90a']\n",
+                encoding="utf-8",
+            )
+            checkout_stamp = (
+                temp_path
+                / "build/therock"
+                / f"{rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT}.done"
+            )
+            checkout_stamp.parent.mkdir(parents=True)
+            checkout_stamp.touch()
+
+            self.save_gpu_selection(
+                config_path,
+                temp_path / "build",
+                "gfx90a",
+            )
+
+            self.assertTrue(checkout_stamp.exists())
+
+
 class UiManagerRestoreTest(unittest.TestCase):
     @mock.patch(
         "rockbuilder_cfg.get_local_rocm_sdk_path_if_available",
