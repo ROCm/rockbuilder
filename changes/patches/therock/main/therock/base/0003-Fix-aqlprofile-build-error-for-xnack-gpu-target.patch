@@ -1,0 +1,75 @@
+From b63c3f3dff5fec96ec5c55c4ac5afff552beda09 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 19 Mar 2026 17:11:12 -0700
+Subject: [PATCH 03/12] Fix aqlprofile build error for xnack+ gpu target
+
+If the GPU list for build targets contains both the
+base GPU-name and property enabled GPU-name then the
+build of aqlprofile would produce an error that compiler
+can not produce simultaneously a binaries both for the
+gfx90a and gfx90a:xnack+ targets.
+
+Failure occurs on aqlprofiler configure phase for tests.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/therock_amdgpu_targets.cmake | 39 ++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index 62619ba..3b8c86d 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -266,6 +266,42 @@ therock_add_amdgpu_target(gfx1250 "AMD Instinct MI450/MI450X/MI455X CDNA" FAMILY
+ # Optional extension targets (used for out of tree target development).
+ include(therock_custom_amdgpu_targets OPTIONAL)
+ 
++function(remove_base_gpu_name_if_version_with_properties_also_exist input_string output_var)
++    set(_list ${input_string})
++
++    set(_full_items "")
++    set(_short_names "")
++
++    # First pass: collect short names from items with colon
++    foreach(item IN LISTS _list)
++        if(item MATCHES ":")
++            list(APPEND _full_items "${item}")
++
++            # Extract short name (before colon)
++            string(REGEX REPLACE ":.*$" "" short "${item}")
++            list(APPEND _short_names "${short}")
++        endif()
++    endforeach()
++
++    # Second pass: keep items
++    set(_result "")
++
++    foreach(item IN LISTS _list)
++        if(item MATCHES ":")
++            # Always keep full items
++            list(APPEND _result "${item}")
++        else()
++            # Keep only if NOT shadowed by a colon version
++            list(FIND _short_names "${item}" idx)
++            if(idx EQUAL -1)
++                list(APPEND _result "${item}")
++            endif()
++        endif()
++    endforeach()
++
++    set(${output_var} "${_result}" PARENT_SCOPE)
++endfunction()
++
+ # Validates and normalizes AMDGPU target selection cache variables.
+ #
+ # This function handles three separate target lists:
+@@ -370,6 +406,9 @@ function(therock_validate_amdgpu_targets)
+     endforeach()
+     list(REMOVE_DUPLICATES _test_expanded_targets)
+   endif()
++  # If list contains both the gfx90a;gfx90a:xnack+, then remove the gfx90a so that list would only contain gfx90a:xnack
++  # This fixes the build errors on aqlprofile if target is gfx90a:xnack+ for example without ASAN enabled.
++  remove_base_gpu_name_if_version_with_properties_also_exist("${_test_expanded_targets}" _test_expanded_targets)
+ 
+   # Report test targets if different from per-arch targets.
+   if(_test_expanded_targets AND NOT "${_test_expanded_targets}" STREQUAL "${_expanded_targets}")

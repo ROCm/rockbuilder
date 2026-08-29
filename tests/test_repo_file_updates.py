@@ -148,6 +148,19 @@ class RepoFileUpdatesTest(unittest.TestCase):
             checkout_commit,
         )
 
+    def test_python_cache_files_are_not_copied(self):
+        self.write_update_file(
+            "common",
+            "__pycache__/helper.cpython-312.pyc",
+            "cache\n",
+        )
+        self.repo.force_tag(self.repo_path, TAG_CHECKOUT)
+
+        copied_count = self.repo.copy_repo_files(self.repo_path)
+
+        self.assertEqual(copied_count, 0)
+        self.assertFalse((self.repo_path / "__pycache__").exists())
+
     def test_existing_destination_fails_before_copy(self):
         self.write_update_file("common", "upstream.txt", "replacement\n")
         self.write_update_file("common", "not-copied.txt", "new\n")

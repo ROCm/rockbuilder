@@ -1,0 +1,29 @@
+From d539935eeefedd93c5c43351720b0d7fbf3feaff Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 27 Nov 2025 03:52:07 +0000
+Subject: [PATCH 05/12] set LLVM_DEFAULT_TARGET_TRIPLE if specified
+
+Set target triple when compiling the amd-llvm
+if environment variable
+ROCM_SDK_TARGET_TRIPLE has been set.
+This fixes the building of TheRock on Mageia Linux.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ compiler/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
+index bf83f41..2950590 100644
+--- a/compiler/CMakeLists.txt
++++ b/compiler/CMakeLists.txt
+@@ -50,6 +50,9 @@ if(THEROCK_ENABLE_COMPILER)
+   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+     list(APPEND _extra_llvm_cmake_args "-DLLVM_ENABLE_PEDANTIC=OFF")
+   endif()
++  if(DEFINED ENV{ROCM_SDK_TARGET_TRIPLE})
++    list(APPEND _extra_llvm_cmake_args "-DLLVM_DEFAULT_TARGET_TRIPLE=$ENV{ROCM_SDK_TARGET_TRIPLE}")
++  endif()
+   # Disable pre-compiled headers under clang as they cause conflicts related to
+   # differing optimization levels. This is a workaround.
+   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

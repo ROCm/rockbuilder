@@ -1,0 +1,122 @@
+From 7117b1371d188234aeef6664b015b053be279a0a Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 8 Oct 2025 00:14:39 +0000
+Subject: [PATCH 04/12] clr and hip fixes for compiler warnings
+
+Fix warnings that are showed when building for example
+the clr project itself or other projects like miopen
+
+Examples from the fixed warnings:
+
+therock/rocm-systems/projects/clr/hipamd/src/hip_event.hpp:223:14:
+warning: 'GetHandle' overrides a member function but is not marked
+'override' [-Winconsistent-missing-override]
+
+include/hip/hip_common.h:65:5: warning: '__HIP_DEVICE_COMPILE__'
+is not defined, evaluates to 0 [-Wundef]
+30.9       65 | #if __HIP_DEVICE_COMPILE__ == 0
+
+include/hip/amd_detail/hip_prof_str.h:6711:5: warning:
+'HIP_PROF_HIP_API_STRING' is not defined, evaluates to 0 [-Wundef]
+30.9     6711 | #if HIP_PROF_HIP_API_STRING
+
+include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline-eof]
+140.6     138 | #endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...r-and-hip-fix-various-build-warnings.patch | 85 +++++++++++++++++++
+ 1 file changed, 85 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
+new file mode 100644
+index 0000000..6682b7d
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0004-clr-and-hip-fix-various-build-warnings.patch
+@@ -0,0 +1,85 @@
++From fd98a67692c6815417bbb670e2794af896072885 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 1 Dec 2025 09:06:00 +0000
++Subject: [PATCH] clr and hip fixes for compiler warnings
++
++Fix warnings that are showed when building for example
++the clr project itself or other projects like miopen
++
++Examples from the fixed warnings:
++
++therock/rocm-systems/projects/clr/hipamd/src/hip_event.hpp:223:14:
++warning: 'GetHandle' overrides a member function but is not marked
++'override' [-Winconsistent-missing-override]
++
++include/hip/hip_common.h:65:5: warning: '__HIP_DEVICE_COMPILE__'
++is not defined, evaluates to 0 [-Wundef]
++30.9       65 | #if __HIP_DEVICE_COMPILE__ == 0
++
++include/hip/amd_detail/hip_prof_str.h:6711:5: warning:
++'HIP_PROF_HIP_API_STRING' is not defined, evaluates to 0 [-Wundef]
++30.9     6711 | #if HIP_PROF_HIP_API_STRING
++
++include/hip/linker_types.h:138:42: warning: no newline at end of file [-Wnewline-eof]
++140.6     138 | #endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/clr/hipamd/include/hip/amd_detail/host_defines.h | 2 +-
++ projects/clr/hipamd/src/hip_prof_gen.py                   | 2 +-
++ projects/hip/include/hip/hip_common.h                     | 2 +-
++ projects/hip/include/hip/linker_types.h                   | 2 +-
++ 4 files changed, 4 insertions(+), 4 deletions(-)
++
++diff --git a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
++index 8081966cf7..2a5712bdb6 100644
++--- a/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
+++++ b/projects/clr/hipamd/include/hip/amd_detail/host_defines.h
++@@ -232,7 +232,7 @@ typedef __hip_internal::int64_t __hip_int64_t;
++
++ #define __forceinline__ inline __attribute__((always_inline))
++
++-#if __HIP_NO_IMAGE_SUPPORT
+++#if defined(__HIP_NO_IMAGE_SUPPORT) && __HIP_NO_IMAGE_SUPPORT
++ #define __hip_img_chk__                                                                            \
++   __attribute__((unavailable("The image/texture API not supported on the device")))
++ #else
++diff --git a/projects/clr/hipamd/src/hip_prof_gen.py b/projects/clr/hipamd/src/hip_prof_gen.py
++index e7baccbfec..6d1d1767de 100755
++--- a/projects/clr/hipamd/src/hip_prof_gen.py
+++++ b/projects/clr/hipamd/src/hip_prof_gen.py
++@@ -536,7 +536,7 @@ def generate_prof_header(f, api_map, callback_ids, opts_map):
++     f.write('#define INIT_'+ name + '_CB_ARGS_DATA(cb_data) {};\n')
++   f.write('\n#define INIT_NONE_CB_ARGS_DATA(cb_data) {};\n')
++
++-  f.write('\n#if HIP_PROF_HIP_API_STRING\n')
+++  f.write('\n#if defined(HIP_PROF_HIP_API_STRING) && HIP_PROF_HIP_API_STRING\n')
++   # Generating the method for the API args filling
++   f.write('// HIP API args filling helper\n')
++   f.write('static inline void hipApiArgsInit(hip_api_id_t id, hip_api_data_t* data) {\n')
++diff --git a/projects/hip/include/hip/hip_common.h b/projects/hip/include/hip/hip_common.h
++index 4a7dcff6cb..6fffe7fcf7 100644
++--- a/projects/hip/include/hip/hip_common.h
+++++ b/projects/hip/include/hip/hip_common.h
++@@ -62,7 +62,7 @@ THE SOFTWARE.
++ #define HIP_INTERNAL_EXPORTED_API
++ #endif
++
++-#if __HIP_DEVICE_COMPILE__ == 0
+++#if !defined(__HIP_DEVICE_COMPILE__) || ( __HIP_DEVICE_COMPILE__ == 0)
++ // 32-bit Atomics
++ #define __HIP_ARCH_HAS_GLOBAL_INT32_ATOMICS__ (0)
++ #define __HIP_ARCH_HAS_GLOBAL_FLOAT_ATOMIC_EXCH__ (0)
++diff --git a/projects/hip/include/hip/linker_types.h b/projects/hip/include/hip/linker_types.h
++index 1131910322..03f97ec834 100755
++--- a/projects/hip/include/hip/linker_types.h
+++++ b/projects/hip/include/hip/linker_types.h
++@@ -135,4 +135,4 @@ typedef enum hipLibraryOption_e {
++ #error ("Must define exactly one of __HIP_PLATFORM_AMD__ or __HIP_PLATFORM_NVIDIA__");
++ #endif
++
++-#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
++\ No newline at end of file
+++#endif  // HIP_INCLUDE_HIP_LINKER_TYPES_H
++--
++2.43.0

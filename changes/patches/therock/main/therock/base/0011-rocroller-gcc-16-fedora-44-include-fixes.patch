@@ -1,0 +1,88 @@
+From 76c88a76af576200e779bc5575c06943e3a2b8ea Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 29 Apr 2026 17:08:07 -0700
+Subject: [PATCH 11/12] rocroller gcc 16/fedora 44 include fixes
+
+Include cstdint and unistd.h in places
+where they are not anymore included by
+other header files.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...cc-16-fedora-44-uint32_t-include-fix.patch | 29 ++++++++++++++++++
+ ...-gcc-16-fedora-44-usleep-include-fix.patch | 30 +++++++++++++++++++
+ 2 files changed, 59 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
+ create mode 100644 patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
+
+diff --git a/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
+new file mode 100644
+index 0000000..2baca85
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0002-rocroller-gcc-16-fedora-44-uint32_t-include-fix.patch
+@@ -0,0 +1,29 @@
++From 014240998790dd30f7ab14d63a5ceff927e47f52 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Wed, 29 Apr 2026 16:57:02 -0700
++Subject: [PATCH 2/3] rocroller gcc 16/fedora 44 uint32_t include fix
++
++Never gcc versions requires including the
++ctdint.h or cstdint implicitly to resolve
++following:
++    error: unknown type name 'uint32_t'
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ .../isa_spec_manager/amdisa_structures.h                         | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/shared/rocroller/GPUArchitectureGenerator/isa_spec_manager/amdisa_structures.h b/shared/rocroller/GPUArchitectureGenerator/isa_spec_manager/amdisa_structures.h
++index 00b3537b..ac172b89 100644
++--- a/shared/rocroller/GPUArchitectureGenerator/isa_spec_manager/amdisa_structures.h
+++++ b/shared/rocroller/GPUArchitectureGenerator/isa_spec_manager/amdisa_structures.h
++@@ -9,6 +9,7 @@
++ #include <string>
++ #include <vector>
++ #include <iostream>
+++#include <cstdint>
++
++ namespace amdisa
++ {
++--
++2.54.0
+diff --git a/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
+new file mode 100644
+index 0000000..0cb1196
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0003-rocroller-gcc-16-fedora-44-usleep-include-fix.patch
+@@ -0,0 +1,30 @@
++From 302e59233d57da9dc36426636d5b07b5c3f03cc4 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Wed, 29 Apr 2026 17:01:14 -0700
++Subject: [PATCH 3/3] rocroller gcc 16/fedora 44 usleep include fix
++
++Never gcc versions requires including the
++unistd.h for usleep function.
++
++error: use of undeclared identifier 'usleep'
++383.9	  197 |                     usleep(rand() % 100);
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ shared/rocroller/test/catch/SettingsTest.cpp | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/shared/rocroller/test/catch/SettingsTest.cpp b/shared/rocroller/test/catch/SettingsTest.cpp
++index a713db76..0bff6d8a 100644
++--- a/shared/rocroller/test/catch/SettingsTest.cpp
+++++ b/shared/rocroller/test/catch/SettingsTest.cpp
++@@ -5,6 +5,7 @@
++ #include <catch2/matchers/catch_matchers_string.hpp>
++ #include <omp.h>
++ #include <thread>
+++#include <unistd.h>
++
++ #include "SimpleTest.hpp"
++ #include "common/SourceMatcher.hpp"
++--
++2.54.0

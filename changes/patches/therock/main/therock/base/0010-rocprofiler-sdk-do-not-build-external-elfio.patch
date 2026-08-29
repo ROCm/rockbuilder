@@ -1,0 +1,33 @@
+From c08c64ae6b67b2bb5c6fbf12d824d6d0a81c7f36 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 15 Apr 2026 19:30:54 -0700
+Subject: [PATCH 10/12] rocprofiler-sdk do not build external elfio
+
+Use system provided elfio instead of trying to build one.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ profiler/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index 7324fcf..4e77762 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -118,6 +118,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       -DROCPROFILER_BUILD_TESTS=${THEROCK_BUILD_TESTING}
+       -DROCPROFILER_BUILD_INTEGRATION_TESTS=OFF
+       -DROCPROFILER_BUILD_SAMPLES=OFF
++      -DROCPROFILER_BUILD_ELFIO=OFF
+       -DCMAKE_PREFIX_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
+       -DROCM_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
+       -DROCPROFILER_BUILD_YAML_CPP=OFF
+@@ -131,6 +132,8 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       rocprofiler-sdk-tests
+     COMPILER_TOOLCHAIN
+       amd-hip
++    BUILD_DEPS
++      therock-elfio
+     RUNTIME_DEPS
+       aqlprofile
+       hip-clr

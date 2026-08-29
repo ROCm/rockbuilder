@@ -68,6 +68,7 @@ RCB__CFG__SECTION__BUILD_TARGETS             = "build_targets"
 
 RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME       = "rocm_sdk_home"
 RCB__CFG__KEY__ROCM_SDK_FROM_BUILD           = "rocm_sdk_build"
+RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG         = "rocm_sdk_build_config"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER  = "rocm_sdk_whl_server"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED  = "rocm_sdk_whl"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION = "rocm_sdk_whl_version"
@@ -76,7 +77,11 @@ RCB__CFG__KEY__GPUS                          = "gpus"
 RCB__APPS_CFG__SECTION_APPS                  = "apps"
 RCB__APPS_CFG__KEY__APP_LIST                 = "app_list"
 
-RCB__THEROCK_CFG_NAME                        = "therock.cfg"
+RCB__THEROCK_DEFAULT_CONFIG                  = "therock_10_0"
+RCB__THEROCK_CONFIGS = (
+    RCB__THEROCK_DEFAULT_CONFIG,
+    "therock_dev",
+)
 
 
 RCB__APP_CFG__SECTION_APP_INFO               = "app_info"
@@ -85,6 +90,9 @@ RCB__APP_CFG__KEY__APP_VERSION               = "APP_VERSION"
 RCB__APP_CFG__KEY__REPO_URL                  = "REPO_URL"
 RCB__APP_CFG__KEY__PROP_FETCH_REPO_TAGS      = "PROP_FETCH_REPO_TAGS"
 RCB__APP_CFG__KEY__PATCH_DIR                 = "PATCH_DIR"
+RCB__APP_CFG__KEY__ROCM_SDK_INSTALL_DIR_BASENAME = (
+    "ROCM_SDK_INSTALL_DIR_BASENAME"
+)
 
 RCB__APP_CFG__KEY__CMD_EXEC_DIR              = "CMD_EXEC_DIR"
 
@@ -122,18 +130,16 @@ RCB_CALLBACK__INSTALL_PYTHON_WHEEL               = "RCB_CALLBACK__INSTALL_PYTHON
 RCB_CALLBACK__DELETE_APP_SRC_SUBDIR              = "RCB_CALLBACK__DELETE_APP_SRC_SUBDIR"
 RCB_CALLBACK__RESET_APP_SRC_REPOSITORY           = "RCB_CALLBACK__RESET_APP_SRC_REPOSITORY"
 
-THEROCK_SDK_SRC__ROOT_DIR                        = RCB__APP_SRC_ROOT_DIR / "therock"
-# can be different location in future if we later deploy the sdk from source dir after build
-THEROCK_SDK__ROCM_HOME_BUILD_DIR                 = THEROCK_SDK_SRC__ROOT_DIR / "build/dist/rocm"
 THEROCK_SDK__ROCM_HOME_INSTALL_PARENT            = Path("/opt/rcb")
 THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.com/v2/"
 
 def get_therock_rocm_sdk_install_dir(
     preferred_parent=THEROCK_SDK__ROCM_HOME_INSTALL_PARENT,
     home_dir=None,
+    install_dir_basename="rocm_10_0",
 ):
     """Select the system install path when its existing parent is writable."""
-    preferred_dir = preferred_parent / "rocm"
+    preferred_dir = preferred_parent / install_dir_basename
     if preferred_dir.exists():
         writable_path = preferred_dir
     else:
@@ -149,7 +155,7 @@ def get_therock_rocm_sdk_install_dir(
 
     if home_dir is None:
         home_dir = Path.home()
-    return Path(home_dir) / "rcb/rocm"
+    return Path(home_dir) / "rcb" / install_dir_basename
 
 
 def get_rock_builder_root_dir():

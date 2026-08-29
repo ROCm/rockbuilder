@@ -1,0 +1,45 @@
+From c80043ee1317654932291f1c62c273cb16b5403f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 21 Mar 2026 20:28:40 -0700
+Subject: [PATCH 07/12] rccl use lto-partitions=32 instead of default 8
+
+Aims to decrease the rccl libraries linking time.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...o-partitions-32-instead-of-default-8.patch | 26 +++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch b/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
+new file mode 100644
+index 0000000..38e35ed
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0009-rccl-use-lto-partitions-32-instead-of-default-8.patch
+@@ -0,0 +1,26 @@
++From bf39ac79b728f60a9119f35037c8a1e10ad534e2 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Sat, 21 Mar 2026 20:26:26 -0700
++Subject: [PATCH] rccl use lto-partitions=32 instead of default 8
++
++Aims to decrease the linking time of rccl libraries.
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/rccl/src/CMakeLists.txt | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/projects/rccl/src/CMakeLists.txt b/projects/rccl/src/CMakeLists.txt
++index 7ae82671..9d553741 100644
++--- a/projects/rccl/src/CMakeLists.txt
+++++ b/projects/rccl/src/CMakeLists.txt
++@@ -922,6 +922,7 @@ if (HAVE_PARALLEL_JOBS)
++     set(num_linker_jobs "1")
++   endif()
++   message(STATUS "Use ${num_linker_jobs} jobs for linking")
+++  target_link_options(rccl PRIVATE -flto-partitions=32)
++   target_link_options(rccl PRIVATE -parallel-jobs=${num_linker_jobs})       # Use multiple threads to link
++ endif()
++ if(BUILD_ADDRESS_SANITIZER)
++--
++2.41.3

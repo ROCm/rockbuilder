@@ -24,28 +24,34 @@ def is_valid_rocm_home_path(rocm_home_path):
     return ret
 
 
-# Check whether the ROCM_HOME env variable is defined
-# and whether it points to existing SDK installation.
-#
-# return either Path to ROCM_SDK or None
 def get_rocm_home_path_if_available():
-    ret = None
-    if "ROCM_HOME" in os.environ:
-        rocm_home = Path(os.environ["ROCM_HOME"]).resolve()
-        if is_valid_rocm_home_path(rocm_home):
-            ret = rocm_home
-    return ret
-
-
-# Check whether the ROCM_SDK is already build and available in default path
-#
-# return either Path to ROCM_SDK or None
-def get_local_rocm_sdk_path_if_available():
-    ret = None
-    rocm_home = rcb_const.get_therock_rocm_sdk_install_dir()
+    if "ROCM_HOME" not in os.environ:
+        return None
+    rocm_home = Path(os.environ["ROCM_HOME"]).resolve()
     if is_valid_rocm_home_path(rocm_home):
-        ret = rocm_home
-    return ret
+        return rocm_home
+    return None
+
+
+def get_rocm_sdk_install_search_parents(home_dir=None):
+    if home_dir is None:
+        home_dir = Path.home()
+    parents = [
+        rcb_const.THEROCK_SDK__ROCM_HOME_INSTALL_PARENT,
+        Path(home_dir) / "rcb",
+    ]
+    return list(dict.fromkeys(parent.resolve() for parent in parents))
+
+
+def discover_rocm_sdk_installs(home_dir=None):
+    installs = []
+    for parent in get_rocm_sdk_install_search_parents(home_dir):
+        if not parent.is_dir():
+            continue
+        for install_dir in sorted(parent.iterdir()):
+            if is_valid_rocm_home_path(install_dir):
+                installs.append(install_dir.resolve())
+    return installs
 
 
 def parse_config_values(raw_value):
@@ -84,7 +90,6 @@ def invalidate_therock_phase_stamps(build_root_dir=None):
     """Invalidate TheRock checkout and all later build phases."""
     if build_root_dir is None:
         build_root_dir = rcb_const.RCB__APP_BUILD_ROOT_DIR
-    therock_build_dir = Path(build_root_dir) / "therock"
     phase_names = [
         rcb_const.RCB__APP_CFG__KEY__CMD_CHECKOUT,
         rcb_const.RCB__APP_CFG__KEY__CMD_HIPIFY,
@@ -98,9 +103,11 @@ def invalidate_therock_phase_stamps(build_root_dir=None):
         rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL,
         rcb_const.RCB__APP_CFG__KEY__CMD_POST_INSTALL,
     ]
-    for phase_name in phase_names:
-        stamp_path = therock_build_dir / f"{phase_name}.done"
-        stamp_path.unlink(missing_ok=True)
+    for config_name in rcb_const.RCB__THEROCK_CONFIGS:
+        therock_build_dir = Path(build_root_dir) / config_name
+        for phase_name in phase_names:
+            stamp_path = therock_build_dir / f"{phase_name}.done"
+            stamp_path.unlink(missing_ok=True)
 
 
 class SelectionItem:
@@ -305,10 +312,7 @@ class GpuSelectionList(BaseSelectionList):
 
 # Show list of possible ROCM_SDK's from which user can use for the build
 #
-# Items that does not exist will not be shown
-# 1) Local ROCM_SDK specified by the ROCM_HOME environment variable if it exist
-# 2) Local ROCM SDK build to directory sdk/therock/build/dist/rocm if it exist
-# 3) ROCM_SDK
+# Existing SDKs are shown alongside available local build configurations.
 class SDKSelectionList(BaseSelectionList):
     def __init__(self, stdscr):
         super().__init__(
@@ -321,7 +325,6 @@ class SDKSelectionList(BaseSelectionList):
         whl_server_base_url = rcb_const.THEROCK_SDK__PYTHON_WHEEL_SERVER_URL
         rocm_home = get_rocm_home_path_if_available()
         if rocm_home:
-            # add rocm home to list of SDK's to select
             self.item_list.append(
                 SelectionItem(
                     "ROCm SDK Specified by ROCM_HOME: "
@@ -332,32 +335,50 @@ class SDKSelectionList(BaseSelectionList):
                 )
             )
             def_sel = False
-        rocm_home = get_local_rocm_sdk_path_if_available()
+
+        existing_paths = set()
         if rocm_home:
-            # add an option/selection to use the rocm sdk that has been build locally
+            existing_paths.add(rocm_home.resolve())
+        for install_dir in discover_rocm_sdk_installs():
+            if install_dir in existing_paths:
+                continue
             self.item_list.append(
                 SelectionItem(
-                    "Existing ROCm SDK Build: " + rocm_home.as_posix(),
+                    "Existing ROCm SDK: "
+                    + install_dir.as_posix(),
                     rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
-                    rocm_home.as_posix(),
+                    install_dir.as_posix(),
                     def_sel,
                 )
             )
             def_sel = False
-        else:
-            # add an option/selection to build the rocm sdk locally
-            the_rock_sdk_root_dir = (
-                rcb_const.get_therock_rocm_sdk_install_dir()
+            existing_paths.add(install_dir)
+
+        build_config_key = (
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG
+        )
+        release_install_dir = (
+            rcb_const.get_therock_rocm_sdk_install_dir(
+                install_dir_basename="rocm_10_0"
             )
-            self.item_list.append(
-                SelectionItem(
-                    "New ROCm SDK Build: " + the_rock_sdk_root_dir.as_posix(),
-                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD,
-                    the_rock_sdk_root_dir.as_posix(),
-                    def_sel,
-                )
+        )
+        self.item_list.append(
+            SelectionItem(
+                "Build TheRock 10.0: " + release_install_dir.as_posix(),
+                build_config_key,
+                "therock_10_0",
+                def_sel,
             )
-            def_sel = False
+        )
+        def_sel = False
+        self.item_list.append(
+            SelectionItem(
+                "Build TheRock development main branch",
+                build_config_key,
+                "therock_dev",
+                def_sel,
+            )
+        )
         # add an option/selection to use the rocm sdk that will be installed from the python wheel
         self.item_list.append(
             SelectionItem(
@@ -369,44 +390,6 @@ class SDKSelectionList(BaseSelectionList):
                 rcb_const.RCB__CFG__DEF__ROCM_SDK_PYTHON_WHEEL_VERSION
             )
         )
-
-    def add_configured_rocm_homes(self, config):
-        section = self.get_config_header()
-        home_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME
-        build_key = rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD
-        configured_paths = []
-        for config_key in (home_key, build_key):
-            if config.has_option(section, config_key):
-                configured_paths.extend(
-                    parse_config_values(config.get(section, config_key))
-                )
-        if not configured_paths:
-            return
-
-        existing_paths = {
-            str(item.get_value())
-            for item in self.item_list
-            if item.get_key() == home_key
-        }
-        insert_index = 0
-        for configured_path in configured_paths:
-            rocm_home = Path(configured_path).expanduser()
-            if not is_valid_rocm_home_path(rocm_home):
-                continue
-            rocm_home_value = rocm_home.resolve().as_posix()
-            if rocm_home_value in existing_paths:
-                continue
-            self.item_list.insert(
-                insert_index,
-                SelectionItem(
-                    "Previously configured ROCm SDK: " + rocm_home_value,
-                    home_key,
-                    rocm_home_value,
-                    False,
-                ),
-            )
-            existing_paths.add(rocm_home_value)
-            insert_index += 1
 
     def restore_selection(self, config):
         restored_items = super().restore_selection(config)
@@ -569,7 +552,6 @@ class UiManager:
 
         if existing_config is None:
             existing_config = load_existing_config()
-        self.sdk_list.add_configured_rocm_homes(existing_config)
         self.restore_selections(existing_config)
 
     def configure_gpu_list(self, sdk_item, clear_display):
@@ -658,21 +640,23 @@ def show_config_ui():
     return ret
 
 
-def process_therock_rocm_sdk_build():
-    ret = True
+def process_therock_rocm_sdk_build(config_name):
     try:
-        fname_cfg = (
-            rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME
-            + "/"
-            + rcb_const.RCB__THEROCK_CFG_NAME
+        if config_name not in rcb_const.RCB__THEROCK_CONFIGS:
+            raise ValueError(
+                f"Unknown TheRock build configuration: {config_name}"
+            )
+        fname_cfg = str(
+            Path(rcb_const.RCB__APP_CFG_DEFAULT_DIR_BASENAME)
+            / f"{config_name}.cfg"
         )
         therock_cmd_build = [sys.executable, "rockbuilder.py", fname_cfg]
-        subprocess.run(therock_cmd_build)
-    except  Exception as ex:
-        print("ROCM SDK build error with the therock.cfg:")
+        result = subprocess.run(therock_cmd_build)
+        return result.returncode == 0
+    except Exception as ex:
+        print(f"ROCM SDK build error with {config_name}.cfg:")
         print("    " + str(ex))
-        ret = False
-    return ret
+        return False
 
 def process_therock_rocm_sdk_python_wheel_install(saved_cfg):
     return install_rocm_sdk_from_python_wheels(saved_cfg)
@@ -680,12 +664,22 @@ def process_therock_rocm_sdk_python_wheel_install(saved_cfg):
 def process_config_selections(saved_cfg):
     if saved_cfg:
         if saved_cfg.has_section(rcb_const.RCB__CFG__SECTION__ROCM_SDK):
-            if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
-                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD):
-                res = process_therock_rocm_sdk_build()
+            section = rcb_const.RCB__CFG__SECTION__ROCM_SDK
+            build_config_key = (
+                rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG
+            )
+            if saved_cfg.has_option(section, build_config_key):
+                config_names = parse_config_values(
+                    saved_cfg.get(section, build_config_key)
+                )
+                if len(config_names) != 1:
+                    raise ValueError(
+                        "Exactly one TheRock build configuration is required"
+                    )
+                res = process_therock_rocm_sdk_build(config_names[0])
                 if not res:
                     print("ROCM SDK build failed")
-                    sys.exit()
+                    sys.exit(1)
             if saved_cfg.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                     rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER):
                 res = process_therock_rocm_sdk_python_wheel_install(saved_cfg)

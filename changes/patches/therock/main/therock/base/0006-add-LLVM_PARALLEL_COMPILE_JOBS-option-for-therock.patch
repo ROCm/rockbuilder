@@ -1,0 +1,54 @@
+From 34a8a9d9c218e88f6d446fa8d59ef59f75f7e873 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 16 Mar 2026 11:02:47 -0700
+Subject: [PATCH 06/12] add LLVM_PARALLEL_COMPILE_JOBS option for therock
+
+Following 3 options are supported by the amd-llvm
+to avoid running out of memory during compile and link phases
+
+- LLVM_PARALLEL_COMPILE_JOBS
+- LLVM_PARALLEL_LINK_JOBS
+- FLANG_PARALLEL_COMPILE_JOBS
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ CMakeLists.txt          |  1 +
+ compiler/CMakeLists.txt | 11 ++++++++++-
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 727f549..dc1a277 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -132,6 +132,7 @@ set(THEROCK_SANITIZER "" CACHE STRING "Enable project wide sanitizer build ('ASA
+ 
+ # Options to control the concurrency for building LLVM.
+ set(FLANG_PARALLEL_COMPILE_JOBS "" CACHE STRING "Limit parallel compile jobs for Flang (reduces memory usage on systems with many cores)")
++set(LLVM_PARALLEL_COMPILE_JOBS "" CACHE STRING "Limit parallel compile jobs for LLVM (reduces memory usage on systems with many cores)")
+ set(LLVM_PARALLEL_LINK_JOBS "" CACHE STRING "Limit parallel link jobs for LLVM (reduces memory usage on systems with many cores)")
+ 
+ # List of python executables to use for multi-version python builds
+diff --git a/compiler/CMakeLists.txt b/compiler/CMakeLists.txt
+index 2950590..f6fbcd5 100644
+--- a/compiler/CMakeLists.txt
++++ b/compiler/CMakeLists.txt
+@@ -66,9 +66,18 @@ if(THEROCK_ENABLE_COMPILER)
+     message(STATUS "Flang build concurrency level set to ${FLANG_PARALLEL_COMPILE_JOBS}")
+     list(APPEND _extra_llvm_cmake_args "-DFLANG_PARALLEL_COMPILE_JOBS=${FLANG_PARALLEL_COMPILE_JOBS}")
+   else()
+-     message(WARNING "Flang concurrency is unlimited. Memory usage may be much higher. Set -DFLANG_PARALLEL_COMPILE_JOBS to reduce memory use.")
++    message(WARNING "Flang concurrency is unlimited. Memory usage may be much higher. Set -DFLANG_PARALLEL_COMPILE_JOBS to reduce memory use.")
+   endif()
+ 
++  # Building LLVM is very memory-intensive on systems with many cores. Allow
++  # users to specify the level of concurrency for these tasks so they can
++  # reduce the risk of running out of memory
++  if(LLVM_PARALLEL_COMPILE_JOBS)
++    message(STATUS "LLVM build concurrency level set to ${LLVM_PARALLEL_COMPILE_JOBS}")
++    list(APPEND _extra_llvm_cmake_args "-DLLVM_PARALLEL_COMPILE_JOBS=${LLVM_PARALLEL_COMPILE_JOBS}")
++  else()
++    message(WARNING "LLVM concurrency is unlimited. Memory usage may be much higher. Set -DLLVM_PARALLEL_COMPILE_JOBS to reduce memory use.")
++  endif()
+   # LLVM linking is also very memory intensive. Allow users to adjust the number
+   # of parallel link jobs.
+   if(LLVM_PARALLEL_LINK_JOBS)
