@@ -468,13 +468,21 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
         return
     default_src_base_dir = rcb_const.get_app_src_base_dir()
     rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
-    if rocm_home:
+    build_config = rcb_cfg_reader.get_rocm_sdk_build_config()
+    if rocm_home and not build_config:
+        build_config = rcb_const.RCB__THEROCK_DEFAULT_CONFIG
+    if build_config:
+        if build_config not in rcb_const.RCB__THEROCK_CONFIGS:
+            raise ValueError(
+                f"Unknown TheRock build configuration: {build_config}"
+            )
         os.environ[
             rcb_const.RCB__ENV_VAR__ROCM_SDK_INSTALL_DIR
-        ] = rocm_home
-        print("Rockbuilder is configured to use ROCM_SDK build by the rockbuilder itself")
-        # rocm sdk is wanted to be used from locally build therock dir
-        # if none is returned, SDK is not yet build
+        ] = rocm_home or ""
+        print(
+            "Rockbuilder is configured to use a locally built ROCm SDK: "
+            + build_config
+        )
         if not "RCB_AMDGPU_TARGETS" in os.environ:
             gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
             if gpu_list_str:
@@ -482,25 +490,29 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
             else:
                 print("Could not get a list of configured target GPUs")
                 sys.exit(1)
-        env_var_arr = get_rocm_sdk_env_variables(Path(rocm_home), True, False)
+        env_var_arr = None
+        if rocm_home:
+            env_var_arr = get_rocm_sdk_env_variables(
+                Path(rocm_home),
+                True,
+                False,
+            )
         if env_var_arr:
             print("setting rocm_home")
-			# use rocm sdk from location where the rock has been build
             set_rocm_home_to_env_variables(rocm_home)
         else:
             print("")
             print("ROCM_SDK build by rockbuilder not found")
             print("...building it first... This gonna take a while ...")
             time.sleep(2)
-            # environment variables not returned
-            # --> sdk not found
-            # --> build rocm_sdk by using therock
-            rocm_sdk_local_build_needed = True
-            prj_cfg_file = get_app_cfg_path(rock_builder_home_dir, "therock")
+            prj_cfg_file = get_app_cfg_path(
+                rock_builder_home_dir,
+                build_config,
+            )
             prj_cfg_base_name = get_app_cfg_base_name_without_extension(prj_cfg_file)
             version_override = None
             prj_builder = app_manager.get_rock_app_builder(
-                    rcb_const.RCB__APP_SRC_ROOT_DIR / "therock",
+                    rcb_const.RCB__APP_SRC_ROOT_DIR / prj_cfg_base_name,
                     prj_cfg_base_name,
                     prj_cfg_file,
                     rcb_const.RCB__APP_BUILD_ROOT_DIR,
@@ -508,14 +520,18 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                     True
                 )
             if prj_builder:
-                # force the building of rocm sdk first
-                app_list = ["therock"]
+                app_list = [prj_cfg_base_name]
                 arg_parser = create_build_argument_parser(rock_builder_home_dir,
                                     default_src_base_dir,
                                     app_list)
                 args = parse_build_arguments(arg_parser)
                 do_therock(prj_builder, args)
-                # set rocm home after building the rocm sdk
+                rocm_home = prj_builder.resolved_rocm_sdk_install_dir
+                if rocm_home is None:
+                    raise RuntimeError(
+                        "TheRock build did not resolve an install directory"
+                    )
+                rocm_home = rocm_home.as_posix()
                 set_rocm_home_to_env_variables(rocm_home)
     else:
         rocm_sdk_wheel_server_url = rcb_cfg_reader.get_python_wheel_rocm_sdk_server_url()

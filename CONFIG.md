@@ -88,6 +88,48 @@ PROP_DISABLE_LINUX=[YES/NO/1/0]
 PROP_DISABLE_WINDOWS=[YES/NO/1/0]
 ```
 
+TheRock build configurations can specify an install-directory basename:
+
+```ini
+ROCM_SDK_INSTALL_DIR_BASENAME=rocm_10_0
+```
+
+The development configuration uses placeholders resolved after checkout:
+
+```ini
+ROCM_SDK_INSTALL_DIR_BASENAME=rocm_dev_{rocm_version}_{git_hash}
+```
+
+`rocm_version` comes from the checkout's root `version.json`. `git_hash`
+comes strictly from `RCB_TAG_CHECKOUT`, before file-copy and patch commits.
+
+### Multiple TheRock Builds
+
+RockBuilder provides these initial TheRock configurations:
+
+- `apps/therock_10_0.cfg`: `release/therock-10.0`
+- `apps/therock_dev.cfg`: `main`
+
+Their source and build directories are based on the configuration filename,
+such as `src_apps/therock_dev` and `build/therock_dev`. Both retain
+`APP_NAME=therock`, so they share common files under
+`changes/files/therock/common`.
+
+`rockbuilder.cfg` stores the selected variant separately from its resolved
+installation:
+
+```ini
+[rocm_sdk]
+rocm_sdk_build_config = ['therock_dev']
+rocm_sdk_build = ['/opt/rcb/rocm_dev_10_1_a1b2c3d']
+```
+
+The path is added after a successful installation. The configuration UI
+offers every valid SDK directory found directly below `/opt/rcb` and
+`~/rcb`, regardless of its directory name or install marker. A valid SDK
+specified by `ROCM_HOME` is also offered. Development installs are retained,
+and RockBuilder does not manage a stable symlink.
+
 ### Environment Variables
 
 RockBuilder supports the use of environment variables in application configuration settings.

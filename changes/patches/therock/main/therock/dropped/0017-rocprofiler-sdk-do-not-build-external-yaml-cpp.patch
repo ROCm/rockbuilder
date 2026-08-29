@@ -1,0 +1,32 @@
+From e67f623366ca9890a2ef8d6fc4ce52ea6278d590 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 15 Apr 2026 20:07:50 -0700
+Subject: [PATCH 17/21] rocprofiler-sdk do not build external yaml-cpp
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ profiler/CMakeLists.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index fb1ec51..93122fd 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -122,6 +122,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       -DROCPROFILER_BUILD_INTEGRATION_TESTS=OFF
+       -DROCPROFILER_BUILD_SAMPLES=OFF
+       -DROCPROFILER_BUILD_ELFIO=OFF
++      -DROCPROFILER_BUILD_YAML_CPP=OFF
+       -DCMAKE_PREFIX_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
+       -DROCM_PATH="${THEROCK_BINARY_DIR}/dist/rocm"
+       -DROCPROFILER_BUILD_YAML_CPP=OFF
+@@ -137,6 +138,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       amd-hip
+     BUILD_DEPS
+       therock-elfio
++      therock-yaml-cpp
+     RUNTIME_DEPS
+       aqlprofile
+       hip-clr
+--
+2.43.0

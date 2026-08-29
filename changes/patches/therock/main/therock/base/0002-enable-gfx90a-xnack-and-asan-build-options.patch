@@ -1,0 +1,50 @@
+From f80939ad28d4ce284dd463745dd7af2c6d8a70e2 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 23 Mar 2026 11:59:48 -0700
+Subject: [PATCH 02/12] enable gfx90a xnack+ and asan build options
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ cmake/therock_amdgpu_targets.cmake | 6 ++++++
+ cmake/therock_sanitizers.cmake     | 4 ++--
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
+index d2db1b3..62619ba 100644
+--- a/cmake/therock_amdgpu_targets.cmake
++++ b/cmake/therock_amdgpu_targets.cmake
+@@ -89,6 +89,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
+     hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
+ )
+
++# gfx90a (separate family - different instruction support from gfx906/gfx908)
++therock_add_amdgpu_target(gfx90a:xnack+ "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++
+ # gfx94X family
+ therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
+
+diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
+index 6caeb88..93bc60f 100644
+--- a/cmake/therock_sanitizers.cmake
++++ b/cmake/therock_sanitizers.cmake
+@@ -29,7 +29,7 @@ function(therock_sanitizer_configure
+   endif()
+
+   # Our own toolchains get ASAN enabled consistently.
+-  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx942, gfx950)
++  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx90a, gfx942, gfx950)
+   # HOST_ASAN: Host-only address sanitizer (no device-side instrumentation)
+   # TSAN: Thread sanitizer.
+   set(_stanza)
+@@ -87,7 +87,7 @@ function(therock_sanitizer_configure
+     # Device-side instrumentation: applied for full ASAN and TSAN, not HOST_ASAN.
+     # Filter GPU_TARGETS to enable xnack+ mode only for gfx targets that support it.
+     if(_sanitizer STREQUAL "ASAN" OR _sanitizer STREQUAL "TSAN")
+-      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
++      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx90a|gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
+       string(APPEND _stanza "set(AMDGPU_TARGETS \"\${GPU_TARGETS}\")\n")
+       string(APPEND _stanza "message(STATUS \"Override ${_sanitizer} GPU_TARGETS = \${GPU_TARGETS}\")\n")
+     else()

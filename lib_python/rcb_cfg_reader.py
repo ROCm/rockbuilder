@@ -27,6 +27,7 @@ class RCBConfigReader(configparser.ConfigParser):
         self.rock_sdk_whl_url = None
         # location where the therock build will install
         self.rock_sdk_home_therock_build_dir = None
+        self.rock_sdk_therock_build_config = None
         # location from where the existing rocm sdk install was found
         self.rock_sdk_home_existing_install_dir = None
 
@@ -57,6 +58,17 @@ class RCBConfigReader(configparser.ConfigParser):
                                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD)
                     self.rock_sdk_home_therock_build_dir = Path(self.rock_sdk_home_therock_build_dir).resolve().as_posix()
+                if self.has_option(
+                    rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG,
+                ):
+                    self.rock_sdk_therock_build_config = (
+                        get_config_value_from_one_element_list(
+                            self,
+                            rcb_const.RCB__CFG__SECTION__ROCM_SDK,
+                            rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG,
+                        )
+                    )
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME):
                     self.rock_sdk_home_existing_install_dir = get_config_value_from_one_element_list(self,
@@ -148,6 +160,13 @@ class RCBConfigReader(configparser.ConfigParser):
 
         if self.rock_sdk_home_therock_build_dir and self.gpu_target_list:
             ret = self.rock_sdk_home_therock_build_dir
+        return ret
+
+
+    def get_rocm_sdk_build_config(self):
+        ret = None
+        if self.rock_sdk_therock_build_config and self.gpu_target_list:
+            ret = self.rock_sdk_therock_build_config
         return ret
 
 

@@ -1,0 +1,32 @@
+From d3274426cae1e90fda2fad25b89f0487e42e9398 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 16 Apr 2026 00:36:14 -0700
+Subject: [PATCH 18/21] rocprofiler-systems use therock provided elfutils
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ profiler/CMakeLists.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index 93122fd..cf88e3a 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -343,6 +343,7 @@ if(THEROCK_ENABLE_ROCPROFSYS)
+       -DROCPROFSYS_BUILD_TESTING="${THEROCK_BUILD_TESTING}"
+       -DROCPROFSYS_BUILD_SPDLOG=OFF
+       -DROCPROFSYS_BUILD_SQLITE3=OFF
++      -DROCPROFSYS_BUILD_ELFUTILS=OFF # use elfutils provided by therock
+       -DROCPROFSYS_USE_PYTHON="${_ROCPROFSYS_USE_PYTHON}"
+       -DROCPROFSYS_PYTHON_VERSIONS:STRING="${_ROCPROFSYS_PYTHON_VERSIONS_STR}"
+       -DROCPROFSYS_PYTHON_ROOT_DIRS:STRING="${_ROCPROFSYS_PYTHON_ROOT_DIRS_STR}"
+@@ -357,6 +358,7 @@ if(THEROCK_ENABLE_ROCPROFSYS)
+     CMAKE_INCLUDES
+       therock_explicit_finders.cmake
+     BUILD_DEPS
++      therock-elfutils
+       therock-spdlog
+       therock-fmt
+       roctracer
+--
+2.43.0

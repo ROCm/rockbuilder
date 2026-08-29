@@ -625,6 +625,11 @@ class RockProjectRepo:
             for source_path in source_dir.rglob("*"):
                 if not source_path.is_file():
                     continue
+                if (
+                    "__pycache__" in source_path.parts
+                    or source_path.suffix == ".pyc"
+                ):
+                    continue
                 relative_path = source_path.relative_to(source_dir)
                 if ".git" in relative_path.parts:
                     raise ValueError(

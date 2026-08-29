@@ -1,0 +1,84 @@
+From b6b9f936f48161f7d9000ded8db6c004b9c4ddb5 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 25 Sep 2025 13:34:38 -0700
+Subject: [PATCH 08/12] rccl add more AMD GPUs to list of supported GPUs
+
+- Add gfx1031, gfx1032, gfx1034, gfx1035,
+  gfx1103, and gfx1150 to the default GPU list.
+- Fix builds for targets that previously fell
+  back to gfx906 because they were missing from
+  the supported list.
+- Disable GetHwId on iGPUs and newer GPUs
+  where s_getreg_b32 HW_REG_HW_ID is not
+  supported.
+- Drop the obsolete trace_hwreg hunk because it
+  was removed from rocm-systems 10.0.
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...e-amd-gpus-to-list-of-supported-GPUs.patch | 56 +++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+new file mode 100644
+index 0000000..945de24
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0005-rccl-add-more-amd-gpus-to-list-of-supported-GPUs.patch
+@@ -0,0 +1,56 @@
++From de9d78b915f7b774aff14f07e6ebd31320de203c Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Wed, 19 Aug 2026 14:48:09 -0700
++Subject: [PATCH] rccl add more AMD GPUs to list
++ of supported GPUs
++
++- Add gfx1031, gfx1032, gfx1034, gfx1035,
++  gfx1103, and gfx1150 to the default GPU list.
++- Fix builds for targets that previously fell
++  back to gfx906 because they were missing from
++  the supported list.
++- Disable GetHwId on iGPUs and newer GPUs
++  where s_getreg_b32 HW_REG_HW_ID is not
++  supported.
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/rccl/CMakeLists.txt               | 6 ++++++
++ projects/rccl/tools/JitterBench/Common.hpp | 4 +++-
++ 2 files changed, 9 insertions(+), 1 deletion(-)
++
++diff --git a/projects/rccl/CMakeLists.txt b/projects/rccl/CMakeLists.txt
++index d64f120f..38c35282 100644
++--- a/projects/rccl/CMakeLists.txt
+++++ b/projects/rccl/CMakeLists.txt
++@@ -120,9 +120,15 @@ set(DEFAULT_GPUS
++       gfx942
++       gfx950
++       gfx1030
+++      gfx1031
+++      gfx1032
+++      gfx1034
+++      gfx1035
++       gfx1100
++       gfx1101
++       gfx1102
+++      gfx1103
+++      gfx1150
++       gfx1151
++       gfx1200
++       gfx1201
++diff --git a/projects/rccl/tools/JitterBench/Common.hpp b/projects/rccl/tools/JitterBench/Common.hpp
++index 116f60a9..090a9d84 100644
++--- a/projects/rccl/tools/JitterBench/Common.hpp
+++++ b/projects/rccl/tools/JitterBench/Common.hpp
++@@ -43,7 +43,9 @@ THE SOFTWARE.
++ #endif
++
++ // Macro for collecting HW_REG_HW_ID
++-#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1151__) || defined(__NVCC__)
+++#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
+++    defined(__gfx1150__) || defined(__gfx1151__) || \
+++    defined(__NVCC__)
++ #define GetHwId(val) \
++   val = 0
++ #else

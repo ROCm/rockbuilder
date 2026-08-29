@@ -1,0 +1,244 @@
+From e2f1727afc4d583dea6607dae6a1e5322201e3bf Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 23 Mar 2026 12:08:06 -0700
+Subject: [PATCH 1/2] asan build fixes
+
+Fixes for following components to check if DTHEROCK_SANITIZER=ASAN or
+ASAN_HOST flag is set and then enabling asan specific build flags:
+- aqlprofile
+- roctracer
+- miopen
+
+CMake fixes to pass the THEROCK_SANITIZER flag for the aqlprofile,
+roctracer and miopen component builds
+
+1) aqlprofile
+
+46.5    ld.lld: error: undefined symbol: __asan_unregister_elf_globals
+46.5    >>> referenced by workload.cpp
+46.5    >>>               test/integration/CMakeFiles/testv2.dir/workload.cpp.o:(asan.module_dtor)
+46.5
+46.5    ld.lld: error: undefined symbol: __asan_stack_free_7
+46.5    >>> referenced by agent.cpp:162
+46.5    >>>(/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
+46.5    >>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
+46.5    >>> (AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
+46.5    >>> referenced by agent.cpp:162
+46.5    >>> (/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
+46.5    >>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
+46.5    >>>(AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
+
+2) roctracer
+
+33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
+33.2    FAILED: test/MatrixTranspose_ctest
+...
+33.2    ld.lld: error: undefined symbol: __asan_option_detect_stack_use_after_return
+33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
+33.2    >>> referenced by MatrixTranspose.c:322 (test/MatrixTranspose.c:322)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(activity_callback)
+33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
+33.2
+33.2    ld.lld: error: undefined symbol: __asan_stack_malloc_1
+33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
+33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
+33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
+
+3) miopen
+- pass -DTHEROCK_SANITIZER flag to MIOpen from therock build script
+- if asan build is enabled, then use mcmodel=medium build flag to
+  fix the linking error due to big library size on asan builds:
+
+  relocation R_X86_64_PC32 out of range: -2294147428 is not in
+  [-2147483648, 2147483647];)
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ml-libs/CMakeLists.txt                        |  1 +
+ ...ation-R_X86_64_PC32-out-of-range-err.patch | 31 ++++++++++++
+ ...king-fix-for-tests-when-ASAN-enabled.patch | 45 +++++++++++++++++
+ ...king-fix-for-tests-when-ASAN-enabled.patch | 49 +++++++++++++++++++
+ profiler/CMakeLists.txt                       |  2 +
+ 5 files changed, 128 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
+ create mode 100644 patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+ create mode 100644 patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+
+diff --git a/ml-libs/CMakeLists.txt b/ml-libs/CMakeLists.txt
+index c2259e0..c463779 100644
+--- a/ml-libs/CMakeLists.txt
++++ b/ml-libs/CMakeLists.txt
+@@ -42,6 +42,7 @@ if(THEROCK_ENABLE_MIOPEN)
+       -DMIOPEN_USE_MLIR=OFF # TODO: enable
+       -DMIOPEN_TEST_DISCRETE=OFF
+       "-DMIOPEN_INSTALL_GPU_DATABASES=\"${THEROCK_AMDGPU_TARGETS}\""
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+     CMAKE_INCLUDES
+       therock_explicit_finders.cmake
+     COMPILER_TOOLCHAIN
+diff --git a/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
+new file mode 100644
+index 0000000..240fe1d
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0001-miopen-fix-relocation-R_X86_64_PC32-out-of-range-err.patch
+@@ -0,0 +1,31 @@
++From e50bace84cee2962c02904a38b7cdd1291c81aec Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Wed, 18 Mar 2026 17:55:19 -0700
++Subject: [PATCH] miopen fix relocation R_X86_64_PC32 out of range error on
++ ASAN builds
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/miopen/CMakeLists.txt | 7 +++++++
++ 1 file changed, 7 insertions(+)
++
++diff --git a/projects/miopen/CMakeLists.txt b/projects/miopen/CMakeLists.txt
++index 2c8c60c3..ace454a6 100644
++--- a/projects/miopen/CMakeLists.txt
+++++ b/projects/miopen/CMakeLists.txt
++@@ -6,7 +6,14 @@ cmake_minimum_required( VERSION 3.15 )
++ #Add a name for the rocm-libraries location
++ set(ROCM_LIBRARIES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../")
++ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
++
+++# to avoid error
+++# relocation R_X86_64_PC32 out of range: -2294147428 is not in [-2147483648, 2147483647];
+++# due to too bit library size
+++if(THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
+++  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcmodel=medium")
+++endif()
+++
++ if (POLICY CMP0074)
++   cmake_policy(SET CMP0074 NEW)
++ endif()
++--
+diff --git a/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+new file mode 100644
+index 0000000..950f0e6
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0006-aqlprofile-linking-fix-for-tests-when-ASAN-enabled.patch
+@@ -0,0 +1,45 @@
++From e362b3a5af3d593bb66e00f3a805489bca89c0c0 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Mon, 9 Mar 2026 23:22:45 -0700
++Subject: [PATCH 1/2] aqlprofile linking fix for tests when ASAN enabled
++
++Fixes linking errors on aqlprofile integrations tests
++when ASAN build is enabled.
++
++46.5	ld.lld: error: undefined symbol: __asan_unregister_elf_globals
++46.5	>>> referenced by workload.cpp
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/workload.cpp.o:(asan.module_dtor)
++46.5
++46.5	ld.lld: error: undefined symbol: __asan_stack_free_7
++46.5	>>> referenced by agent.cpp:162
++46.5	>>>(/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
++46.5	>>> (AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
++46.5	>>> referenced by agent.cpp:162
++46.5	>>> (/therock/rocm-systems/projects/aqlprofile/test/integration/agent.cpp:162)
++46.5	>>>               test/integration/CMakeFiles/testv2.dir/agent.cpp.o:
++46.5	>>>(AgentInfo::get_agent_handle_cb(hsa_agent_s, void*))
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/aqlprofile/test/integration/CMakeLists.txt | 5 +++++
++ 1 file changed, 5 insertions(+)
++
++diff --git a/projects/aqlprofile/test/integration/CMakeLists.txt b/projects/aqlprofile/test/integration/CMakeLists.txt
++index 0eb5a927..60870ffa 100644
++--- a/projects/aqlprofile/test/integration/CMakeLists.txt
+++++ b/projects/aqlprofile/test/integration/CMakeLists.txt
++@@ -63,6 +63,11 @@ add_executable(testv2)
++ target_sources(testv2 PRIVATE main.cpp workload.cpp counter.cpp agent.cpp)
++ target_include_directories(testv2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/core/include/ ${HSA_RUNTIME_INC_PATH} /opt/rocm/include)
++ target_link_libraries(testv2 PRIVATE hsa-runtime64::hsa-runtime64 ${AQLPROFILE_TARGET})
+++if(THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
+++    set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address" )
+++    set ( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address" )
+++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
+++endif()
++ target_compile_definitions(testv2 PUBLIC AMD_INTERNAL_BUILD)
++
++ # Add a PRELOAD environment with libintercept
++--
++2.41.3
+diff --git a/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+new file mode 100644
+index 0000000..ffd2e2b
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0007-roctracer-linking-fix-for-tests-when-ASAN-enabled.patch
+@@ -0,0 +1,49 @@
++From f4705274ca7a0c06f010535c442ab2a059068b85 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Tue, 10 Mar 2026 12:54:17 -0700
++Subject: [PATCH 2/2] roctracer linking fix for tests when ASAN enabled
++
++Fixes a following type of linking errors on roctracer
++when build ASAN is enabled.
++
++33.2    [40/42] Linking HIP executable test/MatrixTranspose_ctest
++33.2    FAILED: test/MatrixTranspose_ctest
++...
++33.2    ld.lld: error: undefined symbol: __asan_option_detect_stack_use_after_return
++33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
++33.2    >>> referenced by MatrixTranspose.c:322 (test/MatrixTranspose.c:322)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(activity_callback)
++33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
++33.2
++33.2    ld.lld: error: undefined symbol: __asan_stack_malloc_1
++33.2    >>> referenced by MatrixTranspose.c:46 (test/MatrixTranspose.c:46)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(SPRINT)
++33.2    >>> referenced by MatrixTranspose.c:353 (test/MatrixTranspose.c:353)
++33.2    >>>               test/CMakeFiles/MatrixTranspose_ctest.dir/MatrixTranspose.c.o:(init_tracing)
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/roctracer/test/CMakeLists.txt | 6 ++++++
++ 1 file changed, 6 insertions(+)
++
++diff --git a/projects/roctracer/test/CMakeLists.txt b/projects/roctracer/test/CMakeLists.txt
++index 95563d5b..ac2e5c73 100644
++--- a/projects/roctracer/test/CMakeLists.txt
+++++ b/projects/roctracer/test/CMakeLists.txt
++@@ -22,6 +22,12 @@
++
++ get_property(HSA_RUNTIME_INCLUDE_DIRECTORIES TARGET hsa-runtime64::hsa-runtime64 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
++
+++if(THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
+++    set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address" )
+++    set ( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address" )
+++    set ( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address" )
+++endif()
+++
++ # Set the HIP language runtime link flags as FindHIP does not set them.
++ set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG})
++ set(CMAKE_EXECUTABLE_RUNTIME_HIP_FLAG_SEP ${CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG_SEP})
++--
++2.41.3
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index 7324fcf..3c42d3f 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -54,6 +54,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+     BACKGROUND_BUILD
+     CMAKE_ARGS
+       -DAQLPROFILE_BUILD_TESTS=${THEROCK_BUILD_TESTING}
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+       -DHIP_PLATFORM="amd"
+     COMPILER_TOOLCHAIN
+       amd-hip
+@@ -194,6 +195,7 @@ if(THEROCK_ENABLE_ROCPROFV3)
+       amd-hip
+     CMAKE_ARGS
+       -DHIP_PLATFORM=amd
++      -DTHEROCK_SANITIZER=${THEROCK_SANITIZER}
+     INTERFACE_INCLUDE_DIRS
+       # All old clients of roctx64 expect to just be able to find its include
+       # with no further qualification. Bad design, but also deprecated, so meh.

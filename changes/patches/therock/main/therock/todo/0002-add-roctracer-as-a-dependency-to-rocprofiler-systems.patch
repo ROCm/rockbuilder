@@ -1,0 +1,70 @@
+From ee83345a1305821cb8f31a45345288024f660fd9 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 13 Apr 2026 22:22:56 -0700
+Subject: [PATCH 2/2] add roctracer as a dependency to rocprofiler-systems
+
+Building of roccprofiler-systems in therock can fail
+to error when trying to find the roctracer64 library in
+rocm-systems/projects/rocprofiler-systems/examples/hpc/jacobi-hip/CMakeLists.txt
+because roctracer which provides is not added to build dependencies.
+
+Because of this therock's find_library command which overrides
+the system provided version fails for error because
+CMAKE_LIBRARY_PATH does not contain the path
+to build/profiler/roctracer/stage/lib directory where the libroctracer64.so
+is located.
+
+To trigger the error, the system needs to have dependencies
+like libopenmpi-dev installed, otherwise the
+examples/hpc/jacobi-hip/CMakeLists.txt will skip the building
+of example.
+
+Alternative fix solutions would change the implementation of
+cmake/therock_explicit_finders.cmake for example in following ways:
+
+1) Instead of failing to error, method would just return if REQUIRED
+   flag is not set
+2) Instead of relying for the CMAKE_LIBRARY_PATH, the find_library
+   method would check PATHS and HINTS variables and set those
+   if present. (This may not be wanted because it would allow seraching
+   system version of these libraries for example from /opt/rocm
+   instead of internal ones that current therock build provides)
+
+Exact error fixed:
+rocprofiler-systems configure]   Could not find super-project find_library(NAMES
+[rocprofiler-systems configure]   roctx64;PATHS;/therock/build/dist/rocm/lib;/therock/build/dist/rocm/lib64)
+[rocprofiler-systems configure]   in
+[rocprofiler-systems configure]   /therock/build/third-party/sysdeps/linux/libdrm/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/libmnl/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/libnl/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/zlib/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/zstd/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/numactl/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/bzip2/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/liblzma/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/third-party/sysdeps/linux/elfutils/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/compiler/amd-llvm/stage/lib/llvm/lib;
+                                  /therock/build/compiler/amd-comgr/stage/lib;/therock/build/core/rocm-kpack/stage/lib;
+                                  /therock/build/base/rocprofiler-register/stage/lib;/therock/build/core/ROCR-Runtime/stage/lib;
+                                  /therock/build/core/clr/stage/lib;/therock/build/profiler/aqlprofile/stage/lib;
+                                  /therock/build/third-party/sysdeps/linux/sqlite3/build/stage/lib/rocm_sysdeps/lib;
+                                  /therock/build/profiler/rocprofiler-sdk/stage/lib;
+                                  /therock/build/profiler/rocprofiler-sdk/stage/lib/rocm_sysdeps/lib
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ profiler/CMakeLists.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/profiler/CMakeLists.txt b/profiler/CMakeLists.txt
+index 3c42d3f..e2197e1 100644
+--- a/profiler/CMakeLists.txt
++++ b/profiler/CMakeLists.txt
+@@ -357,6 +357,7 @@ if(THEROCK_ENABLE_ROCPROFSYS)
+     BUILD_DEPS
+       therock-spdlog
+       therock-fmt
++      roctracer
+     RUNTIME_DEPS
+       amdsmi
+       aqlprofile

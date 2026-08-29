@@ -1,3 +1,4 @@
+import configparser
 import importlib.util
 import os
 import subprocess
@@ -6,12 +7,28 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import lib_python.rcb_constants as rcb_const
+from lib_python.app_builder import RockProjectBuilder
+from lib_python.repo_management import RockProjectRepo
+from lib_python.repo_management import TAG_CHECKOUT
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SCRIPT_PATH = (
     REPOSITORY_ROOT
     / "changes/files/therock/common/therock/rcb_install.py"
 )
+
+
+def run_git(repo_path, *args):
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 class TheRockInstallScriptTest(unittest.TestCase):
@@ -87,6 +104,159 @@ class TheRockInstallScriptTest(unittest.TestCase):
         self.assertEqual(
             marker.read_text(encoding="utf-8"),
             "rockbuilder_therock: release-test\n",
+        )
+
+
+class TheRockInstallPathResolutionTest(unittest.TestCase):
+    def test_dev_path_uses_checkout_tag_version_and_hash(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            repo_path = temp_path / "therock_dev"
+            repo_path.mkdir()
+            run_git(repo_path, "init", "-q")
+            (repo_path / "version.json").write_text(
+                '{"rocm-version": "10.1.0"}\n',
+                encoding="utf-8",
+            )
+            run_git(repo_path, "add", "version.json")
+            run_git(
+                repo_path,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-q",
+                "-m",
+                "Checkout",
+            )
+            run_git(repo_path, "tag", TAG_CHECKOUT)
+            checkout_revision = run_git(repo_path, "rev-parse", TAG_CHECKOUT)
+            (repo_path / "patched.txt").write_text(
+                "patched\n",
+                encoding="utf-8",
+            )
+            run_git(repo_path, "add", "patched.txt")
+            run_git(
+                repo_path,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-q",
+                "-m",
+                "Patch",
+            )
+            head_revision = run_git(repo_path, "rev-parse", "HEAD")
+
+            builder = object.__new__(RockProjectBuilder)
+            builder.app_src_dir_path = repo_path
+            builder.app_repo = object.__new__(RockProjectRepo)
+            builder.rocm_sdk_install_dir_basename = (
+                "rocm_dev_{rocm_version}_{git_hash}"
+            )
+            builder.resolved_rocm_sdk_install_dir = None
+            install_parent = temp_path / "install"
+            install_parent.mkdir()
+            with mock.patch.object(
+                rcb_const,
+                "get_therock_rocm_sdk_install_dir",
+                side_effect=lambda **kwargs: (
+                    install_parent / kwargs["install_dir_basename"]
+                ),
+            ), mock.patch.object(Path, "symlink_to") as create_symlink:
+                install_dir = builder._resolve_rocm_sdk_install_dir()
+
+            self.assertEqual(
+                install_dir.name,
+                f"rocm_dev_10_1_{checkout_revision[:7]}",
+            )
+            self.assertNotIn(head_revision[:7], install_dir.name)
+            create_symlink.assert_not_called()
+
+    def test_resolved_install_path_is_persisted_atomically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            config_path = temp_path / "rockbuilder.cfg"
+            config_path.write_text(
+                "[rocm_sdk]\n"
+                "rocm_sdk_home = ['/opt/other-rocm']\n"
+                "\n"
+                "[build_targets]\n"
+                "gpus = ['gfx90a']\n",
+                encoding="utf-8",
+            )
+            builder = object.__new__(RockProjectBuilder)
+            builder.app_cfg_base_name = "therock_dev"
+            builder.resolved_rocm_sdk_install_dir = (
+                temp_path / "rocm_dev_10_1_a1b2c3d"
+            )
+
+            with mock.patch.object(
+                rcb_const,
+                "get_rock_builder_config_file",
+                return_value=config_path,
+            ):
+                builder._save_rocm_sdk_build_config()
+
+            config = configparser.ConfigParser()
+            config.read(config_path)
+            section = rcb_const.RCB__CFG__SECTION__ROCM_SDK
+            self.assertEqual(
+                config.get(
+                    section,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD,
+                ),
+                str([builder.resolved_rocm_sdk_install_dir.as_posix()]),
+            )
+            self.assertEqual(
+                config.get(
+                    section,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG,
+                ),
+                "['therock_dev']",
+            )
+            self.assertFalse(
+                config.has_option(
+                    section,
+                    rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
+                )
+            )
+            self.assertFalse(config_path.with_suffix(".tmp").exists())
+
+
+class CleanCommandTest(unittest.TestCase):
+    def test_failed_clean_command_terminates_build(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            builder = object.__new__(RockProjectBuilder)
+            builder.app_build_dir_path = Path(temp_dir) / "build"
+            builder.app_build_dir_path.mkdir()
+            builder.app_repo = mock.Mock()
+            builder.app_repo.do_clean.return_value = False
+            builder.CMD_CLEAN = "failing clean command"
+            builder.printout_error_and_terminate = mock.Mock(
+                side_effect=SystemExit(1)
+            )
+
+            with self.assertRaises(SystemExit):
+                builder.clean(False, False)
+
+            builder.printout_error_and_terminate.assert_called_once_with(
+                rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN
+            )
+
+    def test_torchcodec_nightly_clean_does_not_use_setup_py(self):
+        config = configparser.ConfigParser()
+        config.read(
+            REPOSITORY_ROOT / "apps/pytorch_torchcodec_nightly.cfg"
+        )
+
+        clean_command = config.get("app_info", "CMD_CLEAN")
+        self.assertNotIn("setup.py", clean_command)
+        self.assertEqual(
+            clean_command,
+            "RCB_CALLBACK__DELETE_APP_SRC_SUBDIR build dist",
         )
 
 
