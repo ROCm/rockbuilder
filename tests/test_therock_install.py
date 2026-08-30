@@ -266,12 +266,12 @@ class CleanCommandTest(unittest.TestCase):
                     "RCB_CALLBACK__DELETE_APP_SRC_SUBDIR build dist",
                 )
 
-    def test_pytorch_nightly_disables_nvshmem(self):
+    def test_pytorch_nightly_enables_nvshmem(self):
         config = configparser.ConfigParser()
         config.read(REPOSITORY_ROOT / "apps/pytorch_nightly.cfg")
 
         environment = config.get("app_info", "ENV_VAR")
-        self.assertIn("USE_NVSHMEM=0", environment.splitlines())
+        self.assertIn("USE_NVSHMEM=1", environment.splitlines())
 
 
 if __name__ == "__main__":
