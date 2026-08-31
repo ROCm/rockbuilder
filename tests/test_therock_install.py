@@ -246,18 +246,25 @@ class CleanCommandTest(unittest.TestCase):
                 rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN
             )
 
-    def test_torchcodec_nightly_clean_does_not_use_setup_py(self):
-        config = configparser.ConfigParser()
-        config.read(
-            REPOSITORY_ROOT / "apps/pytorch_torchcodec_nightly.cfg"
+    def test_current_pytorch_clean_commands_do_not_use_setup_py(self):
+        config_names = (
+            "pytorch_2_14.cfg",
+            "pytorch_nightly.cfg",
+            "pytorch_torchcodec_nightly.cfg",
+            "pytorch_vision_nightly.cfg",
+            "triton_nightly.cfg",
         )
+        for config_name in config_names:
+            with self.subTest(config_name=config_name):
+                config = configparser.ConfigParser()
+                config.read(REPOSITORY_ROOT / "apps" / config_name)
 
-        clean_command = config.get("app_info", "CMD_CLEAN")
-        self.assertNotIn("setup.py", clean_command)
-        self.assertEqual(
-            clean_command,
-            "RCB_CALLBACK__DELETE_APP_SRC_SUBDIR build dist",
-        )
+                clean_command = config.get("app_info", "CMD_CLEAN")
+                self.assertNotIn("setup.py", clean_command)
+                self.assertEqual(
+                    clean_command,
+                    "RCB_CALLBACK__DELETE_APP_SRC_SUBDIR build dist",
+                )
 
 
 if __name__ == "__main__":
