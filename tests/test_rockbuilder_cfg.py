@@ -45,7 +45,7 @@ class TheRockInstallPathTest(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(install_dir, preferred_parent / "rocm_10_0")
+        self.assertEqual(install_dir, preferred_parent / "rocm_10_0_0")
 
     def test_uses_home_when_opt_parent_is_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -57,14 +57,14 @@ class TheRockInstallPathTest(unittest.TestCase):
 
         self.assertEqual(
             install_dir,
-            temp_path / "home/rcb/rocm_10_0",
+            temp_path / "home/rcb/rocm_10_0_0",
         )
 
     def test_uses_home_when_opt_destination_is_not_writable(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             preferred_parent = temp_path / "opt/rcb"
-            preferred_dir = preferred_parent / "rocm_10_0"
+            preferred_dir = preferred_parent / "rocm_10_0_0"
             preferred_dir.mkdir(parents=True)
             home_dir = temp_path / "home"
 
@@ -76,16 +76,16 @@ class TheRockInstallPathTest(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(install_dir, home_dir / "rcb/rocm_10_0")
+        self.assertEqual(install_dir, home_dir / "rcb/rocm_10_0_0")
 
     def test_discovers_all_valid_sdk_directories(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             install_parent = temp_path / "opt/rcb"
             expected_installs = [
-                install_parent / "rocm_10_0",
-                install_parent / "rocm_dev_10_1_a1b2c3d",
-                temp_path / "home/rcb/rocm_dev_10_0_d4e5f6a",
+                install_parent / "rocm_10_0_0",
+                install_parent / "rocm_dev_10_1_0_a1b2c3d",
+                temp_path / "home/rcb/rocm_dev_10_0_0_d4e5f6a",
             ]
             for install_dir in expected_installs:
                 (install_dir / "bin").mkdir(parents=True)

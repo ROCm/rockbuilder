@@ -170,7 +170,7 @@ class TheRockInstallPathResolutionTest(unittest.TestCase):
 
             self.assertEqual(
                 install_dir.name,
-                f"rocm_dev_10_1_{checkout_revision[:7]}",
+                f"rocm_dev_10_1_0_{checkout_revision[:7]}",
             )
             self.assertNotIn(head_revision[:7], install_dir.name)
             create_symlink.assert_not_called()
@@ -190,7 +190,7 @@ class TheRockInstallPathResolutionTest(unittest.TestCase):
             builder = object.__new__(RockProjectBuilder)
             builder.app_cfg_base_name = "therock_dev"
             builder.resolved_rocm_sdk_install_dir = (
-                temp_path / "rocm_dev_10_1_a1b2c3d"
+                temp_path / "rocm_dev_10_1_0_a1b2c3d"
             )
 
             with mock.patch.object(
