@@ -264,6 +264,26 @@ def parse_build_arguments(parser):
     return args
 
 
+# Check whether clean is the only explicitly enabled build action.
+# Input: parsed command-line arguments containing all build action flags.
+# Returns: True only for a clean-only invocation.
+# Example: "--clean" returns True while "--clean --build" returns False.
+def is_clean_only(args):
+    other_actions = (
+        args.init,
+        args.checkout,
+        args.hipify,
+        args.pre_config,
+        args.config,
+        args.post_config,
+        args.build,
+        args.install,
+        args.post_install,
+    )
+    ret = args.clean and not any(other_actions)
+    return ret
+
+
 def printout_build_arguments(args):
     # printout arguments enabled
     print("Actions Enabled: ")
@@ -300,7 +320,9 @@ def do_therock(prj_builder, args):
         if prj_builder.is_build_enabled_on_current_os():
             # setup first the project specific environment variables
             prj_builder.printout("start")
-            prj_builder.do_env_setup()
+            clean_only = is_clean_only(args)
+            if not clean_only:
+                prj_builder.do_env_setup()
             exec_next_phase = False
             # print("do_env_setup done")
 
@@ -311,9 +333,14 @@ def do_therock(prj_builder, args):
             # and will be executed always even if not arg flag is specified
             # It can be used to execute a script that can be used for example
             # to set an environment variable for the revision to be checked out
-            prj_builder.printout("init")
-            prj_builder.init(args.cmd_init_force_exec, args.cmd_any_force_exec)
-            if args.cmd_init_force_exec: exec_next_phase = True
+            if not clean_only:
+                prj_builder.printout("init")
+                prj_builder.init(
+                    args.cmd_init_force_exec,
+                    args.cmd_any_force_exec,
+                )
+                if args.cmd_init_force_exec:
+                    exec_next_phase = True
             if args.clean:
                 prj_builder.printout("clean")
                 prj_builder.clean(args.cmd_init_force_exec, args.cmd_any_force_exec)
@@ -354,7 +381,8 @@ def do_therock(prj_builder, args):
                 if args.cmd_any_force_exec: exec_next_phase = True
             # in the end restore original environment variables
             # so that they do not cause problem for next possible project handled
-            prj_builder.undo_env_setup()
+            if not clean_only:
+                prj_builder.undo_env_setup()
             #prj_builder.printout("done")
             print("Success: " + prj_builder.app_cfg_base_name)
             ret = True
@@ -604,7 +632,6 @@ def main():
         rcb_cfg_reader = get_config_reader(rock_builder_home_dir,
                                            rock_builder_build_dir)
     app_manager = get_app_list_manager(rock_builder_home_dir, default_src_base_dir)
-    verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir)    
 
     app_list = app_manager.get_external_app_list()
     print(app_list)
@@ -613,6 +640,12 @@ def main():
                                     default_src_base_dir,
                                     app_list)
     args = parse_build_arguments(arg_parser)
+    if not is_clean_only(args):
+        verify_rocm_sdk_install(
+            rcb_cfg_reader,
+            app_manager,
+            rock_builder_home_dir,
+        )
     rocm_home = os.environ.get(
         rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR
     )

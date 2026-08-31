@@ -540,7 +540,8 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def clean(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
 		# delete build directory
-        shutil.rmtree(self.app_build_dir_path)
+        if self.app_build_dir_path.exists():
+            shutil.rmtree(self.app_build_dir_path)
         # then create it again
         cur_p = Path(self.app_build_dir_path)
         cur_p.mkdir(parents=True, exist_ok=True)
