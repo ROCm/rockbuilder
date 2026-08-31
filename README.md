@@ -69,7 +69,13 @@ python rockbuilder.py --help
 
 If `rockbuilder.cfg` does not exist, RockBuilder launches an interactive UI to choose the ROCm SDK source and GPU target(s):
 
-- **New ROCm SDK Build** — build TheRock from source (lists all supported GPUs).
+- **Build TheRock 10.0** — build the `release/therock-10.0` branch.
+- **Build TheRock development main branch** — build the selected `main`
+  revision into a version-and-hash-specific install directory.
+- **Existing ROCm SDK** — select any valid SDK directory discovered directly
+  below `/opt/rcb` or `~/rcb`.
+- **ROCm SDK Specified by ROCM_HOME** — use the valid SDK selected by the
+  environment variable.
 
     <img src="docs/pics/readme/cfg_new_build_60pct.png" width="100%" height="100%">
 
@@ -87,13 +93,40 @@ In non-interactive environments (CI, remote shells, AI agents), create or edit `
 
 ```ini
 [rocm_sdk]
-rocm_sdk_build = ['<rockbuilder-root>/src_apps/therock/build/dist/rocm']
+rocm_sdk_build_config = ['therock_10_0']
 
 [build_targets]
 gpus = ['gfx90a']
 ```
 
-Replace `<rockbuilder-root>` with the absolute path to your RockBuilder checkout.
+The 10.0 build uses `src_apps/therock_10_0`, `build/therock_10_0`, and installs
+to `/opt/rcb/rocm_10_0` when writable or `~/rcb/rocm_10_0` otherwise.
+RockBuilder adds the resolved `rocm_sdk_build` path after installation.
+
+To build TheRock `main`, use:
+
+```ini
+[rocm_sdk]
+rocm_sdk_build_config = ['therock_dev']
+
+[build_targets]
+gpus = ['gfx90a']
+```
+
+Development builds use `src_apps/therock_dev` and `build/therock_dev`. The
+install directory includes the ROCm major/minor version from `version.json`
+and the short revision from `RCB_TAG_CHECKOUT`, for example
+`/opt/rcb/rocm_dev_10_1_a1b2c3d`.
+
+The development checkout is updated only when explicitly requested:
+
+```bash
+python rockbuilder.py apps/therock_dev.cfg --checkout
+python rockbuilder.py apps/therock_dev.cfg
+```
+
+Old development installations are retained. RockBuilder does not create or
+update a `rocm_dev` symlink.
 
 **ROCm SDK from Python wheels** (example):
 

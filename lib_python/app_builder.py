@@ -1,10 +1,13 @@
 import ast
 import configparser
+import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from lib_python.repo_management import RockProjectRepo
+from lib_python.repo_management import TAG_CHECKOUT
 from lib_python.utils import get_rocm_sdk_env_variables
 from lib_python.utils import printout_list_items
 from pathlib import Path, PurePosixPath
@@ -202,6 +205,12 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.app_patch_dir_base_name = self.get(rcb_const.RCB__APP_CFG__SECTION_APP_INFO, rcb_const.RCB__APP_CFG__KEY__PATCH_DIR)
         else:
             self.app_patch_dir_base_name = self.app_version
+        self.rocm_sdk_install_dir_basename = (
+            self._get_app_info_config_value(
+                rcb_const.RCB__APP_CFG__KEY__ROCM_SDK_INSTALL_DIR_BASENAME
+            )
+        )
+        self.resolved_rocm_sdk_install_dir = None
 
         # environment setup can have common and os-specific sections that needs to be appended together
         if self.is_posix:
@@ -282,6 +291,87 @@ class RockProjectBuilder(configparser.ConfigParser):
             self.app_patch_dir_base_name,
             self.change_dir_root_arr,
         )
+
+    def _get_checkout_rocm_version(self):
+        raw_version = subprocess.check_output(
+            ["git", "show", f"{TAG_CHECKOUT}:version.json"],
+            cwd=self.app_src_dir_path,
+            text=True,
+        )
+        version_info = json.loads(raw_version)
+        version_parts = version_info["rocm-version"].split(".")
+        if len(version_parts) < 2:
+            raise ValueError("TheRock version.json has an invalid ROCm version")
+        return "_".join(version_parts[:2])
+
+    def _resolve_rocm_sdk_install_dir(self):
+        if not self.rocm_sdk_install_dir_basename:
+            return None
+
+        install_dir_basename = self.rocm_sdk_install_dir_basename
+        if "{rocm_version}" in install_dir_basename:
+            rocm_version = self._get_checkout_rocm_version()
+            install_dir_basename = install_dir_basename.replace(
+                "{rocm_version}",
+                rocm_version,
+            )
+        if "{git_hash}" in install_dir_basename:
+            checkout_revision = self.app_repo.rev_parse(
+                self.app_src_dir_path,
+                TAG_CHECKOUT,
+            )
+            if checkout_revision is None:
+                raise RuntimeError(
+                    f"Could not resolve required tag {TAG_CHECKOUT}"
+                )
+            install_dir_basename = install_dir_basename.replace(
+                "{git_hash}",
+                checkout_revision[:7],
+            )
+
+        if "{" in install_dir_basename or "}" in install_dir_basename:
+            raise ValueError(
+                "Unsupported ROCm SDK install directory placeholder: "
+                + install_dir_basename
+            )
+        self.resolved_rocm_sdk_install_dir = (
+            rcb_const.get_therock_rocm_sdk_install_dir(
+                install_dir_basename=install_dir_basename
+            )
+        )
+        os.environ[rcb_const.RCB__ENV_VAR__ROCM_SDK_INSTALL_DIR] = (
+            self.resolved_rocm_sdk_install_dir.as_posix()
+        )
+        return self.resolved_rocm_sdk_install_dir
+
+    def _save_rocm_sdk_build_config(self):
+        if self.resolved_rocm_sdk_install_dir is None:
+            return
+        config_path = rcb_const.get_rock_builder_config_file()
+        config = configparser.ConfigParser()
+        if config_path.is_file():
+            config.read(config_path)
+        section = rcb_const.RCB__CFG__SECTION__ROCM_SDK
+        if not config.has_section(section):
+            config.add_section(section)
+        mutually_exclusive_keys = (
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME,
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER,
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED,
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION,
+        )
+        for config_key in mutually_exclusive_keys:
+            config.remove_option(section, config_key)
+        config[section][rcb_const.RCB__CFG__KEY__ROCM_SDK_FROM_BUILD] = str(
+            [self.resolved_rocm_sdk_install_dir.as_posix()]
+        )
+        config[section][rcb_const.RCB__CFG__KEY__ROCM_SDK_BUILD_CONFIG] = str(
+            [self.app_cfg_base_name]
+        )
+        temporary_path = config_path.with_suffix(".tmp")
+        with open(temporary_path, "w", encoding="utf-8") as config_file:
+            config.write(config_file)
+        os.replace(temporary_path, config_path)
 
     # printout project builder specific info for logging and debug purposes
     def printout(self, phase):
@@ -399,16 +489,20 @@ class RockProjectBuilder(configparser.ConfigParser):
 
     def _set_cmd_phase_done_on_success(self, res: bool, cmd_phase_name: str):
         #print("_set_cmd_phase_done_on_success, phase: " + cmd_phase_name + ", res: " + str(res))
-        if res:
-            fname = self._get_cmd_phase_stamp_filename(cmd_phase_name)
-            fname.touch()
-            ret = fname.exists()
-            if not res:
-                print("Failed to create operation success stamp file: " + str(fname))
-                sys.exit(1)
-        else:
-            if not res:
-                self.printout_error_and_terminate(cmd_phase_name)
+        self._terminate_on_phase_failure(res, cmd_phase_name)
+        fname = self._get_cmd_phase_stamp_filename(cmd_phase_name)
+        fname.touch()
+        if not fname.exists():
+            print("Failed to create operation success stamp file: " + str(fname))
+            sys.exit(1)
+
+    def _terminate_on_phase_failure(
+        self,
+        res: bool,
+        cmd_phase_name: str,
+    ):
+        if not res:
+            self.printout_error_and_terminate(cmd_phase_name)
 
 
     def do_env_setup(self):
@@ -451,7 +545,9 @@ class RockProjectBuilder(configparser.ConfigParser):
         cur_p = Path(self.app_build_dir_path)
         cur_p.mkdir(parents=True, exist_ok=True)
         # and finally run other optional clean commands
+        phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CLEAN
         res = self.app_repo.do_clean(self.CMD_CLEAN)
+        self._terminate_on_phase_failure(res, phase_name)
 
     def checkout(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
         if self.repo_url:
@@ -517,6 +613,7 @@ class RockProjectBuilder(configparser.ConfigParser):
             self._set_cmd_phase_done_on_success(res, phase_name)
 
     def install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
+        install_dir = self._resolve_rocm_sdk_install_dir()
         # do cmd_install_cmake is done only if cmake config exist
         if self.CMD_CMAKE_CONFIG:
             phase_name = rcb_const.RCB__APP_CFG__KEY__CMD_CMAKE_INSTALL
@@ -530,6 +627,12 @@ class RockProjectBuilder(configparser.ConfigParser):
         if res:
             res = self.app_repo.do_install(self.CMD_INSTALL)
             self._set_cmd_phase_done_on_success(res, phase_name)
+        if install_dir is not None:
+            if not install_dir.is_dir():
+                raise FileNotFoundError(
+                    f"ROCm SDK install directory was not created: {install_dir}"
+                )
+            self._save_rocm_sdk_build_config()
 
 
     def post_install(self, cmd_init_force_exec:bool, cmd_any_force_exec:bool):
