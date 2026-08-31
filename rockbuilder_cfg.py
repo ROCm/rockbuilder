@@ -359,7 +359,7 @@ class SDKSelectionList(BaseSelectionList):
         )
         release_install_dir = (
             rcb_const.get_therock_rocm_sdk_install_dir(
-                install_dir_basename="rocm_10_0"
+                install_dir_basename="rocm_10_0_0"
             )
         )
         self.item_list.append(

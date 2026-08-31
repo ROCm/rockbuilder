@@ -91,7 +91,7 @@ PROP_DISABLE_WINDOWS=[YES/NO/1/0]
 TheRock build configurations can specify an install-directory basename:
 
 ```ini
-ROCM_SDK_INSTALL_DIR_BASENAME=rocm_10_0
+ROCM_SDK_INSTALL_DIR_BASENAME=rocm_10_0_0
 ```
 
 The development configuration uses placeholders resolved after checkout:
@@ -121,7 +121,7 @@ installation:
 ```ini
 [rocm_sdk]
 rocm_sdk_build_config = ['therock_dev']
-rocm_sdk_build = ['/opt/rcb/rocm_dev_10_1_a1b2c3d']
+rocm_sdk_build = ['/opt/rcb/rocm_dev_10_1_0_a1b2c3d']
 ```
 
 The path is added after a successful installation. The configuration UI
@@ -285,13 +285,13 @@ If application build generates a Python wheel package,
 RockBuilder provides a built-in command to help install and manage it:
 
 ```
-ROCK_CONFIG_CMD__FIND_AND_INSTALL_LATEST_PYTHON_WHEEL <search-path>
+RCB_CALLBACK__INSTALL_PYTHON_WHEEL <search-path>
 ```
 
 This command:
 
 1. Searches for the latest wheel in the specified path
-1. Copies it to the `packages/wheels` directory
+1. Copies it below the configured wheel output directory
 1. Installs it into the current Python environment
 
 Note: Installing the Python wheel may be necessary to resolve build-time dependencies for other applications built later.
@@ -301,6 +301,18 @@ Example:
 ```
 CMD_INSTALL = RCB_CALLBACK__INSTALL_PYTHON_WHEEL ${RCB_APP_SRC_DIR}/py/dist
 ```
+
+The default wheel output layout is:
+
+```text
+packages/whl/<rocm-sdk-id>/<gpu-targets>/<application>/<wheel>
+```
+
+`<rocm-sdk-id>` is the resolved ROCm SDK installation directory name, such as
+`rocm_dev_10_1_0_4144ab3`. `<gpu-targets>` contains the sorted build targets.
+The `--output-dir` option changes only the output base; RockBuilder still adds
+the SDK, GPU, and application directories. Existing wheel directories are not
+migrated.
 
 ### CMake Build Support
 

@@ -6,6 +6,7 @@ import sys
 import os
 import glob
 import platform
+import re
 import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, urlunparse, quote
@@ -18,6 +19,69 @@ TAG_FILE_COPY = "RCB_TAG_FILE_COPY"
 TAG_HIPIFY_DIFFBASE = "THEROCK_HIPIFY_DIFFBASE"
 FILE_COPY_COMMIT_MESSAGE = "DO NOT SUBMIT: ROCKBUILDER FILE COPY"
 HIPIFY_COMMIT_MESSAGE = "DO NOT SUBMIT: HIPIFY"
+
+
+# Convert one metadata value into a filesystem-safe directory component.
+# Input: an arbitrary string, such as "gfx90a:xnack+".
+# Returns: a non-empty string containing only safe filename characters.
+# Example: "gfx90a:xnack+" returns "gfx90a_xnackplus".
+def _sanitize_artifact_path_component(value: str) -> str:
+    ret = value.strip()
+    ret = ret.replace(":xnack+", "_xnackplus")
+    ret = ret.replace(":xnack-", "_xnackminus")
+    ret = ret.replace(":", "_").replace("+", "plus")
+    ret = re.sub(r"[^A-Za-z0-9._-]+", "_", ret)
+    ret = ret.strip("._")
+    if not ret:
+        raise ValueError("Artifact path component must not be empty")
+    return ret
+
+
+# Use the installed ROCm SDK directory name as its artifact identifier.
+# Input: the ROCm SDK root directory, or None when no ROCm SDK is used.
+# Returns: the filesystem-safe directory name or "no_rocm_sdk".
+# Example: "/opt/rcb/rocm_dev_10_1_0_4144ab3" returns
+# "rocm_dev_10_1_0_4144ab3".
+def get_rocm_sdk_artifact_id(rocm_home: Path | None) -> str:
+    ret = "no_rocm_sdk"
+    if rocm_home is not None:
+        rocm_home = Path(rocm_home).resolve()
+        ret = _sanitize_artifact_path_component(rocm_home.name)
+    return ret
+
+
+# Describe the GPU target set used to build an artifact.
+# Input: a semicolon-separated string, a list of targets, or None.
+# Returns: normalized targets joined by underscores, or "cpu" when empty.
+# Example: "gfx90a;gfx1100" returns "gfx1100_gfx90a".
+def get_gpu_artifact_id(gpu_targets: str | list[str] | None) -> str:
+    ret = "cpu"
+    if gpu_targets is not None:
+        if isinstance(gpu_targets, str):
+            gpu_targets = gpu_targets.split(";")
+
+        normalized_targets = {
+            _sanitize_artifact_path_component(target)
+            for target in gpu_targets
+            if target.strip()
+        }
+        if normalized_targets:
+            ret = "_".join(sorted(normalized_targets))
+    return ret
+
+
+def get_wheel_install_base_dir(
+    output_dir: Path,
+    rocm_home: Path | None,
+    gpu_targets: str | list[str] | None,
+) -> Path:
+    ret = (
+        Path(output_dir)
+        / get_rocm_sdk_artifact_id(rocm_home)
+        / get_gpu_artifact_id(gpu_targets)
+    )
+    return ret
+
 
 class RockProjectRepo:
     def __init__(
@@ -192,7 +256,7 @@ class RockProjectRepo:
         return ret
 
     # 1) search the latest wheel file from certain directory
-    # 2) copy wheel to packages/wheel directory
+    # 2) copy wheel below the configured packages/whl directory
     # 3) install wheel to current python environment
     def _handle_RCB_CALLBACK__INSTALL_PYTHON_WHEEL(self, CMD_INSTALL):
         ret = True

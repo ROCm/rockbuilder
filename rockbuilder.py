@@ -19,6 +19,7 @@ from lib_python.utils import get_rocm_sdk_env_variables
 from lib_python.utils import verify_env__python
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
 from lib_python.utils import get_os_memory_info
+from lib_python.repo_management import get_wheel_install_base_dir
 from pathlib import Path, PurePosixPath
 
 
@@ -166,8 +167,8 @@ def create_argument_parser_with_basic_options(rock_builder_home_dir,
     parser.add_argument(
         "--output-dir",
         type=Path,
-        help="Directory to copy built wheels to",
-        default=rock_builder_home_dir / "packages" / "wheels",
+        help="Base directory for SDK- and GPU-specific wheel output",
+        default=rock_builder_home_dir / "packages" / "whl",
     )
     # add positional arguments not requiring a "--flag"
     parser.add_argument("config_file", type=str, help="Specify path to a app or app_list config file that specify which apps are build. For example: apps/pytorch.apps ")
@@ -612,6 +613,14 @@ def main():
                                     default_src_base_dir,
                                     app_list)
     args = parse_build_arguments(arg_parser)
+    rocm_home = os.environ.get(
+        rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR
+    )
+    wheel_install_base_dir = get_wheel_install_base_dir(
+        args.output_dir,
+        Path(rocm_home) if rocm_home else None,
+        os.environ.get(rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS),
+    )
 
     # add output dir to environment variables
     if args.src_dir:
@@ -624,7 +633,9 @@ def main():
     else:
         # directory where each apps source code is checked out
         os.environ["RCB_SRC_DIR"] = args.src_base_dir.as_posix()
-    os.environ["RCB_ARTIFACT_EXPORT_DIR"] = args.output_dir.as_posix()
+    os.environ["RCB_ARTIFACT_EXPORT_DIR"] = (
+        wheel_install_base_dir.as_posix()
+    )
 
     # store the arguments to dictionary to make it easier to get "app_name"-version parameters
     args_dict = args.__dict__
@@ -659,7 +670,7 @@ def main():
                 args.src_base_dir / prj_cfg_base_name,
                 prj_cfg_base_name,
                 prj_cfg_file,
-                args.output_dir,
+                wheel_install_base_dir,
                 version_override,
                 True
             )
@@ -682,7 +693,7 @@ def main():
                 args.src_dir,
                 prj_cfg_base_name,
                 prj_cfg_file,
-                args.output_dir,
+                wheel_install_base_dir,
                 version_override,
                 True
             )
@@ -692,7 +703,7 @@ def main():
                 args.src_base_dir / prj_cfg_base_name,
                 prj_cfg_base_name,
                 prj_cfg_file,
-                args.output_dir,
+                wheel_install_base_dir,
                 version_override,
                 True
             )

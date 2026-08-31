@@ -100,7 +100,7 @@ gpus = ['gfx90a']
 ```
 
 The 10.0 build uses `src_apps/therock_10_0`, `build/therock_10_0`, and installs
-to `/opt/rcb/rocm_10_0` when writable or `~/rcb/rocm_10_0` otherwise.
+to `/opt/rcb/rocm_10_0_0` when writable or `~/rcb/rocm_10_0_0` otherwise.
 RockBuilder adds the resolved `rocm_sdk_build` path after installation.
 
 To build TheRock `main`, use:
@@ -114,9 +114,9 @@ gpus = ['gfx90a']
 ```
 
 Development builds use `src_apps/therock_dev` and `build/therock_dev`. The
-install directory includes the ROCm major/minor version from `version.json`
-and the short revision from `RCB_TAG_CHECKOUT`, for example
-`/opt/rcb/rocm_dev_10_1_a1b2c3d`.
+install directory includes the full ROCm version from `version.json` and the
+short revision from `RCB_TAG_CHECKOUT`, for example
+`/opt/rcb/rocm_dev_10_1_0_a1b2c3d`.
 
 The development checkout is updated only when explicitly requested:
 
@@ -187,7 +187,21 @@ app_list=
 
 Applications are built and installed in the listed order above. Each application will be installed into the currently active Python virtual environment. Any additional libraries or executables built by CMake will be installed to the configured ROCm SDK.
 
-Built Python wheels will be copied to the `packages/wheels` directory in RockBuilder.
+Built Python wheels are copied below `packages/whl` using this layout:
+
+```text
+<rocm-sdk-id>/<gpu-targets>/<application>/<wheel>
+```
+
+For example:
+
+```text
+packages/whl/rocm_dev_10_1_0_4144ab3/gfx90a/torch/torch-....whl
+```
+
+The SDK identifier matches the resolved `ROCM_HOME` installation directory
+name. GPU targets are sorted and combined into one directory name for
+multi-GPU builds. Existing wheel directories are not migrated.
 
 ## Build Applications One By One
 
@@ -286,12 +300,19 @@ python rockbuilder.py --checkout --src-base-dir custom_src_location apps/pytorch
 
 ### Build and Install Python Wheel to a Custom Directory
 
-This command builds and installs only PyTorch Audio and copies the produced PyTorch Audio wheel to the `test` directory instead of the default `packages/wheels` directory.
+This command builds and installs only PyTorch Audio and uses `test` instead of
+the default `packages/whl` directory as the artifact output base.
 
 >**Note:** PyTorch Audio requires PyTorch to be built and installed first.
 
 ```bash
 python rockbuilder.py apps/pytorch_audio.cfg --output-dir test
+```
+
+The resulting wheel is copied to:
+
+```text
+test/<rocm-sdk-id>/<gpu-targets>/torchaudio/<wheel>
 ```
 
 ### Checkout the Source Code of a Single Application to a Custom Directory

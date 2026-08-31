@@ -136,7 +136,7 @@ THEROCK_SDK__PYTHON_WHEEL_SERVER_URL             = "https://rocm.nightlies.amd.c
 def get_therock_rocm_sdk_install_dir(
     preferred_parent=THEROCK_SDK__ROCM_HOME_INSTALL_PARENT,
     home_dir=None,
-    install_dir_basename="rocm_10_0",
+    install_dir_basename="rocm_10_0_0",
 ):
     """Select the system install path when its existing parent is writable."""
     preferred_dir = preferred_parent / install_dir_basename

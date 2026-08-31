@@ -300,9 +300,9 @@ class RockProjectBuilder(configparser.ConfigParser):
         )
         version_info = json.loads(raw_version)
         version_parts = version_info["rocm-version"].split(".")
-        if len(version_parts) < 2:
+        if len(version_parts) < 3:
             raise ValueError("TheRock version.json has an invalid ROCm version")
-        return "_".join(version_parts[:2])
+        return "_".join(version_parts[:3])
 
     def _resolve_rocm_sdk_install_dir(self):
         if not self.rocm_sdk_install_dir_basename:
