@@ -1,4 +1,5 @@
 import configparser
+import curses
 import os
 import tempfile
 import unittest
@@ -7,12 +8,67 @@ from unittest import mock
 
 import lib_python.rcb_constants as rcb_const
 from lib_python.rcb_cfg_reader import RCBConfigReader
+from lib_python.config_ui.config_store import ConfigStore
+from lib_python.config_ui.page import NavigationAction
 import rockbuilder_cfg
 
 
 class FakeScreen:
+    def __init__(self, keys=None, height=24, width=120):
+        """Initialize a fake screen with queued input and dimensions.
+
+        Example:
+            FakeScreen([ord("c")], 24, 80) returns a screen that sends
+            the Cancel shortcut on its first input read.
+        """
+        self.keys = list(keys or [])
+        self.height = height
+        self.width = width
+        self.lines = {}
+        self.frames = []
+
     def clear(self):
-        pass
+        """Clear the current frame and return no value.
+
+        Example:
+            clear() removes all text previously written to the frame.
+        """
+        self.lines = {}
+
+    def getmaxyx(self):
+        """Return configured terminal height and width.
+
+        Example:
+            A 24 by 80 fake screen returns (24, 80).
+        """
+        ret = (self.height, self.width)
+        return ret
+
+    def addstr(self, row, column, text):
+        """Record text written at a screen coordinate.
+
+        Example:
+            addstr(0, 0, "Title") records "Title" at row zero and
+            returns no value.
+        """
+        self.lines[(row, column)] = text
+
+    def refresh(self):
+        """Record the completed frame and return no value.
+
+        Example:
+            refresh() appends the current text mapping to frames.
+        """
+        self.frames.append(dict(self.lines))
+
+    def getch(self):
+        """Return the next queued key code.
+
+        Example:
+            With [ord("c")] queued, getch() returns ord("c").
+        """
+        ret = self.keys.pop(0)
+        return ret
 
 
 def make_config(contents):
@@ -602,6 +658,380 @@ class UiManagerRestoreTest(unittest.TestCase):
         self.assertEqual(selected_sdk.extra_val, "saved-version")
         self.assertEqual(selected_values(ui_manager.gpu_list), ["gfx90a"])
         self.assertFalse(ui_manager.gpu_list.multi_selection)
+
+
+class WizardNavigationTest(unittest.TestCase):
+    def setUp(self):
+        self.saved_rocm_home = os.environ.pop("ROCM_HOME", None)
+
+    def tearDown(self):
+        if self.saved_rocm_home is not None:
+            os.environ["ROCM_HOME"] = self.saved_rocm_home
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_registers_pages_and_position_specific_buttons(
+        self,
+        unused_installs,
+    ):
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            make_config(""),
+        )
+
+        first_buttons = ui_manager.pages[0].get_buttons(0, 2)
+        last_buttons = ui_manager.pages[1].get_buttons(1, 2)
+
+        self.assertEqual(
+            [button.action for button in first_buttons],
+            [
+                NavigationAction.CANCEL,
+                NavigationAction.FORWARD,
+            ],
+        )
+        self.assertEqual(
+            [button.action for button in last_buttons],
+            [
+                NavigationAction.BACK,
+                NavigationAction.CANCEL,
+                NavigationAction.SAVE,
+            ],
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_shortcuts_move_forward_and_save(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                ord("f"),
+                ord(" "),
+                ord("s"),
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        saved_config = make_config(
+            "[build_targets]\ngpus = ['gfx906']\n"
+        )
+        save_selection = mock.Mock(return_value=saved_config)
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIs(result, saved_config)
+        save_selection.assert_called_once_with()
+        first_frame = "\n".join(screen.frames[0].values())
+        second_frame = "\n".join(screen.frames[1].values())
+        self.assertIn("Select ROCM SDK", first_frame)
+        self.assertNotIn("Select AMD GPUs", first_frame)
+        self.assertIn("Select AMD GPUs", second_frame)
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_focused_buttons_activate_with_enter(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                9,
+                curses.KEY_RIGHT,
+                10,
+                ord(" "),
+                9,
+                curses.KEY_RIGHT,
+                curses.KEY_RIGHT,
+                10,
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        saved_config = make_config(
+            "[build_targets]\ngpus = ['gfx906']\n"
+        )
+        save_selection = mock.Mock(return_value=saved_config)
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIs(result, saved_config)
+        save_selection.assert_called_once_with()
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_enter_focuses_primary_button_without_selecting_item(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                curses.KEY_DOWN,
+                10,
+                10,
+                ord(" "),
+                10,
+                10,
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        initial_sdk = ui_manager.sdk_list.get_selected_item()
+        saved_config = make_config(
+            "[build_targets]\ngpus = ['gfx906']\n"
+        )
+        save_selection = mock.Mock(return_value=saved_config)
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIs(result, saved_config)
+        self.assertIs(
+            ui_manager.sdk_list.get_selected_item(),
+            initial_sdk,
+        )
+        save_selection.assert_called_once_with()
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_back_returns_to_sdk_page_and_cancel_does_not_save(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                ord("f"),
+                ord("b"),
+                ord("c"),
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        save_selection = mock.Mock()
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIsNone(result)
+        save_selection.assert_not_called()
+        frame_titles = [
+            frame.get((0, 0), "")
+            for frame in screen.frames
+        ]
+        self.assertIn("Select ROCM SDK", frame_titles[0])
+        self.assertIn("Select AMD GPUs", frame_titles[1])
+        self.assertIn("Select ROCM SDK", frame_titles[2])
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_back_and_forward_preserve_gpu_selection(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                ord("f"),
+                ord(" "),
+                ord("b"),
+                ord("f"),
+                ord("s"),
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        saved_config = make_config(
+            "[build_targets]\ngpus = ['gfx906']\n"
+        )
+        save_selection = mock.Mock(return_value=saved_config)
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIs(result, saved_config)
+        self.assertEqual(
+            selected_values(ui_manager.gpu_list),
+            ["gfx906"],
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_save_shows_validation_message_for_empty_gpu_list(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                ord("f"),
+                ord("s"),
+                ord("c"),
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        save_selection = mock.Mock()
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.show()
+
+        self.assertIsNone(result)
+        save_selection.assert_not_called()
+        validation_frame = "\n".join(screen.frames[2].values())
+        self.assertIn(
+            "Select at least one GPU target",
+            validation_frame,
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_runtime_wheel_sdk_selection_uses_single_gpu_mode(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(
+            [
+                curses.KEY_DOWN,
+                curses.KEY_DOWN,
+                ord(" "),
+                ord("f"),
+                ord("c"),
+            ]
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+
+        ui_manager.show()
+
+        selected_sdk = ui_manager.sdk_list.get_selected_item()
+        self.assertEqual(
+            selected_sdk.get_key(),
+            rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER,
+        )
+        self.assertFalse(ui_manager.gpu_list.multi_selection)
+        self.assertEqual(
+            ui_manager.gpu_list.get_item(0).get_value(),
+            "gfx101X-dgpu",
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_page_scrolls_to_keep_cursor_visible(
+        self,
+        unused_installs,
+    ):
+        screen = FakeScreen(height=8)
+        ui_manager = rockbuilder_cfg.UiManager(
+            screen,
+            make_config(""),
+        )
+        gpu_page = ui_manager.pages[1]
+        gpu_page.item_cursor = 10
+
+        gpu_page.render(screen, 1, 2)
+
+        self.assertEqual(gpu_page.first_visible_item, 8)
+        rendered_text = "\n".join(screen.frames[-1].values())
+        first_gpu_name = (
+            ui_manager.gpu_list.get_item(0).get_name()
+        )
+        current_gpu_name = (
+            ui_manager.gpu_list.get_item(10).get_name()
+        )
+        self.assertNotIn(first_gpu_name, rendered_text)
+        self.assertIn(current_gpu_name, rendered_text)
+
+
+class ConfigStoreTest(unittest.TestCase):
+    def test_save_replaces_owned_sections_and_preserves_other_sections(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "rockbuilder.cfg"
+            config_path.write_text(
+                "[custom]\n"
+                "keep = yes\n"
+                "\n"
+                "[rocm_sdk]\n"
+                "stale = value\n",
+                encoding="utf-8",
+            )
+            sdk_list = mock.Mock()
+            sdk_list.get_config_selections.return_value = (
+                rockbuilder_cfg.ConfigSelection(
+                    "rocm_sdk",
+                    {"rocm_sdk_build_config": ["therock_dev"]},
+                )
+            )
+            gpu_list = mock.Mock()
+            gpu_list.get_config_selections.return_value = (
+                rockbuilder_cfg.ConfigSelection(
+                    "build_targets",
+                    {"gpus": ["gfx90a"]},
+                )
+            )
+            on_change = mock.Mock()
+            config_store = ConfigStore(config_path, on_change)
+
+            saved_config = config_store.save(
+                [sdk_list, gpu_list]
+            )
+
+        self.assertEqual(saved_config.get("custom", "keep"), "yes")
+        self.assertFalse(saved_config.has_option("rocm_sdk", "stale"))
+        self.assertEqual(
+            saved_config.get("rocm_sdk", "rocm_sdk_build_config"),
+            "['therock_dev']",
+        )
+        self.assertEqual(
+            saved_config.get("build_targets", "gpus"),
+            "['gfx90a']",
+        )
+        on_change.assert_called_once_with()
 
 
 if __name__ == "__main__":

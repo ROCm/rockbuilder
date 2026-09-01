@@ -83,7 +83,17 @@ If `rockbuilder.cfg` does not exist, RockBuilder launches an interactive UI to c
 
     <img src="docs/pics/readme/cfg_python_wheel_60pct.png" width="100%" height="100%">
 
-Press **Enter** to save selections to `rockbuilder.cfg`.
+The interactive UI is an ordered wizard:
+
+1. Select the ROCm SDK, then choose **Forward**.
+2. Select one or more compatible GPU targets, then choose **Save**.
+
+Use **Space** to change a selection. When the selection list has focus,
+**Enter** moves focus to Forward or Save without changing the selection.
+Press Enter again to activate that button. **Tab** changes focus and
+**Left/Right** selects a button. The **C/F/B/S** keys activate Cancel,
+Forward, Back, and Save directly. **Esc** also cancels. Back and Forward
+preserve unsaved selections; only Save writes `rockbuilder.cfg`.
 
 ### Manual configuration (headless / automation)
 
