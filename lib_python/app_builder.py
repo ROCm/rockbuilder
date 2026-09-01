@@ -304,7 +304,38 @@ class RockProjectBuilder(configparser.ConfigParser):
             raise ValueError("TheRock version.json has an invalid ROCm version")
         return "_".join(version_parts[:3])
 
+    def _get_sanitizer_install_suffix(self):
+        """Return the install-directory suffix for the sanitizer mode.
+
+        Example:
+            With RCB_THEROCK_SANITIZER=HOST_ASAN, this returns
+            "_host_asan".
+        """
+        sanitizer = os.environ.get(
+            rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER,
+            "",
+        ).upper()
+        suffix_by_sanitizer = {
+            "": "",
+            "NONE": "",
+            "ASAN": "_asan",
+            "HOST_ASAN": "_host_asan",
+        }
+        if sanitizer not in suffix_by_sanitizer:
+            raise ValueError(
+                "Unsupported TheRock sanitizer mode: "
+                + sanitizer
+            )
+        ret = suffix_by_sanitizer[sanitizer]
+        return ret
+
     def _resolve_rocm_sdk_install_dir(self):
+        """Resolve a unique TheRock SDK installation directory.
+
+        Example:
+            A rocm_10_0_0 build with ASAN resolves to
+            /opt/rcb/rocm_10_0_0_asan and returns that Path.
+        """
         if not self.rocm_sdk_install_dir_basename:
             return None
 
@@ -328,6 +359,7 @@ class RockProjectBuilder(configparser.ConfigParser):
                 "{git_hash}",
                 checkout_revision[:7],
             )
+        install_dir_basename += self._get_sanitizer_install_suffix()
 
         if "{" in install_dir_basename or "}" in install_dir_basename:
             raise ValueError(

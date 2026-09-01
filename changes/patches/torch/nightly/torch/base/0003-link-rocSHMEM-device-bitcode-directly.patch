@@ -19,17 +19,22 @@ Subject: [PATCH 3/3] link rocSHMEM device bitcode
   only when the SDK provides both variants.
 - Otherwise use the plain architecture and its separate
   device bitcode.
+- Accept qualified XNACK target IDs by checking
+  rocSHMEM support with the base architecture.
+- Preserve an explicit XNACK- or XNACK+ selection
+  instead of expanding or dropping it.
+- Keep metadata-based expansion for plain targets.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- caffe2/CMakeLists.txt | 78 ++++++++++++++++++++++++++++++++++++++-------------
- 1 file changed, 58 insertions(+), 20 deletions(-)
+ caffe2/CMakeLists.txt | 83 ++++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 62 insertions(+), 21 deletions(-)
 
 diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
 index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e0363a02b064 100644
 --- a/caffe2/CMakeLists.txt
 +++ b/caffe2/CMakeLists.txt
-@@ -1549,10 +1549,46 @@ if(USE_ROCM)
+@@ -1549,10 +1549,49 @@ if(USE_ROCM)
        # rocSHMEM upstream ships device code for a subset of AMD gfx targets only.
        set(ROCSHMEM_SUPPORTED_ARCH gfx90a gfx942 gfx950 gfx1100 gfx1201)
        set(_torch_rocshmem_build_arches)
@@ -58,19 +63,23 @@ index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e036
 +            ERROR_QUIET)
 +      endif()
        foreach(_arch ${PYTORCH_ROCM_ARCH})
-         list(FIND ROCSHMEM_SUPPORTED_ARCH "${_arch}" _rocsmem_supported_idx)
+-        list(FIND ROCSHMEM_SUPPORTED_ARCH "${_arch}" _rocsmem_supported_idx)
++        string(REGEX REPLACE ":.*" "" _arch_base "${_arch}")
++        list(FIND ROCSHMEM_SUPPORTED_ARCH "${_arch_base}" _rocsmem_supported_idx)
          if(NOT _rocsmem_supported_idx EQUAL -1)
 -          list(APPEND _torch_rocshmem_build_arches "${_arch}")
-+          if(_rocshmem_objdump_result EQUAL 0
++          if(_arch MATCHES ":xnack[-+]$")
++            list(APPEND _torch_rocshmem_build_arches "${_arch}")
++          elseif(_rocshmem_objdump_result EQUAL 0
 +              AND _rocshmem_offload_metadata
-+                MATCHES "arch[ \t]+${_arch}:xnack-"
++                MATCHES "arch[ \t]+${_arch_base}:xnack-"
 +              AND _rocshmem_offload_metadata
-+                MATCHES "arch[ \t]+${_arch}:xnack\\+")
++                MATCHES "arch[ \t]+${_arch_base}:xnack\\+")
 +            list(
 +                APPEND
 +                _torch_rocshmem_build_arches
-+                "${_arch}:xnack-"
-+                "${_arch}:xnack+")
++                "${_arch_base}:xnack-"
++                "${_arch_base}:xnack+")
 +          else()
 +            list(APPEND _torch_rocshmem_build_arches "${_arch}")
 +          endif()

@@ -91,6 +91,15 @@ class WizardPage:
         ret = None
         return ret
 
+    def is_applicable(self):
+        """Return whether this page belongs in the current wizard flow.
+
+        Example:
+            is_applicable() returns True for an ordinary registered page.
+        """
+        ret = True
+        return ret
+
     def before_forward(self):
         """Prepare dependent state immediately before moving forward.
 
@@ -98,6 +107,19 @@ class WizardPage:
             before_forward() may update the GPU list and returns None.
         """
         ret = None
+        return ret
+
+    def get_help_text(self):
+        """Return keyboard instructions displayed below this page.
+
+        Example:
+            get_help_text() returns instructions for selecting and
+            navigating.
+        """
+        ret = (
+            "Up/Down: select  Space: toggle  Enter: primary/activate  "
+            "Tab: focus  Left/Right: button  C/F/B/S: action"
+        )
         return ret
 
     def set_status_message(self, message):
@@ -174,10 +196,7 @@ class WizardPage:
             width,
         )
         self._render_buttons(screen, button_row, width, buttons)
-        help_text = (
-            "Up/Down: select  Space: toggle  Enter: primary/activate  "
-            "Tab: focus  Left/Right: button  C/F/B/S: action"
-        )
+        help_text = self.get_help_text()
         self._safe_addstr(screen, help_row, 0, help_text, width)
         screen.refresh()
 

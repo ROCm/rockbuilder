@@ -1,24 +1,81 @@
 From f80939ad28d4ce284dd463745dd7af2c6d8a70e2 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Mon, 23 Mar 2026 11:59:48 -0700
-Subject: [PATCH 02/12] enable gfx90a xnack+ and asan build options
+Subject: [PATCH 02/12] enable gfx90a xnack+
+ and asan build options
+
+- Register XNACK- and XNACK+ target IDs used by
+  the RockBuilder configuration wizard.
+- Keep explicit variants out of broad target
+  families so family builds do not gain variants.
+- Preserve project exclusions used by gfx908 and
+  gfx90a for their explicit variants.
+- Extend explicit XNACK and full ASAN support to
+  gfx906.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- cmake/therock_amdgpu_targets.cmake | 6 ++++++
+ cmake/therock_amdgpu_targets.cmake | 47 ++++++++++++++++++++++++++++++++++++++
  cmake/therock_sanitizers.cmake     | 4 ++--
- 2 files changed, 8 insertions(+), 2 deletions(-)
+ 2 files changed, 49 insertions(+), 2 deletions(-)
 
 diff --git a/cmake/therock_amdgpu_targets.cmake b/cmake/therock_amdgpu_targets.cmake
-index d2db1b3..62619ba 100644
+index d2db1b3..50c7aaf 100644
 --- a/cmake/therock_amdgpu_targets.cmake
 +++ b/cmake/therock_amdgpu_targets.cmake
-@@ -89,6 +89,12 @@ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
+@@ -77,24 +77,71 @@ therock_add_amdgpu_target(gfx906 "Radeon VII / MI50 CDNA" FAMILY dgpu-all gfx906
+     rocprofiler-compute # https://github.com/ROCm/TheRock/issues/2892
+ )
+
++# Explicit gfx906 XNACK targets.
++therock_add_amdgpu_target(gfx906:xnack- "Radeon VII / MI50 CDNA"
++  EXCLUDE_TARGET_PROJECTS
++    hipBLASLt # https://github.com/ROCm/TheRock/issues/1062
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++    composable_kernel # https://github.com/ROCm/TheRock/issues/1245
++    rocWMMA # https://github.com/ROCm/TheRock/issues/1944
++    hipTensor # https://github.com/ROCm/TheRock/issues/2074
++    rocprofiler-compute # https://github.com/ROCm/TheRock/issues/2892
++)
++therock_add_amdgpu_target(gfx906:xnack+ "Radeon VII / MI50 CDNA"
++  EXCLUDE_TARGET_PROJECTS
++    hipBLASLt # https://github.com/ROCm/TheRock/issues/1062
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++    composable_kernel # https://github.com/ROCm/TheRock/issues/1245
++    rocWMMA # https://github.com/ROCm/TheRock/issues/1944
++    hipTensor # https://github.com/ROCm/TheRock/issues/2074
++    rocprofiler-compute # https://github.com/ROCm/TheRock/issues/2892
++)
++
+ # gfx908 (separate family - different instruction support from gfx906/gfx90a)
+ therock_add_amdgpu_target(gfx908 "MI100 CDNA" FAMILY dcgpu-all gfx908-dcgpu
+   EXCLUDE_TARGET_PROJECTS
      hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
  )
  
++# Explicit gfx908 XNACK targets.
++therock_add_amdgpu_target(gfx908:xnack- "MI100 CDNA"
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++therock_add_amdgpu_target(gfx908:xnack+ "MI100 CDNA"
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++
+ # gfx90a (separate family - different instruction support from gfx906/gfx908)
+ therock_add_amdgpu_target(gfx90a "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
+   EXCLUDE_TARGET_PROJECTS
+     hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
+ )
+
++therock_add_amdgpu_target(gfx90a:xnack- "MI210/250 CDNA"
++  EXCLUDE_TARGET_PROJECTS
++    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
++)
++
 +# gfx90a (separate family - different instruction support from gfx906/gfx908)
-+therock_add_amdgpu_target(gfx90a:xnack+ "MI210/250 CDNA" FAMILY dcgpu-all gfx90a-dcgpu
++therock_add_amdgpu_target(gfx90a:xnack+ "MI210/250 CDNA"
 +  EXCLUDE_TARGET_PROJECTS
 +    hipSPARSELt # https://github.com/ROCm/TheRock/issues/2042
 +)
@@ -26,8 +83,20 @@ index d2db1b3..62619ba 100644
  # gfx94X family
  therock_add_amdgpu_target(gfx942 "MI300A/MI300X CDNA" FAMILY dcgpu-all gfx94X-all gfx94X-dcgpu)
  
++therock_add_amdgpu_target(gfx942:xnack- "MI300A/MI300X CDNA")
++therock_add_amdgpu_target(gfx942:xnack+ "MI300A/MI300X CDNA")
++
+ # gfx950
+ therock_add_amdgpu_target(gfx950 "MI350X/MI355X CDNA" FAMILY dcgpu-all gfx950-all gfx950-dcgpu)
+
++therock_add_amdgpu_target(gfx950:xnack- "MI350X/MI355X CDNA")
++therock_add_amdgpu_target(gfx950:xnack+ "MI350X/MI355X CDNA")
++
+ # gfx101X family
+ therock_add_amdgpu_target(gfx1010 "AMD RX 5700" FAMILY dgpu-all gfx101X-all gfx101X-dgpu
+   EXCLUDE_TARGET_PROJECTS
 diff --git a/cmake/therock_sanitizers.cmake b/cmake/therock_sanitizers.cmake
-index 6caeb88..93bc60f 100644
+index 6caeb88..14fe509 100644
 --- a/cmake/therock_sanitizers.cmake
 +++ b/cmake/therock_sanitizers.cmake
 @@ -29,7 +29,7 @@ function(therock_sanitizer_configure
@@ -35,7 +104,7 @@ index 6caeb88..93bc60f 100644
  
    # Our own toolchains get ASAN enabled consistently.
 -  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx942, gfx950)
-+  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx90a, gfx942, gfx950)
++  # ASAN: Full host+device address sanitizer (xnack+ GPU targets for gfx906, gfx90a, gfx942, gfx950)
    # HOST_ASAN: Host-only address sanitizer (no device-side instrumentation)
    # TSAN: Thread sanitizer.
    set(_stanza)
@@ -44,7 +113,7 @@ index 6caeb88..93bc60f 100644
      # Filter GPU_TARGETS to enable xnack+ mode only for gfx targets that support it.
      if(_sanitizer STREQUAL "ASAN" OR _sanitizer STREQUAL "TSAN")
 -      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
-+      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx90a|gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
++      string(APPEND _stanza "list(TRANSFORM GPU_TARGETS REPLACE \"^(gfx906|gfx90a|gfx942|gfx950)$\" \"\\\\1:xnack+\")\n")
        string(APPEND _stanza "set(AMDGPU_TARGETS \"\${GPU_TARGETS}\")\n")
        string(APPEND _stanza "message(STATUS \"Override ${_sanitizer} GPU_TARGETS = \${GPU_TARGETS}\")\n")
      else()
