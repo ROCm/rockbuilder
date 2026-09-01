@@ -130,6 +130,24 @@ offers every valid SDK directory found directly below `/opt/rcb` and
 specified by `ROCM_HOME` is also offered. Development installs are retained,
 and RockBuilder does not manage a stable symlink.
 
+### Interactive Configuration Pages
+
+The configuration UI presents registered pages in order. The initial wizard
+contains:
+
+1. ROCm SDK selection with Cancel and Forward buttons.
+2. GPU target selection with Back, Cancel, and Save buttons.
+
+Use Up and Down to move through selections and Space to change a selection.
+When the list has focus, Enter focuses Forward or Save without changing the
+selection. Enter activates a focused button. Tab moves focus between the list
+and buttons, while Left and Right move between buttons. C, F, B, and S are
+direct shortcuts for Cancel, Forward, Back, and Save. Esc also cancels.
+
+Selections remain in memory while moving Back or Forward. Cancel exits without
+changing `rockbuilder.cfg`; Save writes all wizard-owned sections while
+preserving unrelated configuration sections.
+
 ### Environment Variables
 
 RockBuilder supports the use of environment variables in application configuration settings.

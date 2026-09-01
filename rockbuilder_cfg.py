@@ -4,15 +4,18 @@
 #   linux: pip3 install curses
 #   windows: pip3 install windows-curses
 import ast
-import configparser
 import curses
 import os
 import subprocess
 import sys
+from lib_python.config_ui.config_store import ConfigStore
+from lib_python.config_ui.pages.gpu_page import GpuSelectionPage
+from lib_python.config_ui.pages.sdk_page import SdkSelectionPage
+from lib_python.config_ui.wizard import Wizard
 from lib_python.utils import verify_env__python
 from lib_python.utils import install_rocm_sdk_from_python_wheels
 import lib_python.rcb_constants as rcb_const
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 # Basic heuristic vefication to check whether rocm_sdk directory looks valid
 #
@@ -67,23 +70,15 @@ def parse_config_values(raw_value):
 
 
 def load_existing_config(config_file=None):
-    """Load rockbuilder.cfg when it exists."""
-    if config_file is None:
-        config_file = rcb_const.get_rock_builder_config_file()
+    """Load rockbuilder.cfg or return an empty configuration.
 
-    config = configparser.ConfigParser()
-    config_path = Path(config_file)
-    if config_path.is_file():
-        config.read(config_path)
-    return config
-
-
-def get_config_value_map(config):
-    """Return configuration values independent of section ordering."""
-    return {
-        section: dict(config.items(section))
-        for section in config.sections()
-    }
+    Example:
+        load_existing_config(Path("rockbuilder.cfg")) returns a
+        ConfigParser containing that file's sections.
+    """
+    config_store = ConfigStore(config_file)
+    ret = config_store.load()
+    return ret
 
 
 def invalidate_therock_phase_stamps(build_root_dir=None):
@@ -108,6 +103,18 @@ def invalidate_therock_phase_stamps(build_root_dir=None):
         for phase_name in phase_names:
             stamp_path = therock_build_dir / f"{phase_name}.done"
             stamp_path.unlink(missing_ok=True)
+
+
+def handle_config_change():
+    """Report a saved change and invalidate dependent TheRock phases.
+
+    Example:
+        handle_config_change() removes checkout-and-later stamps and
+        returns None.
+    """
+    print("RockBuilder configuration changed.")
+    print("Restarting TheRock from the checkout phase.")
+    invalidate_therock_phase_stamps()
 
 
 class SelectionItem:
@@ -217,11 +224,21 @@ class BaseSelectionList:
             listener.handle_item_selected(self, item, selected)
 
     def set_multi_selection(self, enable):
-        self.multi_selection = enable
-        for ii, item in enumerate(self.item_list):
-            if item.is_selected():
-                self.toggle_item_selection(ii)
-                break
+        """Set selection mode while preserving feasible selections.
+
+        Example:
+            set_multi_selection(False) keeps the first selected GPU,
+            clears later selections, and returns None.
+        """
+        if self.multi_selection != enable:
+            self.multi_selection = enable
+            if not enable:
+                selected_item_found = False
+                for item in self.item_list:
+                    if item.is_selected() and selected_item_found:
+                        item.set_selected(False)
+                    elif item.is_selected():
+                        selected_item_found = True
 
     # handle the item selection logic
     def toggle_item_selection(self, indx):
@@ -460,35 +477,29 @@ class SelectionListManager:
             indx_first_item = indx_last_item
 
     def save_selection(self):
+        """Save all managed lists and return the resulting configuration.
+
+        Example:
+            With SDK and GPU lists registered, save_selection() writes
+            both sections and returns a ConfigParser.
+        """
         fname = rcb_const.get_rock_builder_config_file()
-        existing_config = load_existing_config(fname)
-        config = configparser.ConfigParser()
-        # add sections and options
-        for ii, selection_list in enumerate(self.selection_list_arr):
-            config_value = selection_list.get_config_selections()
-            section = config_value.header
-            config.add_section(section)
-            # get dictionary storing key/value pairs saved under section
-            cfg_dict = config_value.selection_dict
-            for ii, new_key in enumerate(cfg_dict.keys()):
-                new_val = cfg_dict[new_key]
-                config[section][new_key] = str(new_val)
-                print("new_key: " + str(new_key))
-                print("new_val: " + str(new_val))
-        # save the configuration to a file
-        with open(fname.as_posix(), "w") as configfile:
-            config.write(configfile)
-        existing_values = get_config_value_map(existing_config)
-        new_values = get_config_value_map(config)
-        if existing_values != new_values:
-            print("RockBuilder configuration changed.")
-            print("Restarting TheRock from the checkout phase.")
-            invalidate_therock_phase_stamps()
-        return config
+        config_store = ConfigStore(
+            fname,
+            handle_config_change,
+        )
+        ret = config_store.save(self.selection_list_arr)
+        return ret
 
 
 class UiManager:
     def __init__(self, stdscr, existing_config=None):
+        """Initialize selection models and register wizard pages in order.
+
+        Example:
+            UiManager(screen, config) creates SDK and GPU pages and
+            returns no value.
+        """
         key_name_gpus = rcb_const.RCB__CFG__KEY__GPUS
         self.stdscr = stdscr
         # init curses based display to show text based ui
@@ -553,22 +564,65 @@ class UiManager:
         if existing_config is None:
             existing_config = load_existing_config()
         self.restore_selections(existing_config)
+        self.sdk_list.add_item_selection_listener(self)
+
+        self.selection_list_manager = SelectionListManager(self.stdscr)
+        self.selection_list_manager.add_selection_list(self.sdk_list)
+        self.selection_list_manager.add_selection_list(self.gpu_list)
+        self.pages = [
+            SdkSelectionPage(
+                self.sdk_list,
+                self.prepare_gpu_list,
+            ),
+            GpuSelectionPage(self.gpu_list),
+        ]
 
     def configure_gpu_list(self, sdk_item, clear_display):
+        """Choose the compatible GPU list for the selected SDK.
+
+        Example:
+            configure_gpu_list(wheel_sdk, False) selects wheel GPU
+            families and returns None.
+        """
         if sdk_item is None:
-            return
-
-        if sdk_item.get_key() == rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER:
-            self.gpu_list.set_item_list(self.gpu_pip_wheel_list)
-            self.gpu_list.set_multi_selection(False)
+            ret = None
         else:
-            self.gpu_list.set_item_list(self.gpu_build_target_list)
-            self.gpu_list.set_multi_selection(True)
+            wheel_server_key = (
+                rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER
+            )
+            if sdk_item.get_key() == wheel_server_key:
+                self.gpu_list.set_item_list(
+                    self.gpu_pip_wheel_list
+                )
+                self.gpu_list.set_multi_selection(False)
+            else:
+                self.gpu_list.set_item_list(
+                    self.gpu_build_target_list
+                )
+                self.gpu_list.set_multi_selection(True)
+            if clear_display:
+                self.stdscr.clear()
+            ret = None
+        return ret
 
-        if clear_display:
-            self.stdscr.clear()
+    def prepare_gpu_list(self, sdk_item):
+        """Prepare GPU choices before advancing from the SDK page.
+
+        Example:
+            prepare_gpu_list(local_sdk) enables build GPU targets and
+            returns None.
+        """
+        self.configure_gpu_list(sdk_item, False)
+        ret = None
+        return ret
 
     def restore_selections(self, config):
+        """Restore feasible SDK and GPU values from existing config.
+
+        Example:
+            restore_selections(config_with_gfx90a) selects gfx90a and
+            returns None.
+        """
         restored_sdk_items = self.sdk_list.restore_selection(config)
         if restored_sdk_items:
             selected_sdk_item = restored_sdk_items[0]
@@ -579,44 +633,28 @@ class UiManager:
         self.gpu_list.restore_selection(config)
 
     def show(self):
-        ret = None
-        self.sdk_list.add_item_selection_listener(self)
+        """Run registered pages and return saved config or None.
 
-        list_mngr = SelectionListManager(self.stdscr)
-        list_mngr.add_selection_list(self.sdk_list)
-        list_mngr.add_selection_list(self.gpu_list)
-
-        indx_cursor = 0
-        while True:
-            list_mngr.show(indx_cursor)
-            total_item_cnt = list_mngr.get_total_selection_list_item_cnt()
-            last_row_indx = list_mngr.get_last_row_indx()
-            try:
-                self.stdscr.addstr(
-                    last_row_indx,
-                    0,
-                    f"Keys: Up, Down, Space, Enter and Esc",
-                )
-                self.stdscr.refresh()
-            except curses.error:
-                print("Terminal is too small. Please increase the size that all text will fit.")
-            # Get user input for navigation or selection
-            key = self.stdscr.getch()
-            if key == curses.KEY_UP:
-                indx_cursor = (indx_cursor - 1) % total_item_cnt
-            elif key == curses.KEY_DOWN:
-                indx_cursor = (indx_cursor + 1) % total_item_cnt
-            elif key == ord(" "):
-                list_mngr.on_selection_key_pressed(indx_cursor)
-            elif key == curses.KEY_ENTER or key in [10, 13]:  # Handle Enter key
-                ret = list_mngr.save_selection()
-                break  # Exit the selection process
-            elif key == 27:  # ESC-Key
-                break
+        Example:
+            show() returns a ConfigParser after Save or None after
+            Cancel.
+        """
+        wizard = Wizard(
+            self.stdscr,
+            self.pages,
+            self.selection_list_manager.save_selection,
+        )
+        ret = wizard.run()
         return ret
 
     def handle_item_selected(self, sender, item, selected):
-        self.configure_gpu_list(item, True)
+        """Update GPU compatibility when the SDK selection changes.
+
+        Example:
+            handle_item_selected(sdk_list, wheel_sdk, True) selects
+            wheel GPU families and returns None.
+        """
+        self.configure_gpu_list(item, False)
 
 
 def show_config_ui():
