@@ -86,7 +86,18 @@ If `rockbuilder.cfg` does not exist, RockBuilder launches an interactive UI to c
 The interactive UI is an ordered wizard:
 
 1. Select the ROCm SDK, then choose **Forward**.
-2. Select one or more compatible GPU targets, then choose **Save**.
+2. Select one or more compatible GPU targets.
+3. For selected `gfx906`, `gfx908`, `gfx90a`, `gfx942`, and `gfx950`
+   targets, optionally select Plain, XNACK-, XNACK+, or both explicit
+   variants.
+4. For a TheRock build, select Normal, Host ASAN, or the combined host
+   and device ASAN mode.
+
+Pages which do not apply to the selected SDK or GPUs are skipped. The
+combined ASAN option dynamically lists the selected GPUs that receive
+device ASAN; every selected GPU receives host ASAN. Device ASAN requires
+`gfx906`, `gfx90a`, `gfx942`, or `gfx950` and converts its Plain target to
+XNACK+. Host ASAN does not change GPU targets.
 
 Use **Space** to change a selection. When the selection list has focus,
 **Enter** moves focus to Forward or Save without changing the selection.
@@ -94,6 +105,24 @@ Press Enter again to activate that button. **Tab** changes focus and
 **Left/Right** selects a button. The **C/F/B/S** keys activate Cancel,
 Forward, Back, and Save directly. **Esc** also cancels. Back and Forward
 preserve unsaved selections; only Save writes `rockbuilder.cfg`.
+
+For example, selecting both explicit modes for `gfx90a` stores:
+
+```ini
+[build_targets]
+gpus = ['gfx90a:xnack-', 'gfx90a:xnack+']
+```
+
+Sanitizer selections are stored separately:
+
+```ini
+[build_options]
+therock_sanitizer = ['ASAN']
+```
+
+Sanitized TheRock SDKs use distinct install identities. For example, release
+builds use `rocm_10_0_0_asan` or `rocm_10_0_0_host_asan`, and development
+builds add the same suffix after their revision hash.
 
 ### Manual configuration (headless / automation)
 

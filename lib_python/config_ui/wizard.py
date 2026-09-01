@@ -25,19 +25,26 @@ class Wizard:
             Cancel.
         """
         ret = None
-        page_index = 0
-        running = bool(self.pages)
+        active_pages = self._get_active_pages()
+        current_page = active_pages[0] if active_pages else None
+        running = current_page is not None
 
         while running:
-            page_count = len(self.pages)
-            page = self.pages[page_index]
+            active_pages = self._get_active_pages()
+            if current_page not in active_pages:
+                current_page = active_pages[0]
+            page_index = active_pages.index(current_page)
+            page_count = len(active_pages)
+            page = current_page
             page.render(self.screen, page_index, page_count)
             key = self.screen.getch()
             page.set_status_message("")
             action = page.handle_key(key, page_index, page_count)
 
             if action is NavigationAction.BACK:
-                page_index = max(0, page_index - 1)
+                current_page = active_pages[
+                    max(0, page_index - 1)
+                ]
             elif action is NavigationAction.CANCEL:
                 running = False
             elif action is NavigationAction.FORWARD:
@@ -46,31 +53,44 @@ class Wizard:
                     page.set_status_message(error_message)
                 else:
                     page.before_forward()
-                    page_index = min(
-                        page_count - 1,
-                        page_index + 1,
-                    )
+                    active_pages = self._get_active_pages()
+                    page_index = active_pages.index(page)
+                    current_page = active_pages[
+                        min(len(active_pages) - 1, page_index + 1)
+                    ]
             elif action is NavigationAction.SAVE:
-                invalid_page_index = self._get_invalid_page_index()
-                if invalid_page_index is None:
+                invalid_page = self._get_invalid_page(active_pages)
+                if invalid_page is None:
                     ret = self.save_callback()
                     running = False
                 else:
-                    page_index = invalid_page_index
-                    invalid_page = self.pages[page_index]
+                    current_page = invalid_page
                     error_message = invalid_page.validate()
                     invalid_page.set_status_message(error_message)
         return ret
 
-    def _get_invalid_page_index(self):
-        """Return the first invalid page index, or None when all are valid.
+    def _get_active_pages(self):
+        """Return registered pages applicable to the current selections.
 
         Example:
-            With a valid SDK page and invalid GPU page, this returns 1.
+            When XNACK is not selected, this omits the XNACK page.
+        """
+        ret_arr = [
+            page
+            for page in self.pages
+            if page.is_applicable()
+        ]
+        return ret_arr
+
+    def _get_invalid_page(self, pages):
+        """Return the first invalid active page, or None when all are valid.
+
+        Example:
+            With an invalid GPU page, this returns that page object.
         """
         ret = None
-        for page_index, page in enumerate(self.pages):
+        for page in pages:
             if page.validate():
-                ret = page_index
+                ret = page
                 break
         return ret

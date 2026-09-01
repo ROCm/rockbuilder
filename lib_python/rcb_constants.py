@@ -27,6 +27,8 @@ RCB__ENV_VAR__ROCM_SDK_CLANG_CXX_EXEC        = "CLANG_CXX_EXEC"
 # clang_cl is windows only clang wrapper binary to microsoft's own msvc compiler
 RCB__ENV_VAR__ROCM_SDK_CLANG_CL_EXEC         = "CLANG_CL_EXEC"
 RCB__ENV_VAR__AMDGPU_TARGETS                 = "RCB_AMDGPU_TARGETS"
+RCB__ENV_VAR__AMDGPU_BASE_TARGETS            = "RCB_AMDGPU_BASE_TARGETS"
+RCB__ENV_VAR__THEROCK_SANITIZER              = "RCB_THEROCK_SANITIZER"
 
 RCB__ENV_VAR__APP_SRC_DIR                    = "RCB_APP_SRC_DIR"
 RCB__ENV_VAR__APP_BUILD_DIR                  = "RCB_APP_BUILD_DIR"
@@ -65,6 +67,7 @@ RCB__CFG__STAMP_FILE_NAME                    = RCB__ROOT_DIR / "rocm_sdk_wheels.
 
 RCB__CFG__SECTION__ROCM_SDK                  = "rocm_sdk"
 RCB__CFG__SECTION__BUILD_TARGETS             = "build_targets"
+RCB__CFG__SECTION__BUILD_OPTIONS             = "build_options"
 
 RCB__CFG__KEY__ROCM_SDK_FROM_ROCM_HOME       = "rocm_sdk_home"
 RCB__CFG__KEY__ROCM_SDK_FROM_BUILD           = "rocm_sdk_build"
@@ -73,6 +76,12 @@ RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER  = "rocm_sdk_whl_server"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER_DEPRECATED  = "rocm_sdk_whl"
 RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_VERSION = "rocm_sdk_whl_version"
 RCB__CFG__KEY__GPUS                          = "gpus"
+RCB__CFG__KEY__THEROCK_SANITIZER             = "therock_sanitizer"
+RCB__CFG__THEROCK_SANITIZER_VALUES = (
+    "NONE",
+    "HOST_ASAN",
+    "ASAN",
+)
 
 RCB__APPS_CFG__SECTION_APPS                  = "apps"
 RCB__APPS_CFG__KEY__APP_LIST                 = "app_list"

@@ -8,6 +8,8 @@ from unittest import mock
 
 import lib_python.rcb_constants as rcb_const
 from lib_python.rcb_cfg_reader import RCBConfigReader
+from lib_python.config_ui.build_options import SanitizerMode
+from lib_python.config_ui.build_options import XnackMode
 from lib_python.config_ui.config_store import ConfigStore
 from lib_python.config_ui.page import NavigationAction
 import rockbuilder_cfg
@@ -712,6 +714,8 @@ class WizardNavigationTest(unittest.TestCase):
             [
                 ord("f"),
                 ord(" "),
+                ord("f"),
+                ord("f"),
                 ord("s"),
             ]
         )
@@ -755,6 +759,8 @@ class WizardNavigationTest(unittest.TestCase):
                 curses.KEY_RIGHT,
                 curses.KEY_RIGHT,
                 10,
+                ord("f"),
+                ord("s"),
             ]
         )
         ui_manager = rockbuilder_cfg.UiManager(
@@ -788,6 +794,10 @@ class WizardNavigationTest(unittest.TestCase):
                 10,
                 10,
                 ord(" "),
+                10,
+                10,
+                10,
+                10,
                 10,
                 10,
             ]
@@ -864,6 +874,8 @@ class WizardNavigationTest(unittest.TestCase):
                 ord(" "),
                 ord("b"),
                 ord("f"),
+                ord("f"),
+                ord("f"),
                 ord("s"),
             ]
         )
@@ -898,7 +910,7 @@ class WizardNavigationTest(unittest.TestCase):
         screen = FakeScreen(
             [
                 ord("f"),
-                ord("s"),
+                ord("f"),
                 ord("c"),
             ]
         )
@@ -984,6 +996,272 @@ class WizardNavigationTest(unittest.TestCase):
         )
         self.assertNotIn(first_gpu_name, rendered_text)
         self.assertIn(current_gpu_name, rendered_text)
+
+
+class XnackAndSanitizerTest(unittest.TestCase):
+    def setUp(self):
+        self.saved_rocm_home = os.environ.pop("ROCM_HOME", None)
+
+    def tearDown(self):
+        if self.saved_rocm_home is not None:
+            os.environ["ROCM_HOME"] = self.saved_rocm_home
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_full_asan_label_lists_selected_device_targets(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx906', 'gfx90a', 'gfx1100']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+
+        full_asan_item = ui_manager.sanitizer_list.get_item(2)
+
+        self.assertEqual(
+            full_asan_item.get_name(),
+            "Host ASAN for all selected GPUs and device ASAN for "
+            "gfx906, gfx90a",
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_restores_and_serializes_independent_xnack_modes(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx1100', 'gfx906:xnack+', "
+            "'gfx90a:xnack-', "
+            "'gfx942:xnack-', 'gfx942:xnack+']\n"
+        )
+
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+
+        self.assertEqual(
+            selected_values(ui_manager.gpu_list),
+            ["gfx906", "gfx90a", "gfx942", "gfx1100"],
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx906"),
+            XnackMode.PLUS,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx90a"),
+            XnackMode.MINUS,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx942"),
+            XnackMode.BOTH,
+        )
+        saved_targets = (
+            ui_manager.gpu_list.get_config_selections()
+            .selection_dict[rcb_const.RCB__CFG__KEY__GPUS]
+        )
+        self.assertEqual(
+            saved_targets,
+            [
+                "gfx906:xnack+",
+                "gfx90a:xnack-",
+                "gfx942:xnack-",
+                "gfx942:xnack+",
+                "gfx1100",
+            ],
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_xnack_page_controls_each_capable_gpu_independently(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx1100', 'gfx906', 'gfx90a', 'gfx942']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+        xnack_page = ui_manager.pages[2]
+
+        xnack_page.selection_list.toggle_item_selection(0)
+        for unused_index in range(2):
+            xnack_page.selection_list.toggle_item_selection(1)
+        for unused_index in range(3):
+            xnack_page.selection_list.toggle_item_selection(2)
+
+        self.assertTrue(xnack_page.is_applicable())
+        self.assertEqual(
+            xnack_page.selection_list.get_item_cnt(),
+            3,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx906"),
+            XnackMode.MINUS,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx90a"),
+            XnackMode.PLUS,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx942"),
+            XnackMode.BOTH,
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_full_asan_converts_plain_capable_target_to_xnack_plus(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx906', 'gfx90a', 'gfx1100']\n"
+            "\n"
+            "[build_options]\n"
+            "therock_sanitizer = ['ASAN']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+        saved_config = make_config("")
+        save_selection = mock.Mock(return_value=saved_config)
+        ui_manager.selection_list_manager.save_selection = (
+            save_selection
+        )
+
+        result = ui_manager.save_selections()
+
+        self.assertIs(result, saved_config)
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx906"),
+            XnackMode.PLUS,
+        )
+        self.assertIs(
+            ui_manager.gpu_list.get_xnack_mode("gfx90a"),
+            XnackMode.PLUS,
+        )
+        self.assertEqual(
+            (
+                ui_manager.gpu_list.get_config_selections()
+                .selection_dict[rcb_const.RCB__CFG__KEY__GPUS]
+            ),
+            ["gfx906:xnack+", "gfx90a:xnack+", "gfx1100"],
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_full_asan_rejects_xnack_minus_and_both(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx942:xnack-', "
+            "'gfx950:xnack-', 'gfx950:xnack+']\n"
+            "\n"
+            "[build_options]\n"
+            "therock_sanitizer = ['ASAN']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+
+        error_message = ui_manager.sanitizer_page.validate()
+
+        self.assertIn("gfx942", error_message)
+        self.assertIn("gfx950", error_message)
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_full_asan_requires_device_capable_target(
+        self,
+        unused_installs,
+    ):
+        config = make_config(
+            "[rocm_sdk]\n"
+            "rocm_sdk_build_config = ['therock_dev']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx1100']\n"
+            "\n"
+            "[build_options]\n"
+            "therock_sanitizer = ['ASAN']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+
+        error_message = ui_manager.sanitizer_page.validate()
+
+        self.assertIn(
+            "requires gfx906, gfx90a, gfx942, or gfx950",
+            error_message,
+        )
+
+    @mock.patch(
+        "rockbuilder_cfg.discover_rocm_sdk_installs",
+        return_value=[],
+    )
+    def test_wheel_sdk_hides_xnack_and_sanitizer_pages(
+        self,
+        unused_installs,
+    ):
+        server = rcb_const.THEROCK_SDK__PYTHON_WHEEL_SERVER_URL
+        config = make_config(
+            "[rocm_sdk]\n"
+            f"rocm_sdk_whl_server = ['{server}']\n"
+            "\n"
+            "[build_targets]\n"
+            "gpus = ['gfx90a']\n"
+        )
+        ui_manager = rockbuilder_cfg.UiManager(
+            FakeScreen(),
+            config,
+        )
+
+        self.assertFalse(ui_manager.pages[2].is_applicable())
+        self.assertFalse(ui_manager.sanitizer_page.is_applicable())
 
 
 class ConfigStoreTest(unittest.TestCase):

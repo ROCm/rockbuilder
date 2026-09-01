@@ -6,6 +6,7 @@ import sys
 import ast
 import subprocess
 import lib_python.rcb_constants as rcb_const
+from lib_python.config_ui.build_options import normalize_gpu_targets
 from lib_python.utils import get_rocm_home_from_python_wheel_rocm_sdk
 from lib_python.utils import get_config_value_from_one_element_list
 from lib_python.utils import get_python_wheel_rocm_sdk_gpu_list_str
@@ -30,6 +31,7 @@ class RCBConfigReader(configparser.ConfigParser):
         self.rock_sdk_therock_build_config = None
         # location from where the existing rocm sdk install was found
         self.rock_sdk_home_existing_install_dir = None
+        self.therock_sanitizer = "NONE"
 
         if self.fname.exists():
             try:
@@ -42,6 +44,29 @@ class RCBConfigReader(configparser.ConfigParser):
                 self.gpu_target_list = self.get_as_list(
                                    rcb_const.RCB__CFG__SECTION__BUILD_TARGETS,
                                    rcb_const.RCB__CFG__KEY__GPUS)
+                if self.has_option(
+                    rcb_const.RCB__CFG__SECTION__BUILD_OPTIONS,
+                    rcb_const.RCB__CFG__KEY__THEROCK_SANITIZER,
+                ):
+                    self.therock_sanitizer = (
+                        get_config_value_from_one_element_list(
+                            self,
+                            rcb_const.RCB__CFG__SECTION__BUILD_OPTIONS,
+                            rcb_const.RCB__CFG__KEY__THEROCK_SANITIZER,
+                        )
+                    )
+                    if self.therock_sanitizer not in (
+                        rcb_const.RCB__CFG__THEROCK_SANITIZER_VALUES
+                    ):
+                        raise ValueError(
+                            "Unsupported TheRock sanitizer mode: "
+                            + self.therock_sanitizer
+                        )
+                if self.gpu_target_list:
+                    self.gpu_target_list = normalize_gpu_targets(
+                        self.gpu_target_list,
+                        self.therock_sanitizer,
+                    )
                 if self.has_option(rcb_const.RCB__CFG__SECTION__ROCM_SDK,
                                    rcb_const.RCB__CFG__KEY__ROCM_SDK_PYTHON_WHEEL_SERVER):
                     self.rock_sdk_whl_url = get_config_value_from_one_element_list(self,
@@ -167,6 +192,15 @@ class RCBConfigReader(configparser.ConfigParser):
         ret = None
         if self.rock_sdk_therock_build_config and self.gpu_target_list:
             ret = self.rock_sdk_therock_build_config
+        return ret
+
+    def get_therock_sanitizer(self):
+        """Return the configured or default TheRock sanitizer mode.
+
+        Example:
+            For therock_sanitizer=['ASAN'], this returns "ASAN".
+        """
+        ret = self.therock_sanitizer
         return ret
 
 

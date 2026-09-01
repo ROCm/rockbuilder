@@ -491,6 +491,12 @@ def _check_distro_specific_environment_variables():
 # - rocm_sdk from the therock sources
 # - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
 def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
+    """Verify or build the configured SDK and export build options.
+
+    Example:
+        With therock_sanitizer=['ASAN'], this exports
+        RCB_THEROCK_SANITIZER=ASAN and returns None.
+    """
     _check_distro_specific_environment_variables()
     _check_cpu_count_env_variable()
     if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
@@ -498,6 +504,10 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
     default_src_base_dir = rcb_const.get_app_src_base_dir()
     rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
     build_config = rcb_cfg_reader.get_rocm_sdk_build_config()
+    sanitizer = rcb_cfg_reader.get_therock_sanitizer()
+    sanitizer_env = rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER
+    if sanitizer and sanitizer_env not in os.environ:
+        os.environ[sanitizer_env] = sanitizer
     if rocm_home and not build_config:
         build_config = rcb_const.RCB__THEROCK_DEFAULT_CONFIG
     if build_config:
@@ -612,6 +622,29 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                 sys.exit(1)
 
 
+def set_amdgpu_base_targets_environment():
+    """Export selected GPU architectures without feature qualifiers.
+
+    Example:
+        For RCB_AMDGPU_TARGETS=gfx90a:xnack+;gfx1100, this exports
+        RCB_AMDGPU_BASE_TARGETS=gfx90a;gfx1100 and returns None.
+    """
+    target_env = rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS
+    base_target_env = (
+        rcb_const.RCB__ENV_VAR__AMDGPU_BASE_TARGETS
+    )
+    configured_targets = os.environ.get(target_env, "")
+    base_targets = []
+    for configured_target in configured_targets.split(";"):
+        base_target = configured_target.split(":", 1)[0]
+        if base_target and base_target not in base_targets:
+            base_targets.append(base_target)
+    if base_targets:
+        os.environ[base_target_env] = ";".join(base_targets)
+    else:
+        os.environ.pop(base_target_env, None)
+
+
 def main():
     is_posix = not any(platform.win32_ver())
     rocm_sdk_local_build_needed = False
@@ -646,6 +679,7 @@ def main():
             app_manager,
             rock_builder_home_dir,
         )
+        set_amdgpu_base_targets_environment()
     rocm_home = os.environ.get(
         rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR
     )

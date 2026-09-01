@@ -132,11 +132,13 @@ and RockBuilder does not manage a stable symlink.
 
 ### Interactive Configuration Pages
 
-The configuration UI presents registered pages in order. The initial wizard
-contains:
+The configuration UI presents applicable registered pages in order:
 
 1. ROCm SDK selection with Cancel and Forward buttons.
-2. GPU target selection with Back, Cancel, and Save buttons.
+2. GPU target selection.
+3. XNACK mode selection when `gfx906`, `gfx908`, `gfx90a`, `gfx942`, or
+   `gfx950` is selected.
+4. Sanitizer selection when RockBuilder will build TheRock.
 
 Use Up and Down to move through selections and Space to change a selection.
 When the list has focus, Enter focuses Forward or Save without changing the
@@ -147,6 +149,66 @@ direct shortcuts for Cancel, Forward, Back, and Save. Esc also cancels.
 Selections remain in memory while moving Back or Forward. Cancel exits without
 changing `rockbuilder.cfg`; Save writes all wizard-owned sections while
 preserving unrelated configuration sections.
+
+### XNACK Target Modes
+
+Each selected XNACK-capable target has one independent mode:
+
+- Plain
+- XNACK-
+- XNACK+
+- Both XNACK- and XNACK+
+
+Space cycles the mode. Both explicit variants are stored as separate values:
+
+```ini
+[build_targets]
+gpus = [
+    'gfx1100',
+    'gfx90a:xnack-',
+    'gfx90a:xnack+',
+    'gfx942:xnack+',
+    ]
+```
+
+RockBuilder joins these values with semicolons when setting
+`RCB_AMDGPU_TARGETS`. Plain and explicit variants of the same base target
+cannot be selected simultaneously.
+
+### TheRock Sanitizer Modes
+
+The sanitizer page offers:
+
+- Normal build: no sanitizer instrumentation.
+- Host ASAN: host-side address sanitizer without changing GPU targets.
+- Combined ASAN: host instrumentation for every selected GPU and device
+  instrumentation for supported selected GPUs.
+
+The combined option's label lists the selected targets that receive device
+ASAN. It requires at least one selected `gfx906`, `gfx90a`, `gfx942`, or
+`gfx950` target. Plain forms of those targets are saved as XNACK+ because
+device-side ASAN requires XNACK+. XNACK- and Both modes are rejected for
+the combined mode. Other selected GPUs, including `gfx908`, remain in the
+target list and receive host ASAN but not device-side ASAN instrumentation.
+
+RockBuilder's TheRock patches register the explicit XNACK target IDs and
+extend TheRock's full-ASAN target transformation to `gfx906` and `gfx90a`.
+
+The selected mode is stored explicitly, including Normal:
+
+```ini
+[build_options]
+therock_sanitizer = ['NONE']
+```
+
+Other supported values are `HOST_ASAN` and `ASAN`. RockBuilder passes the
+stored selection to TheRock's `rcb_config.py` through its `--sanitizer`
+parameter. The parameter defaults to `None`, which disables sanitizers, and
+TheRock configuration does not prompt for a sanitizer mode.
+
+Sanitized SDK installations use `_asan` or `_host_asan` suffixes so they do
+not overwrite normal SDKs. Wheel artifact paths inherit this identity from
+the SDK install-directory name.
 
 ### Environment Variables
 
@@ -170,6 +232,13 @@ Base environment variables are automatically specified for each application that
   The build directory for the currently built application
 - `RCB_APP_VERSION`:
   Version or git hash code for the currently built application.
+- `RCB_AMDGPU_TARGETS`:
+  Semicolon-separated GPU targets, including explicit XNACK qualifiers.
+- `RCB_AMDGPU_BASE_TARGETS`:
+  Semicolon-separated GPU architectures without feature qualifiers. Use
+  this for build systems, such as AOTriton, which accept base names only.
+- `RCB_THEROCK_SANITIZER`:
+  The selected `NONE`, `HOST_ASAN`, or `ASAN` TheRock build mode.
 - `CLANG_HOME_DIR`:
   Home directory for the clang. It location may vary depending whether the rocm_sdk used is build locally or used from the rocm_sdk python wheels.
 - `HIPCC_HOME_DIR`:
