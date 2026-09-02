@@ -1,0 +1,7 @@
+[apps]
+app_list=
+    deps_common
+    triton_33
+    torch_27
+    torchvision_22
+    torchaudio_27

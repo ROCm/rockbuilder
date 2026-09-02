@@ -115,7 +115,7 @@ class WheelArtifactCopyTest(unittest.TestCase):
             / "gfx90a"
         )
         self.repo.app_name = "torch"
-        self.repo.app_cfg_name = "pytorch_nightly"
+        self.repo.app_cfg_name = "torch_nightly"
         self.repo.app_exec_dir = self.temp_path
 
     def tearDown(self):

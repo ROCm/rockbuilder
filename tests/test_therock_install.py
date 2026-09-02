@@ -279,10 +279,10 @@ class CleanCommandTest(unittest.TestCase):
 
     def test_current_pytorch_clean_commands_do_not_use_setup_py(self):
         config_names = (
-            "pytorch_2_14.cfg",
-            "pytorch_nightly.cfg",
-            "pytorch_torchcodec_nightly.cfg",
-            "pytorch_vision_nightly.cfg",
+            "torch_2_14.cfg",
+            "torch_nightly.cfg",
+            "torchcodec_nightly.cfg",
+            "torchvision_nightly.cfg",
             "triton_nightly.cfg",
         )
         for config_name in config_names:
@@ -299,7 +299,7 @@ class CleanCommandTest(unittest.TestCase):
 
     def test_pytorch_nightly_enables_nvshmem(self):
         config = configparser.ConfigParser()
-        config.read(REPOSITORY_ROOT / "apps/pytorch_nightly.cfg")
+        config.read(REPOSITORY_ROOT / "apps/torch_nightly.cfg")
 
         environment = config.get("app_info", "ENV_VAR")
         self.assertIn("USE_NVSHMEM=1", environment.splitlines())

@@ -1,8 +1,0 @@
-[apps]
-app_list=
-    deps_common
-    pytorch_aotriton_main
-    triton_nightly
-    pytorch_nightly
-    pytorch_vision_nightly
-    pytorch_torchcodec_nightly

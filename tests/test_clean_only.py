@@ -36,7 +36,7 @@ class CleanOnlyTest(unittest.TestCase):
     def test_clean_only_skips_sdk_environment_setup(self):
         builder = mock.Mock()
         builder.is_build_enabled_on_current_os.return_value = True
-        builder.app_cfg_base_name = "pytorch_2_14"
+        builder.app_cfg_base_name = "torch_2_14"
         args = self.make_args(clean=True)
 
         ret = do_therock(builder, args)
@@ -50,7 +50,7 @@ class CleanOnlyTest(unittest.TestCase):
     def test_combined_action_uses_sdk_environment_setup(self):
         builder = mock.Mock()
         builder.is_build_enabled_on_current_os.return_value = True
-        builder.app_cfg_base_name = "pytorch_2_14"
+        builder.app_cfg_base_name = "torch_2_14"
         args = self.make_args(clean=True, build=True)
 
         ret = do_therock(builder, args)

@@ -25,7 +25,7 @@ on:
         description: ROCm sdk python wheel version for install (7.11.0a20260121)
         type: string
       app_cfg_name:
-        description: Rockbuilder application to build. (apps/pytorch_29_amd.apps)
+        description: Rockbuilder application to build. (apps/torch_rocm_29.apps)
         required: true
         type: string
       repository:
@@ -74,10 +74,10 @@ on:
         type: string
         default: "7.11.0a20260121"
       app_cfg_name:
-        description: Rockbuilder application to build. (apps/pytorch_29_amd.apps)
+        description: Rockbuilder application to build. (apps/torch_rocm_29.apps)
         required: true
         type: string
-        default: "apps/pytorch_29_amd.apps"
+        default: "apps/torch_rocm_29.apps"
 
 permissions:
   id-token: write

@@ -1,7 +1,0 @@
-[apps]
-app_list=
-    deps_common
-    pytorch_aotriton_main
-    triton_38
-    pytorch_2_14
-    pytorch_vision_29

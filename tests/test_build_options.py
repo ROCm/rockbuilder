@@ -27,6 +27,38 @@ THEROCK_BUILD_HASH = "3" * 40
 
 
 class BuildOptionConfigTest(unittest.TestCase):
+    def test_torch_config_files_use_torch_prefix(self):
+        apps_dir = REPOSITORY_ROOT / "apps"
+        old_config_paths = sorted(apps_dir.glob("pytorch*"))
+        self.assertEqual(old_config_paths, [])
+        old_amd_paths = sorted(apps_dir.glob("torch*amd*"))
+        self.assertEqual(old_amd_paths, [])
+        misplaced_rocm_paths = sorted(apps_dir.glob("torch_*_rocm*"))
+        self.assertEqual(misplaced_rocm_paths, [])
+        legacy_package_paths = [
+            *apps_dir.glob("torch_vision*"),
+            *apps_dir.glob("torch_audio*"),
+            *apps_dir.glob("torch_torchcodec*"),
+            *apps_dir.glob("torch_aotriton*"),
+        ]
+        self.assertEqual(legacy_package_paths, [])
+
+        for app_list_path in apps_dir.glob("*.apps"):
+            with self.subTest(app_list_path=app_list_path):
+                app_list = app_list_path.read_text(encoding="utf-8")
+                self.assertNotIn("pytorch_", app_list)
+                self.assertNotIn("torch_vision", app_list)
+                self.assertNotIn("torch_audio", app_list)
+                self.assertNotIn("torch_torchcodec", app_list)
+                self.assertNotIn("torch_aotriton", app_list)
+                for app_name in app_list.split():
+                    if app_name.startswith("torch"):
+                        self.assertNotIn("_amd", app_name)
+                        if "_rocm" in app_name:
+                            self.assertTrue(
+                                app_name.startswith("torch_rocm_")
+                            )
+
     def test_full_asan_name_describes_selected_device_targets(self):
         display_name = SanitizerMode.ASAN.get_display_name(
             ["gfx906", "gfx90a"]
@@ -235,9 +267,9 @@ class BuildOptionConfigTest(unittest.TestCase):
 
     def test_aotriton_uses_base_gpu_target_environment(self):
         config_names = [
-            "pytorch_aotriton_0_11b.cfg",
-            "pytorch_aotriton_0_13b.cfg",
-            "pytorch_aotriton_main.cfg",
+            "aotriton_0_11b.cfg",
+            "aotriton_0_13b.cfg",
+            "aotriton_main.cfg",
         ]
 
         for config_name in config_names:
