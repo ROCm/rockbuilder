@@ -155,6 +155,108 @@ class RepoFileUpdatesTest(unittest.TestCase):
             self.repo.app_build_dir,
         )
 
+    @unittest.skipUnless(Path("/bin/bash").is_file(), "requires Bash")
+    def test_multiline_command_stops_after_failure(self):
+        self.repo.is_posix = True
+        marker_path = self.temp_path / "continued"
+        command = f'false\nprintf continued > "{marker_path}"'
+
+        with patch("lib_python.repo_management.time.sleep"):
+            result = self.repo._handle_command_exec(
+                "build",
+                command,
+                self.temp_path,
+            )
+
+        self.assertFalse(result)
+        self.assertFalse(marker_path.exists())
+
+    @unittest.skipUnless(Path("/bin/bash").is_file(), "requires Bash")
+    def test_multiline_command_detects_pipeline_failure(self):
+        self.repo.is_posix = True
+        marker_path = self.temp_path / "continued"
+        command = (
+            "false | true\n"
+            f'printf continued > "{marker_path}"'
+        )
+
+        with patch("lib_python.repo_management.time.sleep"):
+            result = self.repo._handle_command_exec(
+                "build",
+                command,
+                self.temp_path,
+            )
+
+        self.assertFalse(result)
+        self.assertFalse(marker_path.exists())
+
+    @unittest.skipUnless(Path("/bin/bash").is_file(), "requires Bash")
+    def test_multiline_command_preserves_shell_state(self):
+        self.repo.is_posix = True
+        child_path = self.temp_path / "child"
+        child_path.mkdir()
+        marker_path = self.temp_path / "working-directory"
+        command = f'cd "{child_path}"\npwd > "{marker_path}"'
+
+        with patch("lib_python.repo_management.time.sleep"):
+            result = self.repo._handle_command_exec(
+                "build",
+                command,
+                self.temp_path,
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(
+            marker_path.read_text(encoding="utf-8").strip(),
+            str(child_path),
+        )
+
+    def test_windows_multiline_command_adds_failure_checks(self):
+        self.repo.app_build_dir = self.temp_path / "build"
+        command = "mkdir output\ncd output\necho done > result.txt"
+        with (
+            patch(
+                "lib_python.repo_management.platform.win32_ver",
+                return_value=("10", "", "", ""),
+            ),
+            patch.object(
+                self.repo,
+                "_exec_subprocess_batch_file",
+                return_value=True,
+            ),
+        ):
+            result = self.repo._handle_command_exec(
+                "install",
+                command,
+                self.temp_path,
+            )
+
+        batch_path = self.repo.app_build_dir / "install.bat"
+        self.assertTrue(result)
+        self.assertEqual(
+            batch_path.read_text(encoding="utf-8"),
+            "@echo off\n"
+            "mkdir output\n"
+            "if errorlevel 1 exit /b %errorlevel%\n"
+            "cd output\n"
+            "if errorlevel 1 exit /b %errorlevel%\n"
+            "echo done > result.txt\n"
+            "if errorlevel 1 exit /b %errorlevel%\n",
+        )
+
+    def test_batch_failure_returns_false(self):
+        completed_process = subprocess.CompletedProcess(
+            args=["failed.bat"],
+            returncode=1,
+        )
+        with patch(
+            "lib_python.repo_management.subprocess.run",
+            return_value=completed_process,
+        ):
+            result = self.repo._exec_subprocess_batch_file("failed.bat")
+
+        self.assertFalse(result)
+
     def test_no_files_points_both_tags_to_checkout(self):
         checkout_commit = run_git(self.repo_path, "rev-parse", "HEAD")
 

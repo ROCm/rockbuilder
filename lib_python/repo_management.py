@@ -118,7 +118,7 @@ class RockProjectRepo:
             os.environ[rcb_const.RCB__ENV_VAR__APP_VERSION] = ""
 
     # private methods
-    def _exec_subprocess_cmd(self, exec_cmd, exec_dir):
+    def _exec_subprocess_cmd(self, exec_cmd, exec_dir, fail_fast=False):
         ret = True
         if exec_cmd is not None:
             exec_dir = self._replace_env_variables(exec_dir)
@@ -127,12 +127,23 @@ class RockProjectRepo:
                 python_cmd = "python" if self.is_posix == False else "python3"
                 exec_cmd = python_cmd + " " + exec_cmd
             print("exec_cmd: " + exec_cmd + ", exec_dir: " + exec_dir)
-            # capture_output=True --> can print output after process exist, not possible to see the output during the build time
-            # capture_output=False --> can print output only during build time
-            # result = subprocess.run(exec_cmd, shell=True, capture_output=True, text=True)
-            result = subprocess.run(
-                exec_cmd, cwd=exec_dir, shell=True, capture_output=False, text=True
-            )
+            if fail_fast and self.is_posix:
+                command = ["bash", "-e", "-o", "pipefail", "-c", exec_cmd]
+                result = subprocess.run(
+                    command,
+                    cwd=exec_dir,
+                    shell=False,
+                    capture_output=False,
+                    text=True,
+                )
+            else:
+                result = subprocess.run(
+                    exec_cmd,
+                    cwd=exec_dir,
+                    shell=True,
+                    capture_output=False,
+                    text=True,
+                )
             if result.returncode == 0:
                 if result.stdout:
                     print(result.stdout)
@@ -159,9 +170,22 @@ class RockProjectRepo:
                 if result.stdout:
                     print(result.stdout)
             else:
+                ret = False
                 print("Batch file operation failed")
                 if result.stderr:
                     print(f"Error2: {result.stderr}")
+        return ret
+
+    @staticmethod
+    def _get_fail_fast_batch_script(exec_cmd):
+        ret_arr = ["@echo off"]
+        for command in exec_cmd.splitlines():
+            if command.strip():
+                ret_arr.append(command)
+                ret_arr.append(
+                    "if errorlevel 1 exit /b %errorlevel%"
+                )
+        ret = "\n".join(ret_arr) + "\n"
         return ret
 
     def _replace_env_variables(self, cmd_str):
@@ -362,8 +386,14 @@ class RockProjectRepo:
                     CMD_BUILD_file = os.path.join(
                         self.app_build_dir, exec_phase_name + ".bat"
                     )
-                    with open(CMD_BUILD_file, "w") as file:
-                        file.write(exec_cmd)
+                    batch_script = self._get_fail_fast_batch_script(exec_cmd)
+                    with open(
+                        CMD_BUILD_file,
+                        "w",
+                        encoding="utf-8",
+                        newline="\n",
+                    ) as file:
+                        file.write(batch_script)
                     ret = self._exec_subprocess_batch_file(str(CMD_BUILD_file))
                 else:
                     # bash can execute multiple commands in same subprocess.run process
@@ -371,7 +401,11 @@ class RockProjectRepo:
                     self._exec_subprocess_cmd("env", cmd_exec_dir)
                     print("------ " + exec_phase_name + " end ----------")
                     time.sleep(1)
-                    ret = self._exec_subprocess_cmd(exec_cmd, cmd_exec_dir)
+                    ret = self._exec_subprocess_cmd(
+                        exec_cmd,
+                        cmd_exec_dir,
+                        fail_fast=True,
+                    )
             else:
                 # execute just a single command
                 print("------ " + exec_phase_name + " start ----------")
