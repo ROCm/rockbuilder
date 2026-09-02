@@ -5,6 +5,7 @@ cd $SCRIPT_DIR
 
 python_tests=(
     "test_build_options.py"
+    "test_git_operation_recovery.py"
     "test_repo_file_updates.py"
     "test_rockbuilder_cfg.py"
     "test_sdk_verification.py"

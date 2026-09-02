@@ -2,8 +2,10 @@
 
 import os
 import platform
+import shlex
 import subprocess
 import sys
+from pathlib import Path
 
 IS_WINDOWS = (platform.system() == "Windows")
 
@@ -71,38 +73,108 @@ def install_packages(venv_already_existed):
             run_cmd([python_exec, "-m", "pip", "install", "windows-curses"],
                     "installing windows-curses")
 
-def check_and_abort_old_ongoing_am(repo_path="."):
-    """Checks for active am session and aborts if found."""
-    # check_status_for_am implementation via git status parsing
-    res = run_git_command(['status'], cwd=repo_path)
-    if res and "You are in the middle of an am session" in res.stdout:
-        print(f"Detected active 'am' session in: {os.path.abspath(repo_path)}")
-        abort_res = run_git_command(['am', '--abort'], cwd=repo_path)
-        if abort_res.returncode == 0:
-            print(f"Successfully aborted 'am' in {repo_path}")
-        else:
-            print(f"Failed to abort 'am' in {repo_path}: {abort_res.stderr}")
-        return True
-    return True
+def get_in_progress_git_operation(repo_path="."):
+    """Return the active patch-related Git operation and state path."""
+    ret = None
+    for state_name in ("rebase-apply", "rebase-merge"):
+        res = run_git_command(
+            ["rev-parse", "--git-path", state_name],
+            cwd=repo_path,
+        )
+        if res is None or res.returncode != 0:
+            raise RuntimeError(
+                f"Could not inspect Git state in {repo_path}"
+            )
+        state_path = Path(res.stdout.strip())
+        if not state_path.is_absolute():
+            state_path = Path(repo_path) / state_path
+        if state_path.is_dir():
+            operation = "rebase"
+            if (
+                state_name == "rebase-apply"
+                and not (state_path / "rebasing").exists()
+            ):
+                operation = "am"
+            ret = (operation, state_path.resolve())
+            break
+    return ret
+
+
+def check_and_resolve_in_progress_git_operation(repo_path="."):
+    """Ask before aborting an operation that blocks patch application."""
+    ret = True
+    operation_info = get_in_progress_git_operation(repo_path)
+    if operation_info is not None:
+        operation, state_path = operation_info
+        repo_path = Path(repo_path).resolve()
+        abort_args = [operation, "--abort"]
+        abort_command = (
+            f"git -C {shlex.quote(str(repo_path))} "
+            f"{operation} --abort"
+        )
+        print(
+            f"Detected unfinished git {operation} operation in "
+            f"{repo_path}"
+        )
+        print(f"Git operation state: {state_path}")
+        if not sys.stdin.isatty():
+            raise RuntimeError(
+                "Cannot apply patches with an unfinished Git operation. "
+                f"Review the repository and run `{abort_command}`."
+            )
+        answer = input(
+            f"Abort the operation with `{abort_command}`? [y/N]: "
+        )
+        if answer.strip().lower() not in ("y", "yes"):
+            raise RuntimeError(
+                "Patch application cancelled because the unfinished "
+                "Git operation was not aborted."
+            )
+        abort_res = run_git_command(
+            abort_args,
+            cwd=repo_path,
+        )
+        if abort_res is None or abort_res.returncode != 0:
+            stderr = ""
+            if abort_res is not None:
+                stderr = abort_res.stderr.strip()
+            raise RuntimeError(
+                f"Failed to run `{abort_command}`: {stderr}"
+            )
+        operation_info = get_in_progress_git_operation(repo_path)
+        if operation_info is not None:
+            raise RuntimeError(
+                "Git operation state still exists after running "
+                f"`{abort_command}`."
+            )
+        print(f"Successfully ran `{abort_command}`")
+    return ret
+
+
+def check_repo_and_submodule_git_operations():
+    """Check the TheRock repository and each initialized submodule."""
+    check_and_resolve_in_progress_git_operation(".")
+    cmd = ["submodule", "foreach", "--recursive", "pwd"]
+    res = run_git_command(cmd)
+    if res is None or res.returncode != 0:
+        raise RuntimeError(
+            "Could not inspect Git state in TheRock submodules"
+        )
+    for output_line in res.stdout.splitlines():
+        path = output_line.strip()
+        if path and not path.startswith("Entering "):
+            check_and_resolve_in_progress_git_operation(path)
 
 def fetch_sources():
     python_exec = get_python_executable_name()
+    check_repo_and_submodule_git_operations()
     print("rcb_pre_config.py therock source fetch started")
     res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
     if res != 0:
         print(f"rcb_pre_config.py first attempt for submodule source code fetch failed: {res}")
         print("rcb_pre_config.py resetting submodules and trying refresh again")
 
-        # first check if the error happens because submodules have "unfinished git am commands from previous attempt
-        check_and_abort_old_ongoing_am(".")
-        cmd = ['submodule', 'foreach', '--recursive', 'pwd']
-        res = run_git_command(cmd)
-        if res and res.returncode == 0:
-            # Each line of output typically starts with "Entering '<path>'"
-            # We extract the paths to check each one
-            paths = [line.split("'")[1] for line in res.stdout.splitlines() if "Entering" in line]
-            for path in paths:
-                check_and_abort_old_ongoing_am(path)
+        check_repo_and_submodule_git_operations()
         res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
         # if it failed again, then try to reset submodules and then try to fetch sources one more time
         if res != 0:
