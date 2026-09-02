@@ -7,6 +7,7 @@ python_tests=(
     "test_build_options.py"
     "test_repo_file_updates.py"
     "test_rockbuilder_cfg.py"
+    "test_sdk_verification.py"
     "test_therock_install.py"
 )
 for python_test in "${python_tests[@]}"; do

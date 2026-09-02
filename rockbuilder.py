@@ -481,33 +481,64 @@ def _check_distro_specific_environment_variables():
             print("Error, gcc is not installed or not in PATH.")
             sys.exit(1)
 
-# Ensures that rocm_sdk install exist or will be installed by using
-# the method that has been saved to rockbuilder.cfg config file.
-# (by using the rockbuilder_cfg.py)
-#
-# Check is disabled if env-variable 'RCB_DISABLE_ROCM_SDK_CHECK' has been defined.
-# Otherwise following cases are checked depending on from the rockbuilder configuration:
-# - rocm_sdk from from the python wheels provied by therock
-# - rocm_sdk from the therock sources
-# - rocm sdk from other location (by specifiying ROCM_HOME before opening rockbuilder_cfg.py)
-def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
-    """Verify or build the configured SDK and export build options.
+def is_rocm_sdk_required(rock_builder_home_dir, app_list):
+    """Return whether any requested application uses the ROCm SDK.
 
     Example:
-        With therock_sanitizer=['ASAN'], this exports
-        RCB_THEROCK_SANITIZER=ASAN and returns None.
+        For only therock_dev.cfg, this returns False because that
+        configuration sets PROP_IS_ROCM_SDK_USED=NO.
     """
+    ret = False
+    for app_name in app_list:
+        app_cfg_path = get_app_cfg_path(
+            rock_builder_home_dir,
+            str(app_name),
+        )
+        app_config = app_builder.ConfigReader(app_cfg_path)
+        if not app_config.is_app_config():
+            raise ValueError(
+                "Expected an application configuration file: "
+                + app_cfg_path.as_posix()
+            )
+        ret = app_config.getboolean(
+            rcb_const.RCB__APP_CFG__SECTION_APP_INFO,
+            rcb_const.RCB__APP_CFG__KEY__PROP_IS_ROCM_SDK_USED,
+            fallback=True,
+        )
+        if ret:
+            break
+    return ret
+
+
+def configure_common_build_environment(rcb_cfg_reader):
+    """Configure build settings that do not require an installed ROCm SDK."""
     _check_distro_specific_environment_variables()
     _check_cpu_count_env_variable()
-    if rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ:
-        return
-    default_src_base_dir = rcb_const.get_app_src_base_dir()
-    rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
-    build_config = rcb_cfg_reader.get_rocm_sdk_build_config()
     sanitizer = rcb_cfg_reader.get_therock_sanitizer()
     sanitizer_env = rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER
     if sanitizer and sanitizer_env not in os.environ:
         os.environ[sanitizer_env] = sanitizer
+
+
+def configure_gpu_targets_from_config(rcb_cfg_reader):
+    """Export configured GPU targets without inspecting an installed SDK."""
+    target_env = rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS
+    if target_env not in os.environ:
+        gpu_list_str = rcb_cfg_reader.get_configured_gpu_list_str()
+        if gpu_list_str:
+            os.environ[target_env] = gpu_list_str
+        else:
+            print("Could not get a list of configured target GPUs")
+            sys.exit(1)
+
+
+# Ensures that rocm_sdk install exists or will be installed by using
+# the method that has been saved to rockbuilder.cfg.
+def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
+    """Verify or build the configured ROCm SDK."""
+    default_src_base_dir = rcb_const.get_app_src_base_dir()
+    rocm_home = rcb_cfg_reader.get_locally_build_rocm_sdk_home()
+    build_config = rcb_cfg_reader.get_rocm_sdk_build_config()
     if rocm_home and not build_config:
         build_config = rcb_const.RCB__THEROCK_DEFAULT_CONFIG
     if build_config:
@@ -622,6 +653,32 @@ def verify_rocm_sdk_install(rcb_cfg_reader, app_manager, rock_builder_home_dir):
                 sys.exit(1)
 
 
+def prepare_build_environment(
+    rcb_cfg_reader,
+    app_manager,
+    rock_builder_home_dir,
+    app_list,
+):
+    """Prepare options and acquire an SDK only when applications need it."""
+    configure_common_build_environment(rcb_cfg_reader)
+    sdk_check_disabled = (
+        rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK in os.environ
+    )
+    sdk_required = is_rocm_sdk_required(
+        rock_builder_home_dir,
+        app_list,
+    )
+    if sdk_required and not sdk_check_disabled:
+        verify_rocm_sdk_install(
+            rcb_cfg_reader,
+            app_manager,
+            rock_builder_home_dir,
+        )
+    else:
+        configure_gpu_targets_from_config(rcb_cfg_reader)
+    set_amdgpu_base_targets_environment()
+
+
 def set_amdgpu_base_targets_environment():
     """Export selected GPU architectures without feature qualifiers.
 
@@ -674,12 +731,12 @@ def main():
                                     app_list)
     args = parse_build_arguments(arg_parser)
     if not is_clean_only(args):
-        verify_rocm_sdk_install(
+        prepare_build_environment(
             rcb_cfg_reader,
             app_manager,
             rock_builder_home_dir,
+            app_list,
         )
-        set_amdgpu_base_targets_environment()
     rocm_home = os.environ.get(
         rcb_const.RCB__ENV_VAR__ROCM_SDK_ROCM_HOME_DIR
     )
