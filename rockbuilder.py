@@ -567,7 +567,12 @@ def configure_common_build_environment(rcb_cfg_reader):
     _check_cpu_count_env_variable()
     configure_rockbuilder_hash_environment(rcb_const.RCB__ROOT_DIR)
     configure_rockbuilder_dirty_environment(rcb_const.RCB__ROOT_DIR)
-    sanitizer = rcb_cfg_reader.get_therock_sanitizer()
+    sanitizer = None
+    if rcb_cfg_reader is not None:
+        # Read the configured TheRock mode: NONE, HOST_ASAN, or ASAN.
+        configured_sanitizer = rcb_cfg_reader.get_therock_sanitizer()
+        if configured_sanitizer:
+            sanitizer = configured_sanitizer
     sanitizer_env = rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER
     if sanitizer and sanitizer_env not in os.environ:
         os.environ[sanitizer_env] = sanitizer
@@ -727,7 +732,7 @@ def prepare_build_environment(
             app_manager,
             rock_builder_home_dir,
         )
-    else:
+    elif rcb_cfg_reader is not None:
         configure_gpu_targets_from_config(rcb_cfg_reader)
     set_amdgpu_base_targets_environment()
 

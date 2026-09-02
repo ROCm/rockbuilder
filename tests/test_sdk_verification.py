@@ -168,6 +168,53 @@ class SdkVerificationTest(unittest.TestCase):
         )
         self.assertEqual(base_targets, "gfx1100")
 
+    def test_disabled_sdk_check_allows_missing_config_reader(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = self.write_app_config(
+                root,
+                "test_app",
+                False,
+            )
+            disable_env = rcb_const.RCB__ENV_VAR_DISABLE_ROCM_SDK_CHECK
+            target_env = rcb_const.RCB__ENV_VAR__AMDGPU_TARGETS
+            sanitizer_env = rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER
+            base_target_env = rcb_const.RCB__ENV_VAR__AMDGPU_BASE_TARGETS
+            environment = {
+                disable_env: "1",
+                target_env: "gfx1100",
+            }
+            with (
+                mock.patch.dict(os.environ, environment, clear=True),
+                mock.patch.object(
+                    rockbuilder,
+                    "_check_distro_specific_environment_variables",
+                ),
+                mock.patch.object(
+                    rockbuilder,
+                    "_check_cpu_count_env_variable",
+                ),
+                mock.patch.object(
+                    rockbuilder,
+                    "configure_rockbuilder_hash_environment",
+                ),
+                mock.patch.object(
+                    rockbuilder,
+                    "configure_rockbuilder_dirty_environment",
+                ),
+            ):
+                rockbuilder.prepare_build_environment(
+                    None,
+                    mock.Mock(),
+                    root,
+                    [config_path],
+                )
+                sanitizer = os.environ.get(sanitizer_env)
+                base_targets = os.environ[base_target_env]
+
+        self.assertIsNone(sanitizer)
+        self.assertEqual(base_targets, "gfx1100")
+
 
 if __name__ == "__main__":
     unittest.main()
