@@ -132,6 +132,29 @@ class RepoFileUpdatesTest(unittest.TestCase):
             env_root / "patches/demo/1.0",
         )
 
+    def test_multiline_cmake_config_runs_as_one_command(self):
+        self.repo.app_build_dir = self.temp_path / "build"
+        cmake_config = """
+            -DCMAKE_PREFIX_PATH=/opt/rocm
+            "-DAOTRITON_TARGET_ARCH=gfx90a;gfx1100"
+            /source/aotriton
+        """
+        with patch.object(
+            self.repo,
+            "_handle_command_exec",
+            return_value=True,
+        ) as command_exec:
+            result = self.repo.do_CMD_CMAKE_CONFIG(cmake_config)
+
+        self.assertTrue(result)
+        command_exec.assert_called_once_with(
+            "CMD_CMAKE_CONFIG",
+            "cmake -GNinja -DCMAKE_PREFIX_PATH=/opt/rocm "
+            '"-DAOTRITON_TARGET_ARCH=gfx90a;gfx1100" '
+            "/source/aotriton",
+            self.repo.app_build_dir,
+        )
+
     def test_no_files_points_both_tags_to_checkout(self):
         checkout_commit = run_git(self.repo_path, "rev-parse", "HEAD")
 
