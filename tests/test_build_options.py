@@ -21,6 +21,9 @@ CONFIG_SCRIPT_PATH = (
     REPOSITORY_ROOT
     / "changes/files/therock/common/therock/rcb_config.py"
 )
+ROCKBUILDER_HASH = "1" * 40
+THEROCK_CHECKOUT_HASH = "2" * 40
+THEROCK_BUILD_HASH = "3" * 40
 
 
 class BuildOptionConfigTest(unittest.TestCase):
@@ -184,6 +187,52 @@ class BuildOptionConfigTest(unittest.TestCase):
 
         self.assertEqual(base_targets, "gfx90a;gfx1100")
 
+    def test_rockbuilder_hash_is_exported(self):
+        result = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=f"{ROCKBUILDER_HASH}\n",
+            stderr="",
+        )
+        hash_env = rcb_const.RCB__ENV_VAR__ROCKBUILDER_HASH
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(
+                rockbuilder.subprocess,
+                "run",
+                return_value=result,
+            ),
+        ):
+            rockbuilder.configure_rockbuilder_hash_environment(
+                REPOSITORY_ROOT
+            )
+            exported_hash = os.environ[hash_env]
+
+        self.assertEqual(exported_hash, ROCKBUILDER_HASH)
+
+    def test_rockbuilder_dirty_state_is_exported(self):
+        result = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=" M rockbuilder.py\n",
+            stderr="",
+        )
+        dirty_env = rcb_const.RCB__ENV_VAR__ROCKBUILDER_DIRTY
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(
+                rockbuilder.subprocess,
+                "run",
+                return_value=result,
+            ),
+        ):
+            rockbuilder.configure_rockbuilder_dirty_environment(
+                REPOSITORY_ROOT
+            )
+            exported_dirty = os.environ[dirty_env]
+
+        self.assertEqual(exported_dirty, "true")
+
     def test_aotriton_uses_base_gpu_target_environment(self):
         config_names = [
             "pytorch_aotriton_0_11b.cfg",
@@ -228,8 +277,9 @@ class BuildOptionConfigTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     command,
-                    "./rcb_config.py --sanitizer "
-                    "${RCB_THEROCK_SANITIZER}",
+                    "./rcb_config.py -s ${RCB_THEROCK_SANITIZER} "
+                    "-r ${RCB_ROCKBUILDER_HASH} "
+                    "-d ${RCB_ROCKBUILDER_DIRTY}",
                 )
 
     def test_therock_patches_register_gfx906_xnack_and_asan(self):
@@ -320,21 +370,45 @@ class TheRockSanitizerCommandTest(unittest.TestCase):
         with mock.patch.object(
             self.config_module.sys,
             "argv",
-            ["rcb_config.py"],
+            [
+                "rcb_config.py",
+                "-r",
+                ROCKBUILDER_HASH,
+                "-d",
+                "false",
+            ],
         ):
             arguments = self.config_module.parse_arguments()
 
         self.assertIsNone(arguments.sanitizer)
+        self.assertEqual(
+            arguments.rockbuilder_hash,
+            ROCKBUILDER_HASH,
+        )
+        self.assertEqual(arguments.rockbuilder_dirty, "false")
 
     def test_sanitizer_parameter_accepts_explicit_mode(self):
         with mock.patch.object(
             self.config_module.sys,
             "argv",
-            ["rcb_config.py", "--sanitizer", "HOST_ASAN"],
+            [
+                "rcb_config.py",
+                "-s",
+                "HOST_ASAN",
+                "-r",
+                ROCKBUILDER_HASH,
+                "-d",
+                "true",
+            ],
         ):
             arguments = self.config_module.parse_arguments()
 
         self.assertEqual(arguments.sanitizer, "HOST_ASAN")
+        self.assertEqual(
+            arguments.rockbuilder_hash,
+            ROCKBUILDER_HASH,
+        )
+        self.assertEqual(arguments.rockbuilder_dirty, "true")
 
     def test_explicit_targets_have_safe_bundle_name(self):
         bundle_name = self.config_module.get_dist_bundle_name(
@@ -345,6 +419,77 @@ class TheRockSanitizerCommandTest(unittest.TestCase):
             bundle_name,
             "gfx942_xnackminus_gfx942_xnackplus",
         )
+
+    def test_missing_git_hash_returns_empty_string(self):
+        error = subprocess.CalledProcessError(
+            128,
+            ["git", "rev-parse", "missing^{commit}"],
+            output="fatal: ambiguous argument\n",
+        )
+        with mock.patch.object(
+            self.config_module.subprocess,
+            "check_output",
+            side_effect=error,
+        ):
+            git_hash = self.config_module.get_git_hash(
+                CONFIG_SCRIPT_PATH.parent,
+                "missing",
+            )
+
+        self.assertEqual(git_hash, "")
+
+    def test_config_record_uses_therock_name(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            build_dir = Path(temp_dir)
+            cmake_cmd = [
+                "cmake",
+                "-B",
+                "build",
+                "-GNinja",
+                "-DTHEROCK_AMDGPU_FAMILIES=gfx90a;gfx1100",
+                ".",
+            ]
+            self.config_module.write_config_record(
+                build_dir,
+                cmake_cmd,
+                ROCKBUILDER_HASH,
+                "false",
+                THEROCK_CHECKOUT_HASH,
+                THEROCK_BUILD_HASH,
+            )
+
+            config_path = build_dir / "rcb_therock.txt"
+            config = configparser.ConfigParser(interpolation=None)
+            config.read(config_path)
+            self.assertEqual(
+                config.get("metadata", "format_version"),
+                "1.0",
+            )
+            self.assertEqual(
+                config.get("therock", "config").splitlines(),
+                [
+                    "cmake -B build -GNinja",
+                    "-DTHEROCK_AMDGPU_FAMILIES=gfx90a;gfx1100",
+                    ".",
+                ],
+            )
+            self.assertEqual(
+                config.get("therock", "checkout_hash"),
+                THEROCK_CHECKOUT_HASH,
+            )
+            self.assertEqual(
+                config.get("therock", "build_hash"),
+                THEROCK_BUILD_HASH,
+            )
+            self.assertEqual(
+                config.get("rockbuilder", "hash"),
+                ROCKBUILDER_HASH,
+            )
+            self.assertEqual(
+                config.get("rockbuilder", "dirty"),
+                "false",
+            )
+            self.assertFalse((build_dir / "rcb_config.txt").exists())
 
     def run_main(self, sanitizer, gpu_target="gfx942:xnack+"):
         version_result = subprocess.CompletedProcess(
@@ -365,11 +510,34 @@ class TheRockSanitizerCommandTest(unittest.TestCase):
                 "run",
                 side_effect=[version_result, configure_result],
             ) as run,
-            mock.patch("builtins.open", mock.mock_open()),
+            mock.patch.object(
+                self.config_module,
+                "write_config_record",
+            ) as write_config_record,
+            mock.patch.object(
+                self.config_module,
+                "get_git_hash",
+                side_effect=[
+                    THEROCK_CHECKOUT_HASH,
+                    THEROCK_BUILD_HASH,
+                ],
+            ),
             self.assertRaises(SystemExit) as exit_error,
         ):
-            self.config_module.main(sanitizer)
+            self.config_module.main(
+                sanitizer,
+                ROCKBUILDER_HASH,
+                "true",
+            )
         configure_command = run.call_args_list[1].args[0]
+        write_config_record.assert_called_once_with(
+            CONFIG_SCRIPT_PATH.parent / "build",
+            configure_command,
+            ROCKBUILDER_HASH,
+            "true",
+            THEROCK_CHECKOUT_HASH,
+            THEROCK_BUILD_HASH,
+        )
         ret = (
             configure_command,
             exit_error.exception.code,

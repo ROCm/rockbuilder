@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
+import configparser
 import os
 import platform
 import subprocess
 import sys
+from pathlib import Path
 
 IS_WINDOWS = (platform.system() == "Windows")
+CONFIG_RECORD_NAME = "rcb_therock.txt"
 
 def activate_venv(venv_name):
     venv_path = os.path.abspath(venv_name)
@@ -39,6 +42,47 @@ def get_dist_bundle_name(amdgpu_targets):
     return ret
 
 
+def get_git_hash(repo_dir, revision):
+    ret = ""
+    try:
+        ret = subprocess.check_output(
+            ["git", "rev-parse", f"{revision}^{{commit}}"],
+            cwd=repo_dir,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).strip()
+    except subprocess.CalledProcessError as error:
+        print(
+            f"Could not resolve TheRock Git hash for {revision}: "
+            + error.stdout.strip()
+        )
+    return ret
+
+
+def write_config_record(build_dir, cmake_cmd, rockbuilder_hash, rockbuilder_dirty, checkout_hash, build_hash):
+    config_path = Path(build_dir) / CONFIG_RECORD_NAME
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    command_lines = [
+        " ".join(cmake_cmd[:4]),
+        *cmake_cmd[4:],
+    ]
+    config = configparser.ConfigParser(interpolation=None)
+    config["metadata"] = {
+        "format_version": "1.0",
+    }
+    config["therock"] = {
+        "config": "\n".join(command_lines),
+        "checkout_hash": checkout_hash,
+        "build_hash": build_hash,
+    }
+    config["rockbuilder"] = {
+        "hash": rockbuilder_hash,
+        "dirty": rockbuilder_dirty,
+    }
+    with config_path.open("w", encoding="utf-8", newline="\n") as f_handle:
+        config.write(f_handle)
+
+
 def parse_arguments():
     """Parse optional command-line configuration values.
 
@@ -47,18 +91,31 @@ def parse_arguments():
         value is "ASAN".
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sanitizer", default=None)
+    parser.add_argument("-s", "--sanitizer", default=None)
+    parser.add_argument("-r", "--rockbuilder-hash", required=True)
+    parser.add_argument(
+        "-d",
+        "--rockbuilder-dirty",
+        required=True,
+        choices=("true", "false"),
+    )
     ret = parser.parse_args()
     return ret
 
 
-def main(sanitizer=None):
+def main(sanitizer=None, rockbuilder_hash=None, rockbuilder_dirty=None):
     """Configure TheRock from RockBuilder selections.
 
     Example:
-        main("ASAN") passes -DTHEROCK_SANITIZER=ASAN to CMake and exits
-        with its status.
+        main("ASAN", "abc123", "false") passes the sanitizer to CMake and
+        records the RockBuilder revision state.
     """
+    if not rockbuilder_hash:
+        raise ValueError("The RockBuilder Git hash is required")
+    if rockbuilder_dirty not in {"true", "false"}:
+        raise ValueError(
+            "The RockBuilder dirty state must be true or false"
+        )
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     print(f"rcb_config.py current directory: {os.getcwd()}")
@@ -127,14 +184,27 @@ def main(sanitizer=None):
     cmake_cmd.append(".")
 
     cmake_cmd_str = " ".join(cmake_cmd)
-    with open("rcb_config.txt", "w") as f_handle:
-        f_handle.write(cmake_cmd_str)
     print(f"rcb_config.py, therock config_cmd: {cmake_cmd_str}")
     result = subprocess.run(cmake_cmd)
+    if result.returncode == 0:
+        checkout_hash = get_git_hash(script_dir, "RCB_TAG_CHECKOUT")
+        build_hash = get_git_hash(script_dir, "HEAD")
+        write_config_record(
+            Path(script_dir) / "build",
+            cmake_cmd,
+            rockbuilder_hash,
+            rockbuilder_dirty,
+            checkout_hash,
+            build_hash,
+        )
     print(f"rcb_config.py therock config done, res: {result.returncode}")
     sys.exit(result.returncode)
 
 
 if __name__ == "__main__":
     arguments = parse_arguments()
-    main(arguments.sanitizer)
+    main(
+        arguments.sanitizer,
+        arguments.rockbuilder_hash,
+        arguments.rockbuilder_dirty,
+    )

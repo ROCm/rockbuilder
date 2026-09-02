@@ -70,11 +70,21 @@ class TheRockInstallScriptTest(unittest.TestCase):
 
     def test_installs_component_and_writes_marker(self):
         install_dir = self.therock_dir / "install-root/rocm"
+        config_record = self.therock_dir / "build/rcb_therock.txt"
+        config_record.parent.mkdir(parents=True, exist_ok=True)
+        config_record.write_text(
+            "cmake -B build -DTHEROCK_AMDGPU_FAMILIES=gfx90a .\n",
+            encoding="utf-8",
+        )
         environment = {
             "RCB_ROCM_SDK_INSTALL_DIR": str(install_dir),
             "RCB_APP_VERSION": "release-test",
         }
         completed_process = subprocess.CompletedProcess([], 0)
+
+        def run_install(_command):
+            install_dir.mkdir(parents=True)
+            return completed_process
 
         with mock.patch.dict(os.environ, environment, clear=True):
             with mock.patch.object(
@@ -85,7 +95,7 @@ class TheRockInstallScriptTest(unittest.TestCase):
                 with mock.patch.object(
                     self.install_module.subprocess,
                     "run",
-                    return_value=completed_process,
+                    side_effect=run_install,
                 ) as run:
                     self.install_module.main()
 
@@ -105,6 +115,27 @@ class TheRockInstallScriptTest(unittest.TestCase):
             marker.read_text(encoding="utf-8"),
             "rockbuilder_therock: release-test\n",
         )
+        installed_config = install_dir / "rcb_therock.txt"
+        self.assertEqual(
+            installed_config.read_text(encoding="utf-8"),
+            config_record.read_text(encoding="utf-8"),
+        )
+        self.assertFalse((install_dir / "rcb_config.txt").exists())
+
+    def test_requires_configuration_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            install_dir = temp_path / "install"
+            install_dir.mkdir()
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "configuration record was not found",
+            ):
+                self.install_module.install_config_record(
+                    temp_path,
+                    install_dir,
+                )
 
 
 class TheRockInstallPathResolutionTest(unittest.TestCase):
