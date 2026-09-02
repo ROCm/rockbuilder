@@ -538,19 +538,84 @@ class RockProjectRepo:
             print("Error: 'git' command not found.")
             return None
 
-    def check_and_abort_old_ongoing_am(self, repo_path="."):
-        """Checks for active am session and aborts if found."""
-        # check_status_for_am implementation via git status parsing
-        res = self.run_git_command(['status'], cwd=repo_path)
-        if res and "You are in the middle of an am session" in res.stdout:
-            print(f"Detected active 'am' session in: {os.path.abspath(repo_path)}")
-            abort_res = self.run_git_command(['am', '--abort'], cwd=repo_path)
-            if abort_res.returncode == 0:
-                print(f"Successfully aborted 'am' in {repo_path}")
-            else:
-                print(f"Failed to abort 'am' in {repo_path}: {abort_res.stderr}")
-            return True
-        return True
+    def _get_in_progress_git_operation(self, repo_path="."):
+        """Return the active patch-related Git operation and state path."""
+        ret = None
+        for state_name in ("rebase-apply", "rebase-merge"):
+            res = self.run_git_command(
+                ["rev-parse", "--git-path", state_name],
+                cwd=repo_path,
+            )
+            if res is None or res.returncode != 0:
+                raise RuntimeError(
+                    f"Could not inspect Git state in {repo_path}"
+                )
+            state_path = Path(res.stdout.strip())
+            if not state_path.is_absolute():
+                state_path = Path(repo_path) / state_path
+            if state_path.is_dir():
+                operation = "rebase"
+                if (
+                    state_name == "rebase-apply"
+                    and not (state_path / "rebasing").exists()
+                ):
+                    operation = "am"
+                ret = (operation, state_path.resolve())
+                break
+        return ret
+
+    def check_and_resolve_in_progress_git_operation(
+        self,
+        repo_path=".",
+    ):
+        """Ask before aborting an operation that blocks patch application."""
+        ret = True
+        operation_info = self._get_in_progress_git_operation(repo_path)
+        if operation_info is not None:
+            operation, state_path = operation_info
+            repo_path = Path(repo_path).resolve()
+            abort_args = [operation, "--abort"]
+            abort_command = (
+                f"git -C {shlex.quote(str(repo_path))} "
+                f"{operation} --abort"
+            )
+            print(
+                f"Detected unfinished git {operation} operation in "
+                f"{repo_path}"
+            )
+            print(f"Git operation state: {state_path}")
+            if not sys.stdin.isatty():
+                raise RuntimeError(
+                    "Cannot apply patches with an unfinished Git operation. "
+                    f"Review the repository and run `{abort_command}`."
+                )
+            answer = input(
+                f"Abort the operation with `{abort_command}`? [y/N]: "
+            )
+            if answer.strip().lower() not in ("y", "yes"):
+                raise RuntimeError(
+                    "Patch application cancelled because the unfinished "
+                    "Git operation was not aborted."
+                )
+            abort_res = self.run_git_command(
+                abort_args,
+                cwd=repo_path,
+            )
+            if abort_res is None or abort_res.returncode != 0:
+                stderr = ""
+                if abort_res is not None:
+                    stderr = abort_res.stderr.strip()
+                raise RuntimeError(
+                    f"Failed to run `{abort_command}`: {stderr}"
+                )
+            operation_info = self._get_in_progress_git_operation(repo_path)
+            if operation_info is not None:
+                raise RuntimeError(
+                    "Git operation state still exists after running "
+                    f"`{abort_command}`."
+                )
+            print(f"Successfully ran `{abort_command}`")
+        return ret
 
     def apply_repo_patches(self, repo_path: Path, patch_dir: Path):
         """Applies patches to a repository from the given patches directory."""
@@ -560,9 +625,10 @@ class RockProjectRepo:
         if patch_files:
             patch_cnt = len(patch_files)
             if patch_cnt > 0:
-                # check first whether git am needs to be aborted from previout attempt
-                #print(f"repo_path: {repo_path}")
-                self.check_and_abort_old_ongoing_am(str(repo_path))
+                # Resolve unfinished Git operations before applying patches.
+                self.check_and_resolve_in_progress_git_operation(
+                    str(repo_path)
+                )
                 # then start applying patches
                 patch_files.sort(key=lambda p: p.name)
                 self.exec(
