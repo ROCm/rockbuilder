@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 INSTALL_DIR_ENV_VAR = "RCB_ROCM_SDK_INSTALL_DIR"
+CONFIG_RECORD_NAME = "rcb_therock.txt"
 
 
 def get_install_dir():
@@ -54,6 +56,15 @@ def install_rocm_sdk(script_dir, install_dir):
         )
 
 
+def install_config_record(script_dir, install_dir):
+    source_path = script_dir / "build" / CONFIG_RECORD_NAME
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            f"TheRock configuration record was not found: {source_path}"
+        )
+    shutil.copyfile(source_path, install_dir / CONFIG_RECORD_NAME)
+
+
 def write_install_marker(install_dir):
     marker_dir = install_dir / ".info"
     marker_dir.mkdir(parents=True, exist_ok=True)
@@ -69,6 +80,7 @@ def main():
     script_dir = Path(__file__).resolve().parent
     install_dir = get_install_dir()
     install_rocm_sdk(script_dir, install_dir)
+    install_config_record(script_dir, install_dir)
     write_install_marker(install_dir)
     print(f"rcb_install.py installed ROCm SDK to: {install_dir}")
 

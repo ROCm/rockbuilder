@@ -510,10 +510,63 @@ def is_rocm_sdk_required(rock_builder_home_dir, app_list):
     return ret
 
 
+def get_rockbuilder_hash(rock_builder_home_dir):
+    """Return the full Git object ID for the RockBuilder revision."""
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD^{commit}"],
+        cwd=rock_builder_home_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Could not resolve the RockBuilder Git hash: "
+            + result.stderr.strip()
+        )
+    ret = result.stdout.strip()
+    if not ret:
+        raise RuntimeError("RockBuilder returned an empty Git hash")
+    return ret
+
+
+def configure_rockbuilder_hash_environment(rock_builder_home_dir):
+    hash_env = rcb_const.RCB__ENV_VAR__ROCKBUILDER_HASH
+    if hash_env not in os.environ:
+        os.environ[hash_env] = get_rockbuilder_hash(
+            rock_builder_home_dir
+        )
+
+
+def get_rockbuilder_dirty(rock_builder_home_dir):
+    """Return whether the RockBuilder working tree has local changes."""
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=rock_builder_home_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Could not inspect the RockBuilder working tree: "
+            + result.stderr.strip()
+        )
+    ret = bool(result.stdout.strip())
+    return ret
+
+
+def configure_rockbuilder_dirty_environment(rock_builder_home_dir):
+    dirty_env = rcb_const.RCB__ENV_VAR__ROCKBUILDER_DIRTY
+    if dirty_env not in os.environ:
+        dirty = get_rockbuilder_dirty(rock_builder_home_dir)
+        os.environ[dirty_env] = str(dirty).lower()
+
+
 def configure_common_build_environment(rcb_cfg_reader):
     """Configure build settings that do not require an installed ROCm SDK."""
     _check_distro_specific_environment_variables()
     _check_cpu_count_env_variable()
+    configure_rockbuilder_hash_environment(rcb_const.RCB__ROOT_DIR)
+    configure_rockbuilder_dirty_environment(rcb_const.RCB__ROOT_DIR)
     sanitizer = rcb_cfg_reader.get_therock_sanitizer()
     sanitizer_env = rcb_const.RCB__ENV_VAR__THEROCK_SANITIZER
     if sanitizer and sanitizer_env not in os.environ:
