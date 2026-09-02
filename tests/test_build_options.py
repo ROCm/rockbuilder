@@ -395,6 +395,22 @@ class TheRockSanitizerCommandTest(unittest.TestCase):
         self.assertIn("-DTHEROCK_SANITIZER=", command)
         self.assertEqual(exit_code, 0)
 
+    def test_selected_targets_limit_test_artifacts(self):
+        command, exit_code = self.run_main(
+            "NONE",
+            "gfx90a;gfx1100",
+        )
+
+        self.assertIn(
+            "-DTHEROCK_AMDGPU_FAMILIES=gfx90a;gfx1100",
+            command,
+        )
+        self.assertIn(
+            "-DTHEROCK_TEST_AMDGPU_TARGETS=gfx90a;gfx1100",
+            command,
+        )
+        self.assertEqual(exit_code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

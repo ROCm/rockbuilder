@@ -97,6 +97,10 @@ def main(sanitizer=None):
             "Unsupported sanitizer value: " + sanitizer
         )
     cmake_cmd.append(f"-DTHEROCK_AMDGPU_FAMILIES={amdgpu_targets}")
+    # Limit enabled subprojects that use USE_TEST_AMDGPU_TARGETS:
+    # rccl, rccl-tests, rocshmem, hipfile, hipthreads, hip-tests, rocrtst, rocr-debug-agent-tests, aqlprofile,
+    # rocprofiler-sdk, and rocprofiler-systems-examples.
+    cmake_cmd.append(f"-DTHEROCK_TEST_AMDGPU_TARGETS={amdgpu_targets}")
     print(
         f"safe_cpu_count_compile: {safe_cpu_count_compile} "
         f"safe_cpu_count_link: {safe_cpu_count_link}"
