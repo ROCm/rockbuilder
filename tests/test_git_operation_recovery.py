@@ -67,6 +67,13 @@ class GitOperationRecoveryTest(unittest.TestCase):
         self.assertEqual(operation, "rebase")
         self.assertEqual(detected_path, state_path.resolve())
 
+    def test_reports_when_no_operation_was_resolved(self):
+        ret = self.repo.check_and_resolve_in_progress_git_operation(
+            self.repo_path
+        )
+
+        self.assertFalse(ret)
+
     def test_noninteractive_build_fails_with_abort_command(self):
         state_path = self.repo_path / ".git/rebase-apply"
         operation_info = ("am", state_path)
@@ -169,6 +176,52 @@ class GitOperationRecoveryTest(unittest.TestCase):
                 PRE_CONFIG.check_and_resolve_in_progress_git_operation(
                     self.repo_path
                 )
+
+    def test_therock_does_not_retry_failed_patch_series(self):
+        with (
+            mock.patch.object(
+                PRE_CONFIG,
+                "get_python_executable_name",
+                return_value="python3",
+            ),
+            mock.patch.object(
+                PRE_CONFIG,
+                "check_repo_and_submodule_git_operations",
+                side_effect=[False, True],
+            ),
+            mock.patch.object(
+                PRE_CONFIG,
+                "run_cmd",
+                return_value=1,
+            ) as run_cmd,
+        ):
+            ret = PRE_CONFIG.fetch_sources()
+
+        self.assertEqual(ret, 1)
+        self.assertEqual(run_cmd.call_count, 1)
+
+    def test_therock_retries_failure_without_git_operation(self):
+        with (
+            mock.patch.object(
+                PRE_CONFIG,
+                "get_python_executable_name",
+                return_value="python3",
+            ),
+            mock.patch.object(
+                PRE_CONFIG,
+                "check_repo_and_submodule_git_operations",
+                return_value=False,
+            ),
+            mock.patch.object(
+                PRE_CONFIG,
+                "run_cmd",
+                side_effect=[1, 0, 0],
+            ) as run_cmd,
+        ):
+            ret = PRE_CONFIG.fetch_sources()
+
+        self.assertEqual(ret, 0)
+        self.assertEqual(run_cmd.call_count, 3)
 
 
 if __name__ == "__main__":

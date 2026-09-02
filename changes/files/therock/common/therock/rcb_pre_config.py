@@ -22,7 +22,10 @@ def run_cmd(cmd, description=None, check=True):
         print(f"rcb_pre_config.py {description}")
     result = subprocess.run(cmd)
     if check and result.returncode != 0:
-        print(f"rcb_pre_config.py command failed (res: {result.returncode}): {cmd}")
+        print(
+            "rcb_pre_config.py command failed "
+            f"(res: {result.returncode}): {cmd}"
+        )
         sys.exit(result.returncode)
     return result.returncode
 
@@ -49,13 +52,19 @@ def create_and_activate_venv(venv_name):
         bin_dir = os.path.join(venv_path, "bin")
     venv_exists = os.path.isdir(bin_dir)
     if not venv_exists:
-        print(f"rcb_pre_config.py creating python virtual environment: {venv_name}")
+        print(
+            "rcb_pre_config.py creating python virtual environment: "
+            f"{venv_name}"
+        )
         python_cmd = "python" if IS_WINDOWS else "python3"
         run_cmd([python_cmd, "-m", "venv", venv_name])
     os.environ["VIRTUAL_ENV"] = venv_path
     os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
     os.environ.pop("PYTHONHOME", None)
-    print(f"rcb_pre_config.py python virtual environment activated: {venv_path}")
+    print(
+        "rcb_pre_config.py python virtual environment activated: "
+        f"{venv_path}"
+    )
     return venv_exists
 
 def install_packages(venv_already_existed):
@@ -102,9 +111,10 @@ def get_in_progress_git_operation(repo_path="."):
 
 def check_and_resolve_in_progress_git_operation(repo_path="."):
     """Ask before aborting an operation that blocks patch application."""
-    ret = True
+    ret = False
     operation_info = get_in_progress_git_operation(repo_path)
     if operation_info is not None:
+        ret = True
         operation, state_path = operation_info
         repo_path = Path(repo_path).resolve()
         abort_args = [operation, "--abort"]
@@ -153,7 +163,7 @@ def check_and_resolve_in_progress_git_operation(repo_path="."):
 
 def check_repo_and_submodule_git_operations():
     """Check the TheRock repository and each initialized submodule."""
-    check_and_resolve_in_progress_git_operation(".")
+    ret = check_and_resolve_in_progress_git_operation(".")
     cmd = ["submodule", "foreach", "--recursive", "pwd"]
     res = run_git_command(cmd)
     if res is None or res.returncode != 0:
@@ -163,7 +173,9 @@ def check_repo_and_submodule_git_operations():
     for output_line in res.stdout.splitlines():
         path = output_line.strip()
         if path and not path.startswith("Entering "):
-            check_and_resolve_in_progress_git_operation(path)
+            if check_and_resolve_in_progress_git_operation(path):
+                ret = True
+    return ret
 
 def fetch_sources():
     python_exec = get_python_executable_name()
@@ -171,15 +183,38 @@ def fetch_sources():
     print("rcb_pre_config.py therock source fetch started")
     res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
     if res != 0:
-        print(f"rcb_pre_config.py first attempt for submodule source code fetch failed: {res}")
-        print("rcb_pre_config.py resetting submodules and trying refresh again")
-
-        check_repo_and_submodule_git_operations()
-        res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
-        # if it failed again, then try to reset submodules and then try to fetch sources one more time
-        if res != 0:
-            run_cmd(["git", "submodule", "foreach", "git", "reset", "--hard"], check=False)
-            res = run_cmd([python_exec, "./build_tools/fetch_sources.py"], check=False)
+        print(
+            "rcb_pre_config.py first submodule source fetch failed: "
+            f"{res}"
+        )
+        operation_resolved = check_repo_and_submodule_git_operations()
+        if operation_resolved:
+            print(
+                "rcb_pre_config.py patch application failed; "
+                "not retrying the unchanged patch series"
+            )
+        else:
+            print(
+                "rcb_pre_config.py resetting submodules and trying "
+                "source fetch again"
+            )
+            run_cmd(
+                [
+                    "git",
+                    "submodule",
+                    "foreach",
+                    "git",
+                    "reset",
+                    "--hard",
+                ],
+                check=False,
+            )
+            res = run_cmd(
+                [python_exec, "./build_tools/fetch_sources.py"],
+                check=False,
+            )
+            if res != 0:
+                check_repo_and_submodule_git_operations()
     return res
 
 
@@ -191,7 +226,11 @@ def main():
     venv_already_existed = create_and_activate_venv(".venv")
     install_packages(venv_already_existed)
 
-    result = subprocess.run(["cmake", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["cmake", "--version"],
+        capture_output=True,
+        text=True,
+    )
     cmake_version = result.stdout.strip()
     print(f"rcb_pre_config.py CMAKE_VERSION: {cmake_version}")
 

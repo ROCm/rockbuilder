@@ -569,9 +569,10 @@ class RockProjectRepo:
         repo_path=".",
     ):
         """Ask before aborting an operation that blocks patch application."""
-        ret = True
+        ret = False
         operation_info = self._get_in_progress_git_operation(repo_path)
         if operation_info is not None:
+            ret = True
             operation, state_path = operation_info
             repo_path = Path(repo_path).resolve()
             abort_args = [operation, "--abort"]
