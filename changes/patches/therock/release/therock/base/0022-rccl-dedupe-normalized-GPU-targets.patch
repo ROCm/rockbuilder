@@ -1,0 +1,79 @@
+From 30db5d84ec2bcdfa872a45084f774f7a9cdf6dd3 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 1 Sep 2026 17:23:33 -0700
+Subject: [PATCH] rccl dedupe normalized GPU targets
+
+- Add an amd-mainline RCCL patch that removes
+  duplicate base architectures after stripping target
+  feature qualifiers.
+- TheRock test targets include both gfx90a:xnack-
+  and gfx90a:xnack+, which normalize to gfx90a and
+  previously created duplicate RCCL CMake targets.
+- Rebuild offload architecture flags from the
+  deduplicated target list.
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...8-rccl-dedupe-normalized-GPU-targets.patch | 48 +++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0008-rccl-dedupe-normalized-GPU-targets.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0008-rccl-dedupe-normalized-GPU-targets.patch b/patches/amd-mainline/rocm-systems/0008-rccl-dedupe-normalized-GPU-targets.patch
+new file mode 100644
+index 0000000..33e2ebe
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0008-rccl-dedupe-normalized-GPU-targets.patch
+@@ -0,0 +1,48 @@
++From 32bea99fb2c1ce596212063b20d30333e051c6c9 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Tue, 1 Sep 2026 17:20:12 -0700
++Subject: [PATCH] rccl dedupe normalized GPU targets
++
++- RCCL strips target feature qualifiers before
++  creating device libraries.
++- Both gfx90a:xnack- and gfx90a:xnack+ become
++  gfx90a, which previously produced duplicate CMake
++  target names.
++- Remove duplicate normalized targets before
++  constructing offload architecture flags.
++
++Tools used:
++- GPT: 5.6 Sol
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/rccl/cmake/DeviceLinker.cmake | 11 ++++++++++-
++ 1 file changed, 10 insertions(+), 1 deletion(-)
++
++diff --git a/projects/rccl/cmake/DeviceLinker.cmake b/projects/rccl/cmake/DeviceLinker.cmake
++index 944fcc1dfc..f010a51916 100644
++--- a/projects/rccl/cmake/DeviceLinker.cmake
+++++ b/projects/rccl/cmake/DeviceLinker.cmake
++@@ -50,10 +50,19 @@ set(SPECIALIZED_DIR  "${GEN_DIR}/specialized")
++ # Parse GPU_TARGETS: strip target features, build offload-arch flag list
++ # ---------------------------------------------------------------------------
++ set(DL_GPU_TARGETS "")
++-set(DL_OFFLOAD_ARCH_FLAGS "")
++ foreach(_gpu_raw ${GPU_TARGETS})
++   string(REGEX REPLACE ":.*" "" _gpu "${_gpu_raw}")
++   list(APPEND DL_GPU_TARGETS "${_gpu}")
+++endforeach()
+++
+++# Feature-qualified targets normalize to the same base architecture. For
+++# example, gfx90a:xnack-;gfx90a:xnack+ becomes gfx90a;gfx90a. Remove duplicates
+++# before creating rccl_device_<target> libraries to avoid duplicate CMake
+++# target names.
+++list(REMOVE_DUPLICATES DL_GPU_TARGETS)
+++
+++set(DL_OFFLOAD_ARCH_FLAGS "")
+++foreach(_gpu ${DL_GPU_TARGETS})
++   list(APPEND DL_OFFLOAD_ARCH_FLAGS "--offload-arch=${_gpu}")
++ endforeach()
++ message(STATUS "Device Linker: GPU targets = ${DL_GPU_TARGETS}")
++--
++2.43.0
+--
+2.43.0
