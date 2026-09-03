@@ -1,0 +1,50 @@
+From 332cd93cb0d24f3c51893ee796e26d75aede4681 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <lamikr@gmail.com>
+Date: Thu, 20 Aug 2026 11:10:52 -0700
+Subject: [PATCH] printout warning if GPU is not supported
+
+Print out a warning message if the GPU is not in the list of
+experimentally supported GPUs. PyTorch's AOTriton integration
+uses this method.
+
+Signed-off-by: Mika Laitio <lamikr@gmail.com>
+---
+ v3src/util.cc | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/v3src/util.cc b/v3src/util.cc
+index f27e4cf..6389a92 100644
+--- a/v3src/util.cc
++++ b/v3src/util.cc
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: MIT
+
+ #include <aotriton/util.h>
++#include <cstdio>
+ #include <string>
+ #include <unordered_map>
+ #include <string_view>
+@@ -81,9 +82,10 @@ getGpuFromStream(hipStream_t stream) {
+ }
+
+ bool isArchExperimentallySupported(hipStream_t stream) {
++  bool ret;
+   auto gpu = getGpuFromStream(stream);
+   uint32_t vendor_arch = Gpu2VendorArch(gpu);
+-  return (vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
++  ret = (vendor_arch == CAT32(GpuVendor::kAMD, 0x1030) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1031) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1032) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1034) ||
+@@ -95,6 +97,9 @@ bool isArchExperimentallySupported(hipStream_t stream) {
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1102) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1103) ||
+           vendor_arch == CAT32(GpuVendor::kAMD, 0x1200));
++  if (!ret)
++    std::printf("aotriton/v3src/isArchExperimentallySupported: NO: 0x%x\n", vendor_arch);
++  return ret;
+ }
+
+ bool isArchTechPreview(hipStream_t stream) {
+--
+2.43.0
