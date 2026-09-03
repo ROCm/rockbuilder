@@ -1,0 +1,358 @@
+From 0dd709b4862ec46f51d87c059f389b09533d35ce Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 3 Sep 2026 03:06:09 -0700
+Subject: [PATCH] Add RDNA Wave Split-K FP8 support
+
+- Add a wave32 rocWMMA path for skinny FP8
+  matrix multiplication.
+- Decode gfx1100 E4M3FN inputs to FP16 before
+  FP16-to-FP32 WMMA accumulation.
+- Use native FP8-to-FP32 WMMA on gfx1200 and
+  gfx1201.
+- Select wave32 or wave64 launches at runtime.
+- Preserve and retest the existing gfx90a path.
+- Add focused RDNA correctness validation.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/kernels/custom_kernels.cu                | 139 ++++++++++++++++--
+ csrc/py_itfs_cu/custom.cu                     |   6 +
+ op_tests/validation/README.md                 |  30 ++++
+ .../validation/validate_rdna_wv_split_kq.py   |  74 ++++++++++
+ 4 files changed, 239 insertions(+), 10 deletions(-)
+ create mode 100644 op_tests/validation/validate_rdna_wv_split_kq.py
+
+diff --git a/csrc/kernels/custom_kernels.cu b/csrc/kernels/custom_kernels.cu
+index 3195bbb5..697765ab 100644
+--- a/csrc/kernels/custom_kernels.cu
++++ b/csrc/kernels/custom_kernels.cu
+@@ -7,6 +7,7 @@
+ #include <hip/hip_fp8.h>
+ #include <hip/hip_fp16.h>
+ #include <hip/hip_runtime.h>
++#include <rocwmma/rocwmma.hpp>
+ #include <stdexcept>
+
+ #define AT_DISPATCH_FP8_CASE_rmTorch(enum_type, ...) \
+@@ -31,6 +32,11 @@
+ #define __HIP__MI350_MI300_MI250__
+ #endif
+
++#if defined(__HIPCC__) && \
++    (defined(__gfx1100__) || defined(__gfx1200__) || defined(__gfx1201__))
++#define AITER_WVSPLITKQ_RDNA_WAVE32
++#endif
++
+ #if defined(NDEBUG)
+ #undef NDEBUG
+ #include <assert.h>
+@@ -2254,6 +2260,91 @@ __global__ void wvSplitKQ_hf_(const int K,
+ }
+ #endif // defined(__HIP__MI350_MI300_MI250__) TODO: Add NAVI support
+
++template <typename scalar_t, typename fp8_t, int N>
++__global__ void __launch_bounds__(32) wvSplitKQ_rdna_(const int K,
++                                                      const int Kp,
++                                                      const int M,
++                                                      const fp8_t* B,
++                                                      const fp8_t* __restrict__ A,
++                                                      scalar_t* C,
++                                                      const float* __restrict__ s_A,
++                                                      const float* __restrict__ s_B)
++{
++#if defined(AITER_WVSPLITKQ_RDNA_WAVE32)
++#if defined(__gfx1100__)
++    using input_t = __half;
++#else
++    using input_t = rocwmma::float8_t;
++#endif
++    using fragment_a =
++        rocwmma::fragment<rocwmma::matrix_a, 16, 16, 16, input_t, rocwmma::row_major>;
++    using fragment_b =
++        rocwmma::fragment<rocwmma::matrix_b, 16, 16, 16, input_t, rocwmma::col_major>;
++    using fragment_c = rocwmma::fragment<rocwmma::accumulator, 16, 16, 16, float>;
++
++    __shared__ input_t tile_a[16 * 16];
++    __shared__ input_t tile_b[16 * 16];
++    __shared__ float tile_c[16 * 16];
++
++    const auto* a_fp8 = reinterpret_cast<const rocwmma::float8_t*>(A);
++    const auto* b_fp8 = reinterpret_cast<const rocwmma::float8_t*>(B);
++    const int lane    = threadIdx.x;
++    const float scale = *s_A * *s_B;
++
++    for(int m = blockIdx.x * 16; m < M; m += gridDim.x * 16)
++    {
++        fragment_c accumulator;
++        rocwmma::fill_fragment(accumulator, 0.0f);
++
++        for(int k = 0; k < K; k += 16)
++        {
++            for(int i = lane; i < 16 * 16; i += 32)
++            {
++                const int row    = i / 16;
++                const int column = i % 16;
++#if defined(__gfx1100__)
++                tile_a[i] =
++                    row < N ? __float2half(static_cast<float>(a_fp8[row * K + k + column]))
++                            : __float2half(0.0f);
++                tile_b[column * 16 + row] =
++                    m + column < M
++                        ? __float2half(static_cast<float>(b_fp8[(m + column) * Kp + k + row]))
++                        : __float2half(0.0f);
++#else
++                tile_a[i] = row < N ? a_fp8[row * K + k + column] : input_t{};
++                tile_b[column * 16 + row] =
++                    m + column < M ? b_fp8[(m + column) * Kp + k + row] : input_t{};
++#endif
++            }
++            rocwmma::synchronize_workgroup();
++
++            fragment_a frag_a;
++            fragment_b frag_b;
++            rocwmma::load_matrix_sync(frag_a, tile_a, 16);
++            rocwmma::load_matrix_sync(frag_b, tile_b, 16);
++            rocwmma::mma_sync(accumulator, frag_a, frag_b, accumulator);
++            rocwmma::synchronize_workgroup();
++        }
++
++        rocwmma::store_matrix_sync(
++            tile_c, accumulator, 16, rocwmma::mem_row_major);
++        rocwmma::synchronize_workgroup();
++        for(int i = lane; i < N * 16; i += 32)
++        {
++            const int row    = i / 16;
++            const int column = i % 16;
++            if(m + column < M)
++            {
++                C[row * M + m + column] = __float2s<scalar_t>(tile_c[i] * scale);
++            }
++        }
++        rocwmma::synchronize_workgroup();
++    }
++#else
++    UNREACHABLE_CODE
++#endif
++}
++
+ void wvSplitKQ_(void* in_a,
+                 void* in_b,
+                 void* out_c,
+@@ -2265,25 +2356,53 @@ void wvSplitKQ_(void* in_a,
+                 const int N_in,
+                 hipStream_t stream,
+                 const int CuCount,
++                const int warp_size,
+                 const AiterDtype a_scalar_type,
+                 const AiterDtype c_scalar_type)
+ {
+ #define WVSPLITKQ(_WvPrGrp, _YTILEs, _YTILEm, _YTILEb, _UNRLs, _UNRLm, _UNRLb, _N)                 \
+     {                                                                                              \
+-        dim3 block(64, _WvPrGrp);                                                                  \
+-        if((K_in * N_in <= 64 * 1024) && (M_in % _YTILEs == 0))                                    \
++        if(warp_size == 32)                                                                        \
+         {                                                                                          \
+-            int __wvPrGrp = mindiv(M_in, CuCount * _YTILEs, _WvPrGrp);                             \
+-            wvSplitKQ_hf_sml_<fptype, fp8_t, 64, _YTILEs, _WvPrGrp, 16, _UNRLs, _N>                \
+-                <<<grid, block, 0, stream>>>(                                                      \
+-                    K_in, Kp_in, M_in, a_ptr, b_ptr, c_ptr, scale_a, scale_b, __wvPrGrp, CuCount); \
++            dim3 block(32);                                                                        \
++            wvSplitKQ_rdna_<fptype, fp8_t, _N><<<grid, block, 0, stream>>>(                         \
++                K_in, Kp_in, M_in, a_ptr, b_ptr, c_ptr, scale_a, scale_b);                         \
+         }                                                                                          \
+         else                                                                                       \
+         {                                                                                          \
+-            int __wvPrGrp = mindiv(M_in, CuCount * _YTILEm, _WvPrGrp);                             \
+-            wvSplitKQ_hf_<fptype, fp8_t, 64, _YTILEm, _WvPrGrp, 16, _UNRLm, _N>                    \
+-                <<<grid, block, 0, stream>>>(                                                      \
+-                    K_in, Kp_in, M_in, a_ptr, b_ptr, c_ptr, scale_a, scale_b, __wvPrGrp, CuCount); \
++            dim3 block(64, _WvPrGrp);                                                              \
++            if((K_in * N_in <= 64 * 1024) && (M_in % _YTILEs == 0))                                \
++            {                                                                                      \
++                int __wvPrGrp = mindiv(M_in, CuCount * _YTILEs, _WvPrGrp);                         \
++                wvSplitKQ_hf_sml_<fptype, fp8_t, 64, _YTILEs, _WvPrGrp, 16, _UNRLs, _N>            \
++                    <<<grid, block, 0, stream>>>(                                                  \
++                        K_in,                                                                      \
++                        Kp_in,                                                                     \
++                        M_in,                                                                      \
++                        a_ptr,                                                                     \
++                        b_ptr,                                                                     \
++                        c_ptr,                                                                     \
++                        scale_a,                                                                   \
++                        scale_b,                                                                   \
++                        __wvPrGrp,                                                                 \
++                        CuCount);                                                                  \
++            }                                                                                      \
++            else                                                                                   \
++            {                                                                                      \
++                int __wvPrGrp = mindiv(M_in, CuCount * _YTILEm, _WvPrGrp);                         \
++                wvSplitKQ_hf_<fptype, fp8_t, 64, _YTILEm, _WvPrGrp, 16, _UNRLm, _N>                \
++                    <<<grid, block, 0, stream>>>(                                                  \
++                        K_in,                                                                      \
++                        Kp_in,                                                                     \
++                        M_in,                                                                      \
++                        a_ptr,                                                                     \
++                        b_ptr,                                                                     \
++                        c_ptr,                                                                     \
++                        scale_a,                                                                   \
++                        scale_b,                                                                   \
++                        __wvPrGrp,                                                                 \
++                        CuCount);                                                                  \
++            }                                                                                      \
+         }                                                                                          \
+     }
+
+diff --git a/csrc/py_itfs_cu/custom.cu b/csrc/py_itfs_cu/custom.cu
+index 28e3fc2a..0cb7b46c 100644
+--- a/csrc/py_itfs_cu/custom.cu
++++ b/csrc/py_itfs_cu/custom.cu
+@@ -150,6 +150,7 @@ void wvSplitKQ_(void* in_a,
+                 const int N,
+                 hipStream_t stream,
+                 const int CuCount                   = 1,
++                const int warp_size                 = 64,
+                 const AiterDtype a_scalar_type       = AITER_DTYPE_fp8,
+                 const AiterDtype c_scalar_type       = AITER_DTYPE_fp16);
+ void wvSplitKQ(aiter_tensor_t& in_a,
+@@ -170,6 +171,10 @@ void wvSplitKQ(aiter_tensor_t& in_a,
+     auto scale_b_ptr = reinterpret_cast<float*>(scale_b.data_ptr());
+
+     HipDeviceGuard device_guard(in_a.device_id);
++    int warp_size = 0;
++    const hipError_t status =
++        hipDeviceGetAttribute(&warp_size, hipDeviceAttributeWarpSize, in_a.device_id);
++    AITER_CHECK(status == hipSuccess, "Could not query GPU wave size: ", hipGetErrorString(status));
+     wvSplitKQ_(in_a.data_ptr(),
+                in_b.data_ptr(),
+                out_c.data_ptr(),
+@@ -181,6 +186,7 @@ void wvSplitKQ(aiter_tensor_t& in_a,
+                N,
+                aiter::getCurrentHIPStream(),
+                CuCount,
++               warp_size,
+                in_a.dtype(),
+                out_c.dtype());
+ }
+diff --git a/op_tests/validation/README.md b/op_tests/validation/README.md
+index f8fc3296..2ca35d50 100644
+--- a/op_tests/validation/README.md
++++ b/op_tests/validation/README.md
+@@ -128,3 +128,33 @@ ROCR_VISIBLE_DEVICES=1 \
+ The test requires E4M3-FNUZ input. It fails if AITER selects another FP8 format,
+ the visible GPU is not gfx90a, the output is outside the existing Wave Split-K
+ tolerance, or a kernel launch fails.
++
++## RDNA Wave Split-K FP8 correctness
++
++The RDNA validator covers gfx1100, gfx1200, and gfx1201. The gfx1100 kernel
++decodes E4M3FN operands to FP16 before using FP16 WMMA. The gfx1200 and gfx1201
++kernels use native E4M3FN FP8 WMMA.
++
++On a homogeneous host, set `GPU_ARCHS` to the installed architecture:
++
++```bash
++export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
++GPU_ARCHS=gfx1100 \
++  python op_tests/validation/validate_rdna_wv_split_kq.py
++```
++
++Replace `gfx1100` with `gfx1200` or `gfx1201` as appropriate. On a
++mixed-architecture host, expose only the device under test to the ROCm runtime.
++For example, if that device is physical device 1:
++
++```bash
++ROCR_VISIBLE_DEVICES=1 \
++  GPU_ARCHS=gfx1200 \
++  python op_tests/validation/validate_rdna_wv_split_kq.py
++```
++
++The validator checks FP16 and BF16 output, activation row counts from one
++through four, output-column tails, and small and large K dimensions. It fails
++if AITER selects a format other than E4M3FN, the visible GPU is unsupported, or
++the kernel differs from dequantized FP32 matrix multiplication beyond the
++existing Wave Split-K tolerance.
+diff --git a/op_tests/validation/validate_rdna_wv_split_kq.py b/op_tests/validation/validate_rdna_wv_split_kq.py
+new file mode 100644
+index 00000000..823c83c1
+--- /dev/null
++++ b/op_tests/validation/validate_rdna_wv_split_kq.py
+@@ -0,0 +1,74 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import torch
++
++import aiter
++
++
++SUPPORTED_ARCHITECTURES = {"gfx1100", "gfx1200", "gfx1201"}
++TEST_SHAPES = (
++    (1, 4, 16),
++    (2, 60, 96),
++    (3, 17, 6192),
++    (4, 320, 16400),
++)
++
++
++def quantize_fp8(tensor):
++    scale = tensor.abs().max().float() / torch.finfo(aiter.dtypes.fp8).max
++    ret = (tensor / scale).to(aiter.dtypes.fp8), scale
++    return ret
++
++
++def validate_shape(output_dtype, rows, columns, inner, cu_count):
++    x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
++    weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
++    x_fp8, x_scale = quantize_fp8(x)
++    weight_fp8, weight_scale = quantize_fp8(weight)
++    reference = (
++        torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
++    ).to(output_dtype)
++    actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    aiter.wvSplitKQ(
++        weight_fp8,
++        x_fp8,
++        actual,
++        weight_scale,
++        x_scale,
++        cu_count,
++    )
++    torch.cuda.synchronize()
++    torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
++    ret = (actual.float() - reference.float()).abs().max().item()
++    return ret
++
++
++def main():
++    torch.manual_seed(137)
++    properties = torch.cuda.get_device_properties("cuda")
++    architecture = properties.gcnArchName.split(":", maxsplit=1)[0]
++    if architecture not in SUPPORTED_ARCHITECTURES:
++        raise RuntimeError(
++            f"Expected one of {sorted(SUPPORTED_ARCHITECTURES)}, found {architecture}"
++        )
++    if aiter.dtypes.fp8 != torch.float8_e4m3fn:
++        raise RuntimeError(f"Expected E4M3FN, found {aiter.dtypes.fp8}")
++
++    for output_dtype in (torch.float16, torch.bfloat16):
++        for rows, columns, inner in TEST_SHAPES:
++            max_error = validate_shape(
++                output_dtype,
++                rows,
++                columns,
++                inner,
++                properties.multi_processor_count,
++            )
++            print(
++                f"PASS architecture={architecture} dtype={output_dtype} "
++                f"shape=({rows},{columns},{inner}) max_abs_error={max_error:.8g}"
++            )
++
++
++if __name__ == "__main__":
++    main()
+--
+2.43.0
