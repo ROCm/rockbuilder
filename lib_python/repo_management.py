@@ -1079,6 +1079,11 @@ class RockProjectRepo:
         ret = True
         if CMD_CMAKE_CONFIG:
             CMD_CMAKE_CONFIG = os.path.expandvars(str(CMD_CMAKE_CONFIG))
+            CMD_CMAKE_CONFIG = " ".join(
+                line.strip()
+                for line in CMD_CMAKE_CONFIG.splitlines()
+                if line.strip()
+            )
             CMD_CMAKE_CONFIG = "cmake -GNinja " + CMD_CMAKE_CONFIG
             ret = self._handle_command_exec(
                 "CMD_CMAKE_CONFIG", CMD_CMAKE_CONFIG, self.app_build_dir
