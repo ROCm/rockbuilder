@@ -1,0 +1,90 @@
+From e7924ebf97c2ca12302300f428d8d822fb28171b Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 3 Sep 2026 03:35:12 -0700
+Subject: [PATCH] Add CK metadata for additional GPUs
+
+- Add full-chip CU defaults for CDNA and RDNA
+  targets used by offline kernel generation.
+- Document CU_NUM overrides for binned devices.
+- Add focused environment resolution coverage.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/utils/build_targets.py |  6 ++++++
+ op_tests/test_gemm_codegen.py    | 29 +++++++++++++++++++++++++----
+ 2 files changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/aiter/jit/utils/build_targets.py b/aiter/jit/utils/build_targets.py
+index 5a1a93b4..0286ccab 100644
+--- a/aiter/jit/utils/build_targets.py
++++ b/aiter/jit/utils/build_targets.py
+@@ -37,8 +37,14 @@ GFX_MAP = {
+ # explicitly alongside GPU_ARCHS to override the default here.
+ # Extend this table when adding support for new GPU targets.
+ GFX_CU_NUM_MAP = {
++    "gfx90a": 110,  # MI250X GCD; MI210 has 104 CUs — use CU_NUM override
+     "gfx942": 304,  # MI300X (SPX, full GPU); MI308X shares gfx942 — use CU_NUM override
+     "gfx950": 256,  # MI350
++    "gfx1100": 96,  # Full Navi 31; binned products use CU_NUM override
++    "gfx1150": 16,  # Strix Point
++    "gfx1151": 40,  # Strix Halo
++    "gfx1200": 32,  # Navi 44
++    "gfx1201": 64,  # Full Navi 48; binned products use CU_NUM override
+     "gfx1250": 256,  # Gfx1250
+ }
+
+diff --git a/op_tests/test_gemm_codegen.py b/op_tests/test_gemm_codegen.py
+index aec1230b..eb62766a 100644
+--- a/op_tests/test_gemm_codegen.py
++++ b/op_tests/test_gemm_codegen.py
+@@ -59,6 +59,14 @@ REPRO_BPRESHUFFLE_CSV = os.path.join(
+ TARGET_A = ("gfx942", 304)  # MI300X
+ TARGET_B = ("gfx950", 256)  # MI350
+ TARGET_C = ("gfx942", 80)  # MI308X — gfx942 with CU_NUM override
++ADDITIONAL_TARGETS = (
++    ("gfx90a", 110),
++    ("gfx1100", 96),
++    ("gfx1150", 16),
++    ("gfx1151", 40),
++    ("gfx1200", 32),
++    ("gfx1201", 64),
++)
+
+ # ---------------------------------------------------------------------------
+ # Minimal test harness (no external test framework required)
+@@ -146,13 +154,26 @@ def test_get_build_targets():
+             raised = True
+         _check("GPU_ARCHS=' ; ' → RuntimeError", raised)
+
+-        # 1.7 GFX_CU_NUM_MAP covers at least the two known production targets
++        # 1.7 Additional offline build targets resolve to their documented defaults
++        for target in ADDITIONAL_TARGETS:
++            os.environ["GPU_ARCHS"] = target[0]
++            t = get_build_targets_env()
++            _check(
++                f"GPU_ARCHS={target[0]} resolves to {target}",
++                t == [target],
++                str(t),
++            )
++
++        # 1.8 Additional targets resolve together in the requested order
++        os.environ["GPU_ARCHS"] = ";".join(target[0] for target in ADDITIONAL_TARGETS)
++        t = get_build_targets_env()
+         _check(
+-            "GFX_CU_NUM_MAP contains gfx942 and gfx950",
+-            "gfx942" in GFX_CU_NUM_MAP and "gfx950" in GFX_CU_NUM_MAP,
++            "additional targets resolve together in order",
++            t == list(ADDITIONAL_TARGETS),
++            str(t),
+         )
+
+-        # 1.8 Live GPU fallback — requires torch and a GPU; skipped otherwise
++        # 1.9 Live GPU fallback — requires torch and a GPU; skipped otherwise
+         del os.environ["GPU_ARCHS"]
+         try:
+             from aiter.jit.utils.chip_info import get_build_targets
+--
+2.43.0
