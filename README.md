@@ -207,21 +207,21 @@ In many cases, multiple applications need to be built to achieve full functional
 Example usage to build PyTorch nightly and its dependencies:
 
 ```
-./rockbuilder.py apps/pytorch_nightly.apps
+./rockbuilder.py apps/torch_nightly.apps
 ```
 
-This will download, configure, and build all applications that are specified in the `pytorch_nightly.apps` file.
+This will download, configure, and build all applications that are specified in the `torch_nightly.apps` file.
 
-```apps/pytorch_nightly.apps
+```apps/torch_nightly.apps
 [apps]
 app_list=
     deps_common
-    pytorch_aotriton_nightly
+    aotriton_nightly
     triton_pytorch_nightly
-    pytorch_nightly
-    pytorch_vision_nightly
-    pytorch_torchcodec_nightly
-    pytorch_audio_nightly
+    torch_nightly
+    torchvision_nightly
+    torchcodec_nightly
+    torchaudio_nightly
 ```
 
 Applications are built and installed in the listed order above. Each application will be installed into the currently active Python virtual environment. Any additional libraries or executables built by CMake will be installed to the configured ROCm SDK.
@@ -248,12 +248,12 @@ Instead of building a set of applications, you can also build them one by one in
 
 ```
 ./rockbuilder.py apps/deps_common.cfg
-./rockbuilder.py apps/pytorch_aotriton_nightly.cfg
+./rockbuilder.py apps/aotriton_nightly.cfg
 ./rockbuilder.py apps/triton_pytorch_nightly.cfg
-./rockbuilder.py apps/pytorch_nightly.cfg
-./rockbuilder.py apps/pytorch_vision_nightly.cfg
-./rockbuilder.py apps/pytorch_torchcodec_nightly.cfg
-./rockbuilder.py apps/pytorch_audio_nightly.cfg
+./rockbuilder.py apps/torch_nightly.cfg
+./rockbuilder.py apps/torchvision_nightly.cfg
+./rockbuilder.py apps/torchcodec_nightly.cfg
+./rockbuilder.py apps/torchaudio_nightly.cfg
 ```
 
 Each of these `.cfg` files provides an application-specific configuration. These files define the application name, version, source repository, and the commands required to configure, build, and install the application.
@@ -326,7 +326,7 @@ RockBuilder also supports optional build arguments as follows:
 This command checks out the source code for the PyTorch 2.8–related applications without building them. The source code will be checked out to the `src_apps` directory.
 
 ```bash
-python rockbuilder.py --checkout apps/pytorch_28_amd.apps
+python rockbuilder.py --checkout apps/torch_rocm_28.apps
 ```
 
 ### Checkout Source Code to a Custom Directory
@@ -334,7 +334,7 @@ python rockbuilder.py --checkout apps/pytorch_28_amd.apps
 This command checks out the source code for each project to the `custom_src_location` directory instead of the default `src_apps` directory.
 
 ```bash
-python rockbuilder.py --checkout --src-base-dir custom_src_location apps/pytorch_28_amd.apps
+python rockbuilder.py --checkout --src-base-dir custom_src_location apps/torch_rocm_28.apps
 ```
 
 ### Build and Install Python Wheel to a Custom Directory
@@ -345,7 +345,7 @@ the default `packages/whl` directory as the artifact output base.
 >**Note:** PyTorch Audio requires PyTorch to be built and installed first.
 
 ```bash
-python rockbuilder.py apps/pytorch_audio.cfg --output-dir test
+python rockbuilder.py apps/torchaudio.cfg --output-dir test
 ```
 
 The resulting wheel is copied to:
@@ -359,15 +359,16 @@ test/<rocm-sdk-id>/<gpu-targets>/torchaudio/<wheel>
 This command checks out the source code of a single application to the `src_prj/py_audio` directory.
 
 ```bash
-python rockbuilder.py --checkout apps/pytorch_audio.cfg --src-dir src_prj/py_audio
+python rockbuilder.py --checkout apps/torchaudio.cfg --src-dir src_prj/py_audio
 ```
 
 ### Checkout a Custom Version
 
-This command checks out the source code of PyTorch Audio version `2.6.0` instead of the version specified in the `pytorch_audio.cfg` file.
+This command checks out the source code of PyTorch Audio version `2.6.0` instead of the version specified in the
+`torchaudio.cfg` file.
 
 ```bash
-python rockbuilder.py --checkout pytorch_audio --pytorch_audio-version=v2.6.0
+python rockbuilder.py --checkout torchaudio --torchaudio-version=v2.6.0
 ```
 
 ### Execute Only the Install Phase
@@ -377,7 +378,7 @@ This command executes only the install phase for a previously built PyTorch Audi
 >**Note:** PyTorch Audio requires PyTorch to be built and installed first.
 
 ```bash
-python rockbuilder.py --install apps/pytorch_audio.cfg
+python rockbuilder.py --install apps/torchaudio.cfg
 ```
 
 ## Add a New Application to RockBuilder
@@ -391,14 +392,15 @@ RockBuilder uses two types of configuration files stored under the applications 
 ```bash
 [apps]
 app_list=
-    pytorch
-    pytorch_vision
-    pytorch_audio
+    torch
+    torchvision
+    torchaudio
 ```
 
 ### Application Configuration File
 
-`apps/pytorch.cfg` is an example of an application configuration file, defining the actions that RockBuilder executes for a specific project, including:
+`apps/torch.cfg` is an example of an application configuration file, defining the actions that RockBuilder executes for a
+specific project, including:
 
 - inut
 - checkout
@@ -413,5 +415,5 @@ app_list=
 By default the RockBuilder executes init, checkout, pre-configure, configure, post-configure, build, install, and post-install phases for the application. You can override this by specifying the desired command phase. For example:
 
 ```bash
-python rockbuilder.py --checkout apps/pytorch.cfg
+python rockbuilder.py --checkout apps/torch.cfg
 ```

@@ -1,9 +1,0 @@
-[apps]
-app_list=
-    deps_common
-    pytorch_aotriton_0_11b
-    triton_35
-    pytorch_29_amd
-    pytorch_vision_25
-    pytorch_audio_29
-    pytorch_torchcodec_0_09_1

@@ -48,9 +48,9 @@ Example content of the file specifying four applications to be built by default:
 ```
 [apps]
 app_list=
-    pytorch
-    pytorch_vision
-    pytorch_audio
+    torch
+    torchvision
+    torchaudio
     torch_migraphx
 ```
 

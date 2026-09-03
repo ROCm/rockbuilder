@@ -1,0 +1,8 @@
+[apps]
+app_list=
+    deps_common
+    aotriton_main
+    triton_nightly
+    torch_nightly
+    torchvision_nightly
+    torchcodec_nightly

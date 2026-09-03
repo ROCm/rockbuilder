@@ -1,0 +1,7 @@
+[apps]
+app_list=
+    deps_common
+    aotriton_main
+    triton_38
+    torch_2_14
+    torchvision_29

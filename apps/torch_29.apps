@@ -1,0 +1,8 @@
+[apps]
+app_list=
+    deps_common
+    triton_35
+    torch_29
+    torchvision_25
+    torchaudio_29
+    torchcodec_0_09_1

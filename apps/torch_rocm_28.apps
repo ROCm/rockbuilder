@@ -6,4 +6,3 @@ app_list=
     torch_rocm_28
     torchvision_23
     torchaudio_28
-    comfyui
