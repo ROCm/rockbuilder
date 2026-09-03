@@ -57,6 +57,16 @@ for the affected values and saves valid answers to the global Git
 configuration. Invalid answers cancel the operation. Non-interactive sessions
 fail with instructions for configuring the values manually.
 
+Linux builds also require the Rust Cargo tool on `PATH`. If Cargo is installed
+under the current user's standard rustup directory, load it with:
+
+```bash
+source "$HOME/.cargo/env"
+```
+
+When Cargo is not installed, RockBuilder stops before build preparation and
+prints user-local rustup installation commands for both `curl` and `wget`.
+
 ## Rockbuilder Configuration
 
 Configuration is stored in **`rockbuilder.cfg`** at the RockBuilder root. This file records:

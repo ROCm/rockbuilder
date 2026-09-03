@@ -9,6 +9,7 @@ import os
 import time
 import platform
 import math
+import shutil
 import subprocess
 import lib_python.app_builder as app_builder
 import rockbuilder_cfg as rcb_cfg_writer
@@ -566,10 +567,57 @@ def _check_cpu_count_env_variable():
     print(f"os.environ[\"{rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK}\"] = " + os.environ[rcb_const.RCB__ENV_VAR__SAFE_CPU_JOB_COUNT_LINK])
 
 
+def _check_linux_cargo_installation():
+    """Verify that Cargo is installed and available on PATH."""
+    cargo_path = shutil.which("cargo")
+    ret = False
+    if cargo_path:
+        result = subprocess.run(
+            [cargo_path, "--version"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print("Error, Cargo is present but failed to run:")
+            print(f"    {cargo_path} --version")
+            print(result.stderr.strip())
+            sys.exit(1)
+        print("Cargo detected: " + result.stdout.strip())
+        ret = True
+    else:
+        user_cargo_path = Path.home() / ".cargo" / "bin" / "cargo"
+        print("Error, Cargo is not installed or not available on PATH.")
+        if user_cargo_path.is_file():
+            print(f"Cargo was found at: {user_cargo_path}")
+            print("Load the Rust environment in the current shell:")
+            print('    source "$HOME/.cargo/env"')
+            print("Or add Cargo to PATH directly:")
+            print('    export PATH="$HOME/.cargo/bin:$PATH"')
+        else:
+            print("Install Rust and Cargo for the current user with curl:")
+            print(
+                "    curl --proto '=https' --tlsv1.2 -sSf "
+                "https://sh.rustup.rs | sh -s -- -y --profile minimal"
+            )
+            print("Or install them with wget:")
+            print(
+                "    wget -qO- https://sh.rustup.rs | "
+                "sh -s -- -y --profile minimal"
+            )
+            print("Then load Cargo into the current shell PATH:")
+            print('    source "$HOME/.cargo/env"')
+            print("Or add Cargo to PATH directly:")
+            print('    export PATH="$HOME/.cargo/bin:$PATH"')
+        sys.exit(1)
+    return ret
+
+
 def _check_distro_specific_environment_variables():
     is_posix = not any(platform.win32_ver())
     distro_info = {}
     if is_posix:
+        if platform.system() == "Linux":
+            _check_linux_cargo_installation()
         try:
             default_gcc_target_triple = "x86_64-linux-gnu"
             # Run the command and capture output as text
