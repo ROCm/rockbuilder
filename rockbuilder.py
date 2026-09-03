@@ -2,6 +2,8 @@
 
 import argparse
 import configparser
+from email.errors import HeaderParseError
+from email.headerregistry import Address
 import sys
 import os
 import time
@@ -411,6 +413,125 @@ def verify_rockbuilder_config(rcb_cfg_reader):
             print("ROCM SDK and target GPU configure failed.")
             sys.exit(1)
 
+
+def is_valid_git_user_name(value):
+    """Return whether a Git user name contains meaningful printable text."""
+    normalized_value = value.strip() if isinstance(value, str) else ""
+    ret = bool(normalized_value) and all(
+        character.isprintable() for character in normalized_value
+    )
+    return ret
+
+
+def is_valid_git_user_email(value):
+    """Return whether a Git email is a complete RFC-style address."""
+    normalized_value = value.strip() if isinstance(value, str) else ""
+    ret = False
+    if normalized_value and not any(
+        character.isspace() for character in normalized_value
+    ):
+        try:
+            parsed_address = Address(addr_spec=normalized_value)
+            ret = parsed_address.addr_spec == normalized_value
+        except (HeaderParseError, ValueError):
+            ret = False
+    return ret
+
+
+def get_global_git_config_value(key):
+    """Return a global Git configuration value, or None when it is unset."""
+    result = subprocess.run(
+        ["git", "config", "--global", "--get", key],
+        capture_output=True,
+        text=True,
+    )
+    ret = None
+    if result.returncode == 0:
+        ret = result.stdout.strip()
+    elif result.returncode != 1:
+        error_message = result.stderr.strip()
+        raise RuntimeError(
+            f"Failed to read global Git configuration {key}: "
+            f"{error_message}"
+        )
+    return ret
+
+
+def set_global_git_config_value(key, value):
+    """Set a global Git configuration value."""
+    result = subprocess.run(
+        ["git", "config", "--global", key, value],
+        capture_output=True,
+        text=True,
+    )
+    ret = result.returncode == 0
+    if not ret:
+        error_message = result.stderr.strip()
+        print(
+            f"Failed to set global Git configuration {key}: "
+            f"{error_message}"
+        )
+    return ret
+
+
+def verify_git_identity():
+    """Ensure Git has a valid global identity before repositories are used."""
+    user_name = get_global_git_config_value("user.name")
+    user_email = get_global_git_config_value("user.email")
+    name_is_valid = is_valid_git_user_name(user_name)
+    email_is_valid = is_valid_git_user_email(user_email)
+    ret = name_is_valid and email_is_valid
+
+    if not ret:
+        print(
+            "Git user.name and user.email must be configured before "
+            "RockBuilder can continue."
+        )
+        if not sys.stdin.isatty():
+            print(
+                "RockBuilder cannot prompt for Git identity in a "
+                "non-interactive session."
+            )
+            print("Configure it with:")
+            print('    git config --global user.name "Your Name"')
+            print('    git config --global user.email "you@example.com"')
+            sys.exit(1)
+
+        try:
+            if not name_is_valid:
+                user_name = input("Git user.name: ").strip()
+            if not email_is_valid:
+                user_email = input("Git user.email: ").strip()
+        except EOFError:
+            print("Git identity configuration cancelled: no input received.")
+            sys.exit(1)
+
+        if not is_valid_git_user_name(user_name):
+            print(
+                "Git identity configuration cancelled: user.name must "
+                "contain printable non-whitespace characters."
+            )
+            sys.exit(1)
+        if not is_valid_git_user_email(user_email):
+            print(
+                "Git identity configuration cancelled: user.email must "
+                "be a valid email address without whitespace."
+            )
+            sys.exit(1)
+
+        values_to_set = []
+        if not name_is_valid:
+            values_to_set.append(("user.name", user_name))
+        if not email_is_valid:
+            values_to_set.append(("user.email", user_email))
+        for key, value in values_to_set:
+            if not set_global_git_config_value(key, value):
+                sys.exit(1)
+        print("Global Git identity configured successfully.")
+        ret = True
+    return ret
+
+
 def _check_cpu_count_env_variable():
     # default values
     cpu_cnt_total = os.cpu_count()
@@ -771,6 +892,7 @@ def main():
     os.environ["RCB_BUILD_DIR"] = rock_builder_build_dir.as_posix()
     
     verify_env__python()
+    verify_git_identity()
 
     rcb_cfg_reader = get_config_reader(rock_builder_home_dir,
                               rock_builder_build_dir)
