@@ -50,6 +50,13 @@ The `init_rcb_env` script checks whether a Python virtual environment is already
 
 Run `source ./init_rcb_env.sh` again in any new terminal before using RockBuilder.
 
+RockBuilder requires a valid global Git `user.name` and `user.email` because it
+applies patches as commits to application repositories and submodules. When
+either value is missing or invalid, an interactive RockBuilder session prompts
+for the affected values and saves valid answers to the global Git
+configuration. Invalid answers cancel the operation. Non-interactive sessions
+fail with instructions for configuring the values manually.
+
 ## Rockbuilder Configuration
 
 Configuration is stored in **`rockbuilder.cfg`** at the RockBuilder root. This file records:
