@@ -5,40 +5,61 @@ Subject: [PATCH 3/3] link rocSHMEM device bitcode
  directly
 
 - The ROCm 10.1 SDK provides rocSHMEM device
-  implementations in architecture-specific bitcode.
-- Linking only librocshmem.a causes the offload linker
-  to internalize the device definitions before resolving
-  references from PyTorch.
-- Pass available device bitcode directly to the offload
-  linker for non-ASAN and ASAN builds.
-- Preserve the missing-bitcode warning for ASAN builds,
-  where the separate bitcode is required.
-- Inspect the rocSHMEM archive's offload metadata for
-  every requested architecture.
-- Use architecture-specific xnack- and xnack+ targets
-  only when the SDK provides both variants.
-- Otherwise use the plain architecture and its separate
-  device bitcode.
+  implementations in architecture-specific
+  bitcode.
+- Linking only librocshmem.a causes the
+  offload linker to internalize the device
+  definitions before resolving references from
+  PyTorch.
+- Pass available device bitcode directly to the
+  offload linker for non-ASAN and ASAN builds
+  when the archive layout requires it.
+- Preserve the missing-bitcode warning for ASAN
+  builds, where the separate bitcode is required.
+- Inspect the rocSHMEM archive's offload
+  metadata for every requested architecture.
+- Use architecture-specific xnack- and xnack+
+  targets only when the SDK provides both
+  variants.
+- Otherwise use the plain architecture and, when
+  needed for the SDK layout, its separate device
+  bitcode.
 - Accept qualified XNACK target IDs by checking
   rocSHMEM support with the base architecture.
-- Preserve an explicit XNACK- or XNACK+ selection
-  instead of expanding or dropping it.
-- Keep metadata-based expansion for plain targets.
+- Preserve an explicit XNACK- or XNACK+
+  selection instead of expanding or dropping it.
+- Keep metadata-based expansion for plain
+  targets.
+- Legacy ROCm 10.0 archives can provide device
+  definitions even when llvm-objdump reports no
+  offload images.
+- Passing every per-architecture bitcode file
+  to each device link causes duplicate
+  definitions in multi-architecture builds.
+- Use the archive alone for non-ASAN SDKs
+  without llvm-objdump-visible offload images.
+- LLVM 23 emits HIP RDC objects in the legacy
+  clang-offload-bundler container.
+- LLVM 24's new offload driver stores images in
+  .llvm.offloading sections.
+- Detect that object format in librocshmem.a
+  instead of relying on the SDK version.
 
 Signed-off-by: Mika Laitio <mika.laitio@amd.com>
 ---
- caffe2/CMakeLists.txt | 83 ++++++++++++++++++++++++++++++++++++++-------------
- 1 file changed, 62 insertions(+), 21 deletions(-)
+ caffe2/CMakeLists.txt | 95 +++++++++++++++++++++++++++++++++----------
+ 1 file changed, 74 insertions(+), 21 deletions(-)
 
 diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
-index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e0363a02b064 100644
+index 4f423369189018c9ff3fcd658a38e47e65c86c26..9179d37178eebe1322b98b3d66923de178c2bcb3 100644
 --- a/caffe2/CMakeLists.txt
 +++ b/caffe2/CMakeLists.txt
-@@ -1549,10 +1549,49 @@ if(USE_ROCM)
+@@ -1549,10 +1549,57 @@ if(USE_ROCM)
        # rocSHMEM upstream ships device code for a subset of AMD gfx targets only.
        set(ROCSHMEM_SUPPORTED_ARCH gfx90a gfx942 gfx950 gfx1100 gfx1201)
        set(_torch_rocshmem_build_arches)
 +      set(_rocshmem_objdump_result 1)
++      set(_rocshmem_has_offload_images FALSE)
 +      get_target_property(
 +          _rocshmem_archive roc::rocshmem IMPORTED_LOCATION)
 +      if(NOT _rocshmem_archive)
@@ -61,6 +82,13 @@ index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e036
 +            RESULT_VARIABLE _rocshmem_objdump_result
 +            OUTPUT_VARIABLE _rocshmem_offload_metadata
 +            ERROR_QUIET)
++      endif()
++      # LLVM 23 writes legacy clang-offload-bundler containers. LLVM 24's
++      # new offload driver writes .llvm.offloading sections, reported here
++      # as OFFLOADING IMAGE entries.
++      if(_rocshmem_objdump_result EQUAL 0
++          AND _rocshmem_offload_metadata MATCHES "OFFLOADING IMAGE")
++        set(_rocshmem_has_offload_images TRUE)
 +      endif()
        foreach(_arch ${PYTORCH_ROCM_ARCH})
 -        list(FIND ROCSHMEM_SUPPORTED_ARCH "${_arch}" _rocsmem_supported_idx)
@@ -86,7 +114,7 @@ index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e036
          endif()
        endforeach()
        if(_torch_rocshmem_build_arches)
-@@ -1587,25 +1623,27 @@ if(USE_ROCM)
+@@ -1587,25 +1634,31 @@ if(USE_ROCM)
  
          target_link_libraries(torch_rocshmem PRIVATE roc::rocshmem)
  
@@ -115,12 +143,16 @@ index 4f423369189018c9ff3fcd658a38e47e65c86c26..a90df7e372eb29671dd09edc2ce6e036
 +        # and the symbols referenced by PyTorch kernels stay live. Routing it
 +        # through the normal HIP input path can internalize and dead-strip the
 +        # library symbols before the consumer's references are resolved.
++        # LLVM 23 archives use legacy clang-offload-bundler containers. Avoid
++        # also adding raw bitcode to non-ASAN multi-architecture links, where
++        # every device link would receive every architecture's definitions.
 +        foreach(_arch ${_torch_rocshmem_build_arches})
 +          string(REGEX REPLACE ":.*" "" _arch_base "${_arch}")
 +          set(_dev_bc "${ROCM_PATH}/lib/librocshmem_device_${_arch_base}.bc")
 +          if(_arch MATCHES ":xnack[-+]$")
 +            continue()
-+          elseif(EXISTS "${_dev_bc}")
++          elseif(EXISTS "${_dev_bc}"
++              AND (_rocshmem_has_offload_images OR USE_ASAN))
 +            target_link_options(
 +                torch_rocshmem
 +                PRIVATE "SHELL:-Xoffload-linker ${_dev_bc}")
