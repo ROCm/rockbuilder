@@ -1,0 +1,8 @@
+[apps]
+app_list=
+    deps_common
+    aotriton_0_11b
+    triton_35
+    torch_rocm_29
+    aiter_sglang_0_5_18
+    sglang_0_5_18
