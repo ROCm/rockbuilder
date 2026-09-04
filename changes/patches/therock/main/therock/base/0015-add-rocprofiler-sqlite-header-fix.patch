@@ -1,0 +1,103 @@
+From fd02446efc465dd84e7db8006d772ca0617ae073 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 02:14:48 -0700
+Subject: [PATCH] Add rocprofiler SQLite header fix
+
+- "fatal error: 'sqlite3.h' file not found"
+  occurs when a Linux distribution has no
+  sqlite-devel package installed.
+- Commit 27674006c1 removed the SQLite link
+  dependency to avoid Python SQLite symbol
+  collisions, but it also removed SQLite's
+  transitive include directory.
+- Use SQLite provided by therock-sqlite3.
+- Add a nested rocm-systems patch that creates
+  a rocprofiler-sdk-sqlite3-nolink interface.
+- Copy compile requirements from
+  rocprofiler-sdk-sqlite3.
+- Supply the bundled sqlite3.h include
+  directory.
+- Do not link SQLite into the Python module,
+  preserving the symbol-collision fix.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...ix-bundled-sqlite-header-propagation.patch | 64 +++++++++++++++++++
+ 1 file changed, 64 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0011-fix-bundled-sqlite-header-propagation.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0011-fix-bundled-sqlite-header-propagation.patch b/patches/amd-mainline/rocm-systems/0011-fix-bundled-sqlite-header-propagation.patch
+new file mode 100644
+index 0000000..6a3aa32
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0011-fix-bundled-sqlite-header-propagation.patch
+@@ -0,0 +1,64 @@
++From 9797013cf718689574caf55cdcd4ae8f10c2056e Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Fri, 4 Sep 2026 02:08:48 -0700
++Subject: [PATCH] Fix bundled SQLite header
++ propagation
++
++- "fatal error: 'sqlite3.h' file not found"
++  occurs when a Linux distribution has no
++  sqlite-devel package installed.
++- Commit 27674006c1 removed the SQLite link
++  dependency to avoid Python SQLite symbol
++  collisions, but it also removed SQLite's
++  transitive include directory.
++- Use SQLite provided by therock-sqlite3.
++- Create a rocprofiler-sdk-sqlite3-nolink
++  interface.
++- Copy compile requirements from
++  rocprofiler-sdk-sqlite3.
++- Supply the bundled sqlite3.h include
++  directory.
++- Do not link SQLite into the Python module,
++  preserving the symbol-collision fix.
++
++Tools used:
++- Codex: GPT-5
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/rocprofiler-sdk/cmake/rocprofiler_interfaces.cmake | 3 +++
++ projects/rocprofiler-sdk/external/CMakeLists.txt            | 5 +++++
++ 2 files changed, 8 insertions(+)
++
++diff --git a/projects/rocprofiler-sdk/cmake/rocprofiler_interfaces.cmake b/projects/rocprofiler-sdk/cmake/rocprofiler_interfaces.cmake
++index 2a4b567..30b1c0a 100644
++--- a/projects/rocprofiler-sdk/cmake/rocprofiler_interfaces.cmake
+++++ b/projects/rocprofiler-sdk/cmake/rocprofiler_interfaces.cmake
++@@ -99,6 +99,9 @@ rocprofiler_add_interface_library(
++ # runtime library
++ #
++
+++rocprofiler_add_nolink_interface_library(
+++    rocprofiler-sdk-sqlite3-nolink
+++    "rocprofiler-sdk-sqlite3 without linking to SQLite3" IMPORTED)
++ rocprofiler_add_nolink_interface_library(
++     rocprofiler-sdk-hip-nolink "rocprofiler-sdk-hip without linking to HIP library"
++     IMPORTED)
++diff --git a/projects/rocprofiler-sdk/external/CMakeLists.txt b/projects/rocprofiler-sdk/external/CMakeLists.txt
++index 97728ec..7c5b79f 100644
++--- a/projects/rocprofiler-sdk/external/CMakeLists.txt
+++++ b/projects/rocprofiler-sdk/external/CMakeLists.txt
++@@ -308,6 +308,11 @@ else()
++     target_link_libraries(rocprofiler-sdk-sqlite3 INTERFACE SQLite::SQLite3)
++ endif()
++
+++# Propagate SQLite compile requirements without linking SQLite into targets that
+++# intentionally leave its symbols unresolved until runtime.
+++rocprofiler_config_nolink_target(rocprofiler-sdk-sqlite3-nolink
+++                                 rocprofiler-sdk-sqlite3)
+++
++ #
++ # PyBind11
++ #
++--
++2.52.0
+--
+2.52.0
