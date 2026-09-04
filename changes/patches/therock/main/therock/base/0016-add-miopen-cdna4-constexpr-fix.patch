@@ -1,0 +1,83 @@
+From b82a7faf32b38fbb2ff36165d4a3d53440c85460 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 11:15:39 -0700
+Subject: [PATCH] Add MIOpen CDNA4 constexpr fix
+
+- Fix MIOpen hipconv CDNA4 direct-wgrad shards
+  with Clang 24 and GCC 15 libstdc++ headers.
+- Clang exhausted its default 1048576-step limit
+  in TransposeSwizzle::rounds_are_rungs().
+- That prevented constant initialization and
+  caused cascading host-variable device errors.
+- Add a nested rocm-libraries patch that passes
+  -fconstexpr-steps=0 through the existing
+  EXTRA_HIP_FLAGS support only for direct-wgrad
+  shards.
+- Preserve the swizzle static assertions and
+  multi-architecture convergence behavior.
+- Validate hipconv_arch_cdna4 for gfx1201.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...n-cdna4-direct-wgrad-constexpr-limit.patch | 49 +++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0004-fix-miopen-cdna4-direct-wgrad-constexpr-limit.patch
+
+diff --git a/patches/amd-mainline/rocm-libraries/0004-fix-miopen-cdna4-direct-wgrad-constexpr-limit.patch b/patches/amd-mainline/rocm-libraries/0004-fix-miopen-cdna4-direct-wgrad-constexpr-limit.patch
+new file mode 100644
+index 0000000..6e71fd1
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0004-fix-miopen-cdna4-direct-wgrad-constexpr-limit.patch
+@@ -0,0 +1,49 @@
++From 9dc521197355fb010caa90511eb230c4fcfc3e4d Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Fri, 4 Sep 2026 06:18:14 -0700
++Subject: [PATCH] Fix CDNA4 direct-wgrad
++ constexpr limit
++
++- Fix MIOpen hipconv CDNA4 direct-wgrad shards
++  with Clang 24 and GCC 15 libstdc++ headers.
++- Clang exhausted its default 1048576-step limit
++  in TransposeSwizzle::rounds_are_rungs().
++- That prevented constant initialization and
++  caused cascading host-variable device errors.
++- Pass -fconstexpr-steps=0 through the existing
++  EXTRA_HIP_FLAGS support only for direct-wgrad
++  shards.
++- Preserve the swizzle static assertions and
++  multi-architecture convergence behavior.
++- Validate hipconv_arch_cdna4 for gfx1201.
++
++Tools used:
++- Codex: GPT-5
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/miopen/src/hipconv/src/arch/cdna4/CMakeLists.txt | 6 +++++-
++ 1 file changed, 5 insertions(+), 1 deletion(-)
++
++diff --git a/projects/miopen/src/hipconv/src/arch/cdna4/CMakeLists.txt b/projects/miopen/src/hipconv/src/arch/cdna4/CMakeLists.txt
++index c6781a3..94bf0e8 100644
++--- a/projects/miopen/src/hipconv/src/arch/cdna4/CMakeLists.txt
+++++ b/projects/miopen/src/hipconv/src/arch/cdna4/CMakeLists.txt
++@@ -13,12 +13,16 @@ hipconv_autoshard(ARCH         cdna4
++                   CONFIG_TABLE direct/direct_l1/config_table.h
++                   KERNEL       direct/direct_l1/kernel.h
++                   NUM_SHARDS   ${HIPCONV_NUM_SHARDS})
+++# The direct-wgrad swizzle verification exceeds Clang's default constexpr step limit with GCC 15
+++# libstdc++ headers. Keep the verification enabled while removing only the evaluation limit for
+++# these generated shards.
++ hipconv_autoshard(ARCH         cdna4
++                   NAMESPACE    direct_wgrad
++                   KERNEL_CLASS DirectWgrad_ConvKernel
++                   CONFIG_TABLE direct/direct_wgrad/config_table.h
++                   KERNEL       direct/direct_wgrad/kernel.h
++-                  NUM_SHARDS   ${HIPCONV_NUM_SHARDS})
+++                  NUM_SHARDS   ${HIPCONV_NUM_SHARDS}
+++                  EXTRA_HIP_FLAGS "-fconstexpr-steps=0")
++ hipconv_autoshard(ARCH         cdna4
++                   NAMESPACE    depthwise_1d_toeplitz
++                   KERNEL_CLASS Depthwise_1D_Toeplitz_ConvKernel
