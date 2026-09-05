@@ -1,0 +1,706 @@
+From 08105333aed92bc64ace8164156fca0a41155b00 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 3 Sep 2026 02:06:59 -0700
+Subject: [PATCH] Add software FP8 Quick Reduce conversion
+
+- Use ROCm E4M3-FNUZ software conversion on
+  targets without FP8 conversion instructions.
+- Keep native packed conversion builtins on GPUs
+  that provide the required hardware feature.
+- Add deterministic conversion and distributed
+  correctness validators with run instructions.
+- Validated boundary and all-byte decoding tests
+  on gfx1100; compiled the gfx942 hardware path.
+- Built module_quick_all_reduce for gfx1100.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/include/quick_all_reduce.cuh             |  83 ++++--
+ op_tests/validation/README.md                 | 102 +++++++
+ .../validate_quick_reduce_fp8_conversion.cu   | 256 ++++++++++++++++++
+ .../validate_quick_reduce_fp8_multigpu.py     | 177 ++++++++++++
+ 4 files changed, 593 insertions(+), 25 deletions(-)
+ create mode 100644 op_tests/validation/README.md
+ create mode 100644 op_tests/validation/validate_quick_reduce_fp8_conversion.cu
+ create mode 100644 op_tests/validation/validate_quick_reduce_fp8_multigpu.py
+
+diff --git a/csrc/include/quick_all_reduce.cuh b/csrc/include/quick_all_reduce.cuh
+index d3f9be54..0896997b 100644
+--- a/csrc/include/quick_all_reduce.cuh
++++ b/csrc/include/quick_all_reduce.cuh
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: MIT
+ // Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+ #include "quick_all_reduce_base.h"
++#include <hip/hip_fp8.h>
+ #include <vector>
+ #define caltime
+
+@@ -556,6 +557,41 @@ struct CodecQ6 : public CodecBase
+     }
+ };
+
++// The HIP API uses native E4M3-FNUZ conversion on gfx942 and its software
++// implementation on targets without FP8 conversion instructions. OCP-only
++// targets retain the existing native conversion behavior.
++#if defined(__HIP_DEVICE_COMPILE__) && \
++    !(defined(__gfx950__) || defined(__gfx1200__) || defined(__gfx1201__) || \
++      defined(__gfx1250__))
++#define AITER_QUICK_REDUCE_USE_HIP_FNUZ_CONVERSION 1
++#else
++#define AITER_QUICK_REDUCE_USE_HIP_FNUZ_CONVERSION 0
++#endif
++
++__quickreduce_device_inline__ uint16_t quickreduce_fp32x2_to_fp8_fnuz(float x, float y)
++{
++#if AITER_QUICK_REDUCE_USE_HIP_FNUZ_CONVERSION
++    return static_cast<uint16_t>(
++        __hip_cvt_float2_to_fp8x2(float2{x, y}, __HIP_SATFINITE, __HIP_E4M3_FNUZ));
++#else
++    int packed = __builtin_amdgcn_cvt_pk_fp8_f32(x, y, 0, 0);
++    return static_cast<uint16_t>(packed);
++#endif
++}
++
++__quickreduce_device_inline__ fp32x2_t quickreduce_fp8x2_fnuz_to_fp32(uint16_t packed)
++{
++#if AITER_QUICK_REDUCE_USE_HIP_FNUZ_CONVERSION
++    __hip_fp8x2_e4m3_fnuz value;
++    value.__x            = static_cast<__hip_fp8x2_storage_t>(packed);
++    const float2 decoded = static_cast<float2>(value);
++    return fp32x2_t{decoded.x, decoded.y};
++#else
++    return __builtin_amdgcn_cvt_pk_f32_fp8(static_cast<uint32_t>(packed), 0);
++#endif
++}
++#undef AITER_QUICK_REDUCE_USE_HIP_FNUZ_CONVERSION
++
+ // Fp8 symmetric quantization codec.
+ // We quantize the FP16 data to block-scaled Fp8 in blocks of 4 *
+ // kThreadGroupSize.
+@@ -662,10 +698,12 @@ struct CodecFP8 : public CodecBase
+             }
+
+             int32x2_t qw;
+-            qw[0] = __builtin_amdgcn_cvt_pk_fp8_f32(wf[0], wf[1], qw[0], 0);
+-            qw[0] = __builtin_amdgcn_cvt_pk_fp8_f32(wf[2], wf[3], qw[0], 1);
+-            qw[1] = __builtin_amdgcn_cvt_pk_fp8_f32(wf[4], wf[5], qw[1], 0);
+-            qw[1] = __builtin_amdgcn_cvt_pk_fp8_f32(wf[6], wf[7], qw[1], 1);
++            const uint32_t q0 = quickreduce_fp32x2_to_fp8_fnuz(wf[0], wf[1]);
++            const uint32_t q1 = quickreduce_fp32x2_to_fp8_fnuz(wf[2], wf[3]);
++            const uint32_t q2 = quickreduce_fp32x2_to_fp8_fnuz(wf[4], wf[5]);
++            const uint32_t q3 = quickreduce_fp32x2_to_fp8_fnuz(wf[6], wf[7]);
++            qw[0]             = static_cast<int32_t>(q0 | (q1 << 16));
++            qw[1]             = static_cast<int32_t>(q2 | (q3 << 16));
+
+             // Write quantized atom to send_buffer
+             // note: only the group leader stores the scale
+@@ -698,34 +736,29 @@ struct CodecFP8 : public CodecBase
+
+             // Unpack FP8
+             int32x4_t w;
++            for(int i = 0; i < 2; i++)
+             {
++                const uint32_t packed = static_cast<uint32_t>(qw[i]);
++                const fp32x2_t wf0 =
++                    quickreduce_fp8x2_fnuz_to_fp32(static_cast<uint16_t>(packed));
++                const fp32x2_t wf1 =
++                    quickreduce_fp8x2_fnuz_to_fp32(static_cast<uint16_t>(packed >> 16));
+                 if constexpr(std::is_same<T, half>::value)
+                 {
+-                    for(int i = 0; i < 2; i++)
+-                    {
+-                        fp32x2_t wf0 = __builtin_amdgcn_cvt_pk_f32_fp8(qw[i], 0);
+-                        fp32x2_t wf1 = __builtin_amdgcn_cvt_pk_f32_fp8(qw[i], 1);
+-
+-                        asm volatile("v_cvt_pkrtz_f16_f32 %0, %1, %2"
+-                                     : "=v"(w[i * 2 + 0])
+-                                     : "v"(wf0[0]), "v"(wf0[1]));
+-                        asm volatile("v_cvt_pkrtz_f16_f32 %0, %1, %2"
+-                                     : "=v"(w[i * 2 + 1])
+-                                     : "v"(wf1[0]), "v"(wf1[1]));
+-                    }
++                    asm volatile("v_cvt_pkrtz_f16_f32 %0, %1, %2"
++                                 : "=v"(w[i * 2 + 0])
++                                 : "v"(wf0[0]), "v"(wf0[1]));
++                    asm volatile("v_cvt_pkrtz_f16_f32 %0, %1, %2"
++                                 : "=v"(w[i * 2 + 1])
++                                 : "v"(wf1[0]), "v"(wf1[1]));
+                 }
+                 else
+                 {
+                     __hip_bfloat16* wbf = reinterpret_cast<__hip_bfloat16*>(&w);
+-                    for(int i = 0; i < 2; i++)
+-                    {
+-                        fp32x2_t wf0_vec = __builtin_amdgcn_cvt_pk_f32_fp8(qw[i], 0);
+-                        fp32x2_t wf1_vec = __builtin_amdgcn_cvt_pk_f32_fp8(qw[i], 1);
+-                        wbf[i * 4 + 0]   = __float2bfloat16(wf0_vec[0]);
+-                        wbf[i * 4 + 1]   = __float2bfloat16(wf0_vec[1]);
+-                        wbf[i * 4 + 2]   = __float2bfloat16(wf1_vec[0]);
+-                        wbf[i * 4 + 3]   = __float2bfloat16(wf1_vec[1]);
+-                    }
++                    wbf[i * 4 + 0] = __float2bfloat16(wf0[0]);
++                    wbf[i * 4 + 1] = __float2bfloat16(wf0[1]);
++                    wbf[i * 4 + 2] = __float2bfloat16(wf1[0]);
++                    wbf[i * 4 + 3] = __float2bfloat16(wf1[1]);
+                 }
+             }
+
+diff --git a/op_tests/validation/README.md b/op_tests/validation/README.md
+new file mode 100644
+index 00000000..1513050b
+--- /dev/null
++++ b/op_tests/validation/README.md
+@@ -0,0 +1,102 @@
++# Quick Reduce FP8 validation
++
++These tests validate the E4M3-FNUZ conversion used by FP8 Quick Reduce and the
++complete multi-GPU algorithm on gfx1100.
++
++Use the same ROCm SDK and AITER revision on every validation host. Run commands
++from the AITER repository root with its Python environment active.
++
++```bash
++export LD_LIBRARY_PATH="${ROCM_HOME}/lib:${ROCM_HOME}/lib/llvm/lib:${LD_LIBRARY_PATH:-}"
++```
++
++## Conversion boundaries and NaNs
++
++Build the conversion validator for the GPU installed in each host:
++
++```bash
++"${ROCM_HOME}/bin/hipcc" \
++  -x hip \
++  -std=c++20 \
++  --offload-arch=gfx942 \
++  -I csrc/include \
++  op_tests/validation/validate_quick_reduce_fp8_conversion.cu \
++  -o /tmp/validate_quick_reduce_fp8_conversion
++```
++
++Replace `gfx942` with `gfx1100` on the RDNA3 host. Do not put both targets in
++one executable: this validation is intended to exercise one implementation at
++a time.
++
++Run it and save the deterministic conversion corpus:
++
++```bash
++/tmp/validate_quick_reduce_fp8_conversion /tmp/gfx942-fp8.bin
++```
++
++Expected output has this form:
++
++```text
++PASS architecture=gfx942 values=24596 fnv1a=0x... output=/tmp/gfx942-fp8.bin
++```
++
++The executable fails if any of these checks fail:
++
++- positive and negative zero encode as unsigned zero;
++- E4M3-FNUZ subnormal, normal, midpoint, and saturation boundaries;
++- infinities and NaNs encode as the E4M3-FNUZ NaN byte;
++- all 256 FP8 byte values decode to the expected FP32 value.
++
++## gfx942 hardware versus gfx1100 software
++
++Run the conversion validator on a gfx942 host to produce
++`/tmp/gfx942-fp8.bin`. Run it independently on a gfx1100 host to produce
++`/tmp/gfx1100-fp8.bin`.
++
++Copy both output files onto one host, then compare them:
++
++```bash
++cmp /tmp/gfx942-fp8.bin /tmp/gfx1100-fp8.bin
++sha256sum /tmp/gfx942-fp8.bin /tmp/gfx1100-fp8.bin
++```
++
++`cmp` must exit with status zero and `sha256sum` must print identical hashes.
++This compares the gfx942 hardware encoding against the gfx1100 software
++encoding for boundary values and a deterministic corpus of finite FP32 bit
++patterns.
++
++## Multi-GPU gfx1100 correctness
++
++Use a single node containing 2, 4, or 8 mutually accessible gfx1100 GPUs.
++The validator calls the low-level Quick Reduce interface directly because the
++high-level AITER policy currently restricts Quick Reduce to MI300 systems.
++
++Set `GPU_ARCHS` to gfx1100 so the JIT extension is compiled only for RDNA3:
++
++```bash
++export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
++GPU_ARCHS=gfx1100 \
++  torchrun \
++  --standalone \
++  --nproc-per-node=2 \
++  op_tests/validation/validate_quick_reduce_fp8_multigpu.py
++```
++
++Change `--nproc-per-node` to 4 or 8 when validating larger tensor-parallel
++groups.
++
++Expected output has this form:
++
++```text
++ones dtype=torch.float16 max_abs=...
++random dtype=torch.float16 nrmse=... max_abs=...
++ones dtype=torch.bfloat16 max_abs=...
++random dtype=torch.bfloat16 nrmse=... max_abs=...
++PASS gfx1100 FP8 Quick Reduce world_size=2
++```
++
++The test compares FP8 Quick Reduce against `torch.distributed.all_reduce` for
++FP16 and BF16. It rejects non-finite output, normalized RMSE above 0.08, or
++maximum absolute error above 2.0. Thresholds can be overridden with
++`--max-nrmse` and `--max-absolute-error`, but any relaxation should be
++documented with the complete command and output.
+diff --git a/op_tests/validation/validate_quick_reduce_fp8_conversion.cu b/op_tests/validation/validate_quick_reduce_fp8_conversion.cu
+new file mode 100644
+index 00000000..5d2d9ddf
+--- /dev/null
++++ b/op_tests/validation/validate_quick_reduce_fp8_conversion.cu
+@@ -0,0 +1,256 @@
++// SPDX-License-Identifier: MIT
++// Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#include <optional>
++
++#include "quick_all_reduce.cuh"
++
++#include <bit>
++#include <cmath>
++#include <cstdint>
++#include <fstream>
++#include <iomanip>
++#include <iostream>
++#include <limits>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++#define HIP_CHECK_TEST(command)                                                                   \
++    do                                                                                            \
++    {                                                                                             \
++        const hipError_t error = command;                                                         \
++        if(error != hipSuccess)                                                                   \
++        {                                                                                         \
++            throw std::runtime_error(std::string(#command) + ": " + hipGetErrorString(error));   \
++        }                                                                                         \
++    } while(false)
++
++namespace {
++
++__global__ void encode_kernel(const float* input, uint8_t* output, size_t count)
++{
++    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
++    const size_t i    = pair * 2;
++    if(i < count)
++    {
++        const float y     = i + 1 < count ? input[i + 1] : 0.0f;
++        const uint16_t fp8 = aiter::quickreduce_fp32x2_to_fp8_fnuz(input[i], y);
++        output[i]          = static_cast<uint8_t>(fp8);
++        if(i + 1 < count)
++        {
++            output[i + 1] = static_cast<uint8_t>(fp8 >> 8);
++        }
++    }
++}
++
++__global__ void decode_kernel(const uint8_t* input, float* output, size_t count)
++{
++    const size_t pair = blockIdx.x * blockDim.x + threadIdx.x;
++    const size_t i    = pair * 2;
++    if(i < count)
++    {
++        const uint16_t high = i + 1 < count ? static_cast<uint16_t>(input[i + 1]) << 8 : 0;
++        const auto values =
++            aiter::quickreduce_fp8x2_fnuz_to_fp32(static_cast<uint16_t>(input[i]) | high);
++        output[i] = values[0];
++        if(i + 1 < count)
++        {
++            output[i + 1] = values[1];
++        }
++    }
++}
++
++float reference_decode(uint8_t value)
++{
++    float ret = std::numeric_limits<float>::quiet_NaN();
++    if(value != 0x80)
++    {
++        const int sign     = value >> 7;
++        const int exponent = (value >> 3) & 0xf;
++        const int mantissa = value & 0x7;
++        ret                = exponent == 0 ? std::ldexp(static_cast<float>(mantissa), -10)
++                                           : std::ldexp(static_cast<float>(8 + mantissa), exponent - 11);
++        if(sign != 0)
++        {
++            ret = -ret;
++        }
++    }
++    return ret;
++}
++
++std::vector<float> make_input()
++{
++    std::vector<float> ret_arr{
++        0.0f,
++        -0.0f,
++        std::ldexp(1.0f, -11),
++        std::ldexp(1.0f, -10),
++        std::ldexp(3.0f, -11),
++        std::ldexp(1.0f, -7),
++        1.0f,
++        -1.0f,
++        1.0625f,
++        1.1875f,
++        240.0f,
++        -240.0f,
++        241.0f,
++        -241.0f,
++        std::numeric_limits<float>::infinity(),
++        -std::numeric_limits<float>::infinity(),
++        std::numeric_limits<float>::quiet_NaN(),
++        -std::numeric_limits<float>::quiet_NaN(),
++    };
++
++    for(int i = -4096; i <= 4096; ++i)
++    {
++        ret_arr.push_back(static_cast<float>(i) / 16.0f);
++    }
++
++    uint32_t state = 0x12345678;
++    for(int i = 0; i < 16384; ++i)
++    {
++        state = state * 1664525u + 1013904223u;
++        uint32_t bits = state;
++        if((bits & 0x7f800000u) == 0x7f800000u)
++        {
++            bits ^= 0x00800000u;
++        }
++        ret_arr.push_back(std::bit_cast<float>(bits));
++    }
++
++    if(ret_arr.size() % 2 != 0)
++    {
++        ret_arr.push_back(0.0f);
++    }
++    return ret_arr;
++}
++
++std::vector<uint8_t> run_encode(const std::vector<float>& input)
++{
++    float* device_input    = nullptr;
++    uint8_t* device_output = nullptr;
++    std::vector<uint8_t> ret_arr(input.size());
++
++    HIP_CHECK_TEST(hipMalloc(&device_input, input.size() * sizeof(float)));
++    HIP_CHECK_TEST(hipMalloc(&device_output, ret_arr.size()));
++    HIP_CHECK_TEST(
++        hipMemcpy(device_input, input.data(), input.size() * sizeof(float), hipMemcpyHostToDevice));
++
++    constexpr int block_size = 256;
++    const int grid_size       = static_cast<int>((input.size() / 2 + block_size - 1) / block_size);
++    encode_kernel<<<grid_size, block_size>>>(device_input, device_output, input.size());
++    HIP_CHECK_TEST(hipGetLastError());
++    HIP_CHECK_TEST(hipDeviceSynchronize());
++    HIP_CHECK_TEST(
++        hipMemcpy(ret_arr.data(), device_output, ret_arr.size(), hipMemcpyDeviceToHost));
++
++    HIP_CHECK_TEST(hipFree(device_output));
++    HIP_CHECK_TEST(hipFree(device_input));
++    return ret_arr;
++}
++
++void validate_boundaries(const std::vector<uint8_t>& encoded)
++{
++    const std::vector<uint8_t> expected{
++        0x00, 0x00, 0x00, 0x01, 0x02, 0x08, 0x40, 0xc0, 0x40,
++        0x42, 0x7f, 0xff, 0x7f, 0xff, 0x80, 0x80, 0x80, 0x80,
++    };
++    for(size_t i = 0; i < expected.size(); ++i)
++    {
++        if(encoded[i] != expected[i])
++        {
++            throw std::runtime_error(
++                "boundary conversion mismatch at index " + std::to_string(i));
++        }
++    }
++}
++
++void validate_all_decodings()
++{
++    std::vector<uint8_t> encoded(256);
++    for(size_t i = 0; i < encoded.size(); ++i)
++    {
++        encoded[i] = static_cast<uint8_t>(i);
++    }
++
++    uint8_t* device_input = nullptr;
++    float* device_output  = nullptr;
++    std::vector<float> decoded(encoded.size());
++    HIP_CHECK_TEST(hipMalloc(&device_input, encoded.size()));
++    HIP_CHECK_TEST(hipMalloc(&device_output, decoded.size() * sizeof(float)));
++    HIP_CHECK_TEST(
++        hipMemcpy(device_input, encoded.data(), encoded.size(), hipMemcpyHostToDevice));
++
++    constexpr int block_size = 128;
++    decode_kernel<<<1, block_size>>>(device_input, device_output, encoded.size());
++    HIP_CHECK_TEST(hipGetLastError());
++    HIP_CHECK_TEST(hipDeviceSynchronize());
++    HIP_CHECK_TEST(hipMemcpy(
++        decoded.data(), device_output, decoded.size() * sizeof(float), hipMemcpyDeviceToHost));
++
++    HIP_CHECK_TEST(hipFree(device_output));
++    HIP_CHECK_TEST(hipFree(device_input));
++
++    for(size_t i = 0; i < decoded.size(); ++i)
++    {
++        const float expected = reference_decode(encoded[i]);
++        const bool matches   = std::isnan(expected)
++                                   ? std::isnan(decoded[i])
++                                   : std::bit_cast<uint32_t>(decoded[i]) ==
++                                         std::bit_cast<uint32_t>(expected);
++        if(!matches)
++        {
++            throw std::runtime_error("decode mismatch for FP8 byte " + std::to_string(i));
++        }
++    }
++}
++
++uint64_t fnv1a(const std::vector<uint8_t>& data)
++{
++    uint64_t ret = 1469598103934665603ull;
++    for(const uint8_t value : data)
++    {
++        ret ^= value;
++        ret *= 1099511628211ull;
++    }
++    return ret;
++}
++
++void write_output(const std::string& path, const std::vector<uint8_t>& encoded)
++{
++    std::ofstream output(path, std::ios::binary);
++    if(!output)
++    {
++        throw std::runtime_error("cannot open output file: " + path);
++    }
++    output.write(
++        reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
++    if(!output)
++    {
++        throw std::runtime_error("cannot write output file: " + path);
++    }
++}
++
++} // namespace
++
++int main(int argc, char** argv)
++{
++    if(argc != 2)
++    {
++        throw std::runtime_error("usage: validate_quick_reduce_fp8_conversion OUTPUT.bin");
++    }
++
++    hipDeviceProp_t properties{};
++    HIP_CHECK_TEST(hipGetDeviceProperties(&properties, 0));
++    const std::vector<float> input   = make_input();
++    const std::vector<uint8_t> bytes = run_encode(input);
++    validate_boundaries(bytes);
++    validate_all_decodings();
++    write_output(argv[1], bytes);
++
++    std::cout << "PASS architecture=" << properties.gcnArchName << " values=" << bytes.size()
++              << " fnv1a=0x" << std::hex << std::setw(16) << std::setfill('0') << fnv1a(bytes)
++              << std::dec << " output=" << argv[1] << '\n';
++    return 0;
++}
+diff --git a/op_tests/validation/validate_quick_reduce_fp8_multigpu.py b/op_tests/validation/validate_quick_reduce_fp8_multigpu.py
+new file mode 100644
+index 00000000..c46ebc40
+--- /dev/null
++++ b/op_tests/validation/validate_quick_reduce_fp8_multigpu.py
+@@ -0,0 +1,177 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import argparse
++import os
++
++import torch
++import torch.distributed as dist
++
++import aiter as ops
++from aiter.dist.device_communicators.quick_all_reduce import qr_exchange_handles
++
++
++FP8_QUANT_LEVEL = 1
++
++
++def parse_args() -> argparse.Namespace:
++    parser = argparse.ArgumentParser(
++        description="Validate FP8 Quick Reduce correctness on a multi-GPU gfx1100 node."
++    )
++    parser.add_argument(
++        "--elements",
++        type=int,
++        default=8 * 1024 * 1024,
++        help="Number of elements per rank; must produce a byte count divisible by 16.",
++    )
++    parser.add_argument(
++        "--dtypes",
++        nargs="+",
++        choices=("fp16", "bf16"),
++        default=("fp16", "bf16"),
++    )
++    parser.add_argument("--max-nrmse", type=float, default=0.08)
++    parser.add_argument("--max-absolute-error", type=float, default=2.0)
++    ret = parser.parse_args()
++    return ret
++
++
++def check_architecture(device: torch.device) -> None:
++    architecture = torch.cuda.get_device_properties(device).gcnArchName
++    if not architecture.startswith("gfx1100"):
++        raise RuntimeError(f"expected gfx1100, found {architecture}")
++
++
++def validate_case(
++    pointer: int,
++    device: torch.device,
++    dtype: torch.dtype,
++    elements: int,
++    rank: int,
++    max_nrmse: float,
++    max_absolute_error: float,
++) -> None:
++    generator = torch.Generator(device=device)
++    generator.manual_seed(0xA17E0000 + rank)
++    input_tensor = torch.randn(elements, dtype=dtype, device=device, generator=generator)
++    reference = input_tensor.clone()
++    dist.all_reduce(reference)
++
++    output = torch.empty_like(input_tensor)
++    ops.qr_all_reduce(
++        pointer,
++        input_tensor,
++        output,
++        FP8_QUANT_LEVEL,
++        cast_bf2half=dtype == torch.bfloat16,
++    )
++    torch.cuda.synchronize(device)
++
++    difference = output.float() - reference.float()
++    rmse = torch.sqrt(torch.mean(torch.square(difference)))
++    reference_rms = torch.sqrt(torch.mean(torch.square(reference.float())))
++    nrmse = rmse / torch.clamp(reference_rms, min=torch.finfo(torch.float32).tiny)
++    maximum = torch.max(torch.abs(difference))
++    finite = torch.isfinite(output).all()
++
++    failed = torch.tensor(
++        [
++            int(
++                not finite.item()
++                or nrmse.item() > max_nrmse
++                or maximum.item() > max_absolute_error
++            )
++        ],
++        dtype=torch.int32,
++        device=device,
++    )
++    dist.all_reduce(failed, op=dist.ReduceOp.MAX)
++    if rank == 0:
++        print(
++            f"random dtype={dtype} nrmse={nrmse.item():.6f} "
++            f"max_abs={maximum.item():.6f}"
++        )
++    if failed.item() != 0:
++        raise AssertionError(
++            f"FP8 Quick Reduce random test failed: dtype={dtype}, "
++            f"nrmse={nrmse.item():.6f}, max_abs={maximum.item():.6f}"
++        )
++
++
++def validate_exact_values(
++    pointer: int,
++    device: torch.device,
++    dtype: torch.dtype,
++    elements: int,
++    rank: int,
++) -> None:
++    input_tensor = torch.ones(elements, dtype=dtype, device=device)
++    output = torch.empty_like(input_tensor)
++    ops.qr_all_reduce(
++        pointer,
++        input_tensor,
++        output,
++        FP8_QUANT_LEVEL,
++        cast_bf2half=dtype == torch.bfloat16,
++    )
++    torch.cuda.synchronize(device)
++
++    expected = torch.full_like(output, dist.get_world_size())
++    maximum = torch.max(torch.abs(output.float() - expected.float()))
++    failed = torch.tensor(
++        [int(not torch.isfinite(output).all().item() or maximum.item() > 0.05)],
++        dtype=torch.int32,
++        device=device,
++    )
++    dist.all_reduce(failed, op=dist.ReduceOp.MAX)
++    if rank == 0:
++        print(f"ones dtype={dtype} max_abs={maximum.item():.6f}")
++    if failed.item() != 0:
++        raise AssertionError(
++            f"FP8 Quick Reduce exact-value test failed: dtype={dtype}, "
++            f"max_abs={maximum.item():.6f}"
++        )
++
++
++def main() -> None:
++    args = parse_args()
++    local_rank = int(os.environ["LOCAL_RANK"])
++    rank = int(os.environ["RANK"])
++    world_size = int(os.environ["WORLD_SIZE"])
++    if world_size not in (2, 4, 8):
++        raise RuntimeError(f"Quick Reduce requires 2, 4, or 8 ranks; got {world_size}")
++
++    device = torch.device(f"cuda:{local_rank}")
++    torch.cuda.set_device(device)
++    check_architecture(device)
++    dist.init_process_group(backend="nccl")
++    pointer = None
++    try:
++        pointer = ops.init_custom_qr(rank, world_size, None)
++        qr_exchange_handles(pointer, world_size, dist.group.WORLD)
++        dtype_map = {
++            "fp16": torch.float16,
++            "bf16": torch.bfloat16,
++        }
++        for dtype_name in args.dtypes:
++            dtype = dtype_map[dtype_name]
++            validate_exact_values(pointer, device, dtype, args.elements, rank)
++            validate_case(
++                pointer,
++                device,
++                dtype,
++                args.elements,
++                rank,
++                args.max_nrmse,
++                args.max_absolute_error,
++            )
++        if rank == 0:
++            print(f"PASS gfx1100 FP8 Quick Reduce world_size={world_size}")
++    finally:
++        if pointer is not None:
++            ops.qr_destroy(pointer)
++        dist.destroy_process_group()
++
++
++if __name__ == "__main__":
++    main()
+--
+2.43.0

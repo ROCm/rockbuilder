@@ -1,0 +1,5 @@
+[apps]
+app_list=
+    deps_common
+    aiter_0_1_21_post1
+    vllm_0_28

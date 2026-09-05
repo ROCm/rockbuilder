@@ -1,0 +1,105 @@
+From 64b10bd2c8b85d9eb2580ecffb97f2f4e373f737 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 3 Sep 2026 01:31:04 -0700
+Subject: [PATCH] Guard packed FP8 conversions by architecture
+
+- Guard packed FP8 conversions by GPU support.
+- gfx1100 lacks fp8-conversion-insts and fails
+  while prebuilding module_custom_all_reduce.
+- Match the existing scalar conversion stubs for
+  architectures without native FP8 conversion.
+- The affected BF16, FP16, and FP32 paths do not
+  invoke packed FP8 conversion at runtime.
+- Reproduced with ROCm 10.0 LLVM 23 for gfx90a
+  and gfx1100.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/include/opus/opus.hpp | 32 ++++++++++++++++++++++++++++++--
+ 1 file changed, 30 insertions(+), 2 deletions(-)
+
+diff --git a/csrc/include/opus/opus.hpp b/csrc/include/opus/opus.hpp
+index 731dddbb..9ada0564 100644
+--- a/csrc/include/opus/opus.hpp
++++ b/csrc/include/opus/opus.hpp
+@@ -1228,11 +1228,18 @@ OPUS_D constexpr auto fp32_to_bf16(const fp32_t& x, number<rm> = {}) {
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wuninitialized"
+ #pragma clang diagnostic ignored "-Wc++20-extensions"
++#if defined(__HIP_DEVICE_COMPILE__) && \
++    !(defined(__gfx942__) || defined(__gfx950__) || defined(__gfx1200__) || \
++      defined(__gfx1201__) || defined(__gfx1250__))
++#define OPUS_USE_FP8_CONVERSION_STUBS 1
++#else
++#define OPUS_USE_FP8_CONVERSION_STUBS 0
++#endif
+ // scalar fp8 <-> fp32 via packed intrinsics (lo slot only). NOT constexpr: clang eagerly rejects non-template constexpr functions containing GPU builtins (__builtin_amdgcn_cvt_*) that can never be compile-time evaluated.
+ // Template constexpr (packed variants, OPUS_CAST_DEFINE) survives because the check is deferred to instantiation.
+ // TODO: we may remove constexpr from cast in the future
+ OPUS_D auto fp32_to_fp8(const fp32_t& x) {
+-#if defined(__HIP_DEVICE_COMPILE__) && !(defined(__gfx942__) || defined(__gfx950__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__))
++#if OPUS_USE_FP8_CONVERSION_STUBS
+     // RDNA3/3.5 (gfx1100/gfx115x) lack fp8-conversion-insts; compile-only stub so headers build. BF16 code paths never invoke fp8 conversion.
+     (void)x; return __builtin_bit_cast(fp8_t, static_cast<signed char>(0));
+ #else
+@@ -1241,7 +1248,7 @@ OPUS_D auto fp32_to_fp8(const fp32_t& x) {
+ #endif
+ }
+ OPUS_D auto fp8_to_fp32(const fp8_t& x) {
+-#if defined(__HIP_DEVICE_COMPILE__) && !(defined(__gfx942__) || defined(__gfx950__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__))
++#if OPUS_USE_FP8_CONVERSION_STUBS
+     (void)x; return fp32_t(0.0f);
+ #else
+     int w = static_cast<int>(__builtin_bit_cast(unsigned char, x));
+@@ -1303,25 +1310,46 @@ template<> struct finfo<e8m0_t> {
+ #pragma clang diagnostic ignored "-Wc++20-extensions"
+ template<typename S, index_t sel = 0, std::enable_if_t<std::is_same_v<S, fp32x2_t>, bool> = true>
+ OPUS_D constexpr decltype(auto) fp32_to_fp8_packed_x2(const S& s, number<sel> = {}) {
++#if OPUS_USE_FP8_CONVERSION_STUBS
++    (void)s;
++    return __builtin_bit_cast(fp8x2_t, static_cast<short>(0));
++#else
+     int w ; w = __builtin_amdgcn_cvt_pk_fp8_f32(s[0], s[1], w, sel);
+     return __builtin_bit_cast(fp8x2_t, static_cast<short>(w));
++#endif
+ }
+ template<typename S, std::enable_if_t<std::is_same_v<S, fp32x4_t>, bool> = true>
+ OPUS_D constexpr decltype(auto) fp32_to_fp8_packed_x4(const S& s) {
++#if OPUS_USE_FP8_CONVERSION_STUBS
++    (void)s;
++    return __builtin_bit_cast(fp8x4_t, 0);
++#else
+     int w ; w = __builtin_amdgcn_cvt_pk_fp8_f32(s[0], s[1], w, 0); w = __builtin_amdgcn_cvt_pk_fp8_f32(s[2], s[3], w, 1);
+     return __builtin_bit_cast(fp8x4_t, w);
++#endif
+ }
+ template<typename S, index_t sel = 0, std::enable_if_t<std::is_same_v<S, fp8x2_t>, bool> = true>
+ OPUS_D constexpr decltype(auto) fp8_to_fp32_packed_x2(const S& s, number<sel> = {}) {
++#if OPUS_USE_FP8_CONVERSION_STUBS
++    (void)s;
++    return fp32x2_t{0.0f, 0.0f};
++#else
+     union { int bitwise; S f8_packs[2]; } value; value.f8_packs[0] = s;
+     return __builtin_amdgcn_cvt_pk_f32_fp8(value.bitwise, sel);
++#endif
+ }
+ template<typename S, std::enable_if_t<std::is_same_v<S, fp8x4_t>, bool> = true>
+ OPUS_D constexpr decltype(auto) fp8_to_fp32_packed_x4(const S& s) {
++#if OPUS_USE_FP8_CONVERSION_STUBS
++    (void)s;
++    return fp32x4_t{0.0f, 0.0f, 0.0f, 0.0f};
++#else
+     int bitwise = __builtin_bit_cast(int, s);
+     auto x = __builtin_amdgcn_cvt_pk_f32_fp8(bitwise, 0); auto y = __builtin_amdgcn_cvt_pk_f32_fp8(bitwise, 1);
+     return fp32x4_t{x[0], x[1], y[0], y[1]};
++#endif
+ }
++#undef OPUS_USE_FP8_CONVERSION_STUBS
+
+ namespace impl {
+ template<typename S, index_t... Xs>     OPUS_D constexpr decltype(auto) fold_as_tuple_of_vec(const S& s, seq<Xs...>) {
+--
+2.43.0

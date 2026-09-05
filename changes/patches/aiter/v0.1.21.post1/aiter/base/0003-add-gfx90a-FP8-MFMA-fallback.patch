@@ -1,0 +1,237 @@
+From 35506e598189e8ebed484bb2b00e13542bc4339e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 3 Sep 2026 02:39:12 -0700
+Subject: [PATCH] Add gfx90a FP8 MFMA fallback
+
+- Decode E4M3-FNUZ operands into FP16 values.
+- Replace each unsupported gfx90a FP8 MFMA with
+  two supported K=8 FP16 MFMA operations.
+- Keep native FP8 MFMA paths on newer GPUs.
+- Register E4M3-FNUZ as the gfx90a FP8 type.
+- Add focused kernel correctness validation.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/utility/dtypes.py                       |  1 +
+ csrc/kernels/custom_kernels.cu                | 55 +++++++++++++--
+ op_tests/validation/README.md                 | 28 ++++++++
+ .../validation/validate_gfx90a_wv_split_kq.py | 70 +++++++++++++++++++
+ 4 files changed, 150 insertions(+), 4 deletions(-)
+ create mode 100644 op_tests/validation/validate_gfx90a_wv_split_kq.py
+
+diff --git a/aiter/utility/dtypes.py b/aiter/utility/dtypes.py
+index 3fad449b..7b0aaa93 100644
+--- a/aiter/utility/dtypes.py
++++ b/aiter/utility/dtypes.py
+@@ -9,6 +9,7 @@ from ..ops.enum import ActivationType, QuantType
+ from .aiter_types import aiter_dtypes, aiter_tensor_t
+
+ defaultDtypes = {
++    "gfx90a": {"fp8": torch.float8_e4m3fnuz},
+     "gfx942": {"fp8": torch.float8_e4m3fnuz},
+     "gfx950": {"fp8": torch.float8_e4m3fn},
+     "gfx1100": {"fp8": torch.float8_e4m3fn},
+diff --git a/csrc/kernels/custom_kernels.cu b/csrc/kernels/custom_kernels.cu
+index c4c0c2ee..3195bbb5 100644
+--- a/csrc/kernels/custom_kernels.cu
++++ b/csrc/kernels/custom_kernels.cu
+@@ -4,6 +4,7 @@
+ #include "aiter_dispatch.h"
+ #include <algorithm>
+ #include <hip/hip_bf16.h>
++#include <hip/hip_fp8.h>
+ #include <hip/hip_fp16.h>
+ #include <hip/hip_runtime.h>
+ #include <stdexcept>
+@@ -1770,6 +1771,48 @@ void wvSplitK_(void* in_a,
+ }
+
+ #if defined(__HIP__MI350_MI300_MI250__) // TODO: Add NAVI support
++#if defined(__gfx90a__)
++using fp16x4 = __fp16 __attribute__((ext_vector_type(4)));
++
++__device__ __forceinline__ fp16x4 wv_split_kq_unpack_fp8x4(uint32_t packed)
++{
++    __hip_fp8x2_e4m3_fnuz low;
++    __hip_fp8x2_e4m3_fnuz high;
++    low.__x              = static_cast<__hip_fp8x2_storage_t>(packed);
++    high.__x             = static_cast<__hip_fp8x2_storage_t>(packed >> 16);
++    const float2 low_fp32  = static_cast<float2>(low);
++    const float2 high_fp32 = static_cast<float2>(high);
++    fp16x4 ret{
++        static_cast<__fp16>(low_fp32.x),
++        static_cast<__fp16>(low_fp32.y),
++        static_cast<__fp16>(high_fp32.x),
++        static_cast<__fp16>(high_fp32.y),
++    };
++    return ret;
++}
++#endif
++
++template <typename Accumulator>
++__device__ __forceinline__ Accumulator
++wv_split_kq_mfma_fp8(long packed_a, long packed_b, const Accumulator& accumulator)
++{
++    Accumulator ret;
++#if defined(__gfx90a__)
++    const uint64_t bits_a = __builtin_bit_cast(uint64_t, packed_a);
++    const uint64_t bits_b = __builtin_bit_cast(uint64_t, packed_b);
++    const fp16x4 a0       = wv_split_kq_unpack_fp8x4(static_cast<uint32_t>(bits_a));
++    const fp16x4 a1       = wv_split_kq_unpack_fp8x4(static_cast<uint32_t>(bits_a >> 32));
++    const fp16x4 b0       = wv_split_kq_unpack_fp8x4(static_cast<uint32_t>(bits_b));
++    const fp16x4 b1       = wv_split_kq_unpack_fp8x4(static_cast<uint32_t>(bits_b >> 32));
++    ret = __builtin_amdgcn_mfma_f32_32x32x8f16(a0, b0, accumulator, 0, 0, 0);
++    ret = __builtin_amdgcn_mfma_f32_32x32x8f16(a1, b1, ret, 0, 0, 0);
++#else
++    ret = __builtin_amdgcn_mfma_f32_32x32x16_fp8_fp8(
++        packed_a, packed_b, accumulator, 0, 0, 0);
++#endif
++    return ret;
++}
++
+ template <typename scalar_t,
+           typename fp8_t,
+           int THRDS,
+@@ -1889,8 +1932,10 @@ __global__ void __launch_bounds__(WvPrGrp* THRDS) wvSplitKQ_hf_sml_(const int K,
+                     {
+                         for(int y = 0; y < YTILE; ++y)
+                         {
+-                            sum[n][y] = __builtin_amdgcn_mfma_f32_32x32x16_fp8_fp8(
+-                                bigA[n][k2].l[i / 8], bigB[y][k2].l[i / 8], sum[n][y], 0, 0, 0);
++                            sum[n][y] = wv_split_kq_mfma_fp8(
++                                bigA[n][k2].l[i / 8],
++                                bigB[y][k2].l[i / 8],
++                                sum[n][y]);
+                         }
+                     }
+                 }
+@@ -2104,8 +2149,10 @@ __global__ void __launch_bounds__(WvPrGrp* THRDS) wvSplitKQ_hf_(const int K,
+                     {
+                         for(int y = 0; y < YTILE; ++y)
+                         {
+-                            sum[n][y] = __builtin_amdgcn_mfma_f32_32x32x16_fp8_fp8(
+-                                bigA[n][k2].l[i / 8], bigB[y][k2].l[i / 8], sum[n][y], 0, 0, 0);
++                            sum[n][y] = wv_split_kq_mfma_fp8(
++                                bigA[n][k2].l[i / 8],
++                                bigB[y][k2].l[i / 8],
++                                sum[n][y]);
+                         }
+                     }
+                 }
+diff --git a/op_tests/validation/README.md b/op_tests/validation/README.md
+index 1513050b..f8fc3296 100644
+--- a/op_tests/validation/README.md
++++ b/op_tests/validation/README.md
+@@ -100,3 +100,31 @@ FP16 and BF16. It rejects non-finite output, normalized RMSE above 0.08, or
+ maximum absolute error above 2.0. Thresholds can be overridden with
+ `--max-nrmse` and `--max-absolute-error`, but any relaxation should be
+ documented with the complete command and output.
++
++## gfx90a Wave Split-K FP8 correctness
++
++The gfx90a validator compares both Wave Split-K kernel paths against a
++dequantized FP32 matrix multiplication. It covers FP16 and BF16 output, all
++supported activation row counts, and dimensions on both sides of the small
++kernel dispatch boundary.
++
++On a homogeneous gfx90a host, run:
++
++```bash
++export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
++GPU_ARCHS=gfx90a \
++  python op_tests/validation/validate_gfx90a_wv_split_kq.py
++```
++
++On a mixed-architecture host, expose only the gfx90a device to the ROCm runtime.
++For example, if gfx90a is physical device 1:
++
++```bash
++ROCR_VISIBLE_DEVICES=1 \
++  GPU_ARCHS=gfx90a \
++  python op_tests/validation/validate_gfx90a_wv_split_kq.py
++```
++
++The test requires E4M3-FNUZ input. It fails if AITER selects another FP8 format,
++the visible GPU is not gfx90a, the output is outside the existing Wave Split-K
++tolerance, or a kernel launch fails.
+diff --git a/op_tests/validation/validate_gfx90a_wv_split_kq.py b/op_tests/validation/validate_gfx90a_wv_split_kq.py
+new file mode 100644
+index 00000000..1bef4230
+--- /dev/null
++++ b/op_tests/validation/validate_gfx90a_wv_split_kq.py
+@@ -0,0 +1,70 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import torch
++
++import aiter
++
++
++TEST_SHAPES = (
++    (1, 4, 16),
++    (2, 60, 96),
++    (3, 17, 6192),
++    (4, 320, 16400),
++)
++
++
++def quantize_fp8(tensor):
++    scale = tensor.abs().max().float() / torch.finfo(aiter.dtypes.fp8).max
++    ret = (tensor / scale).to(aiter.dtypes.fp8), scale
++    return ret
++
++
++def validate_shape(output_dtype, rows, columns, inner, cu_count):
++    x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
++    weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
++    x_fp8, x_scale = quantize_fp8(x)
++    weight_fp8, weight_scale = quantize_fp8(weight)
++    reference = (
++        torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
++    ).to(output_dtype)
++    actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    aiter.wvSplitKQ(
++        weight_fp8,
++        x_fp8,
++        actual,
++        weight_scale,
++        x_scale,
++        cu_count,
++    )
++    torch.cuda.synchronize()
++    torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
++    ret = (actual.float() - reference.float()).abs().max().item()
++    return ret
++
++
++def main():
++    torch.manual_seed(137)
++    properties = torch.cuda.get_device_properties("cuda")
++    if not properties.gcnArchName.startswith("gfx90a"):
++        raise RuntimeError(f"Expected gfx90a, found {properties.gcnArchName}")
++    if aiter.dtypes.fp8 != torch.float8_e4m3fnuz:
++        raise RuntimeError(f"Expected E4M3-FNUZ, found {aiter.dtypes.fp8}")
++
++    for output_dtype in (torch.float16, torch.bfloat16):
++        for rows, columns, inner in TEST_SHAPES:
++            max_error = validate_shape(
++                output_dtype,
++                rows,
++                columns,
++                inner,
++                properties.multi_processor_count,
++            )
++            print(
++                f"PASS dtype={output_dtype} shape=({rows},{columns},{inner}) "
++                f"max_abs_error={max_error:.8g}"
++            )
++
++
++if __name__ == "__main__":
++    main()
+--
+2.43.0
