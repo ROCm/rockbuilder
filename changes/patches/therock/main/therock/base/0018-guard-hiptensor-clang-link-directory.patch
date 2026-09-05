@@ -1,0 +1,164 @@
+From 4bef1f328df116e78d639aad743e44a2e099a9cc Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 21:51:05 -0700
+Subject: [PATCH] hipTensor Clang link
+ directory fix
+
+- Add the fix as an amd-mainline
+  rocm-libraries patch.
+- hipTensor added link path
+  $HIPTENSOR_CLANG_ROOT/lib even if the
+  HIPTENSOR_CLANG_ROOT was not defined.
+  In these cases this defaulted to /lib directory.
+  Add that dir not to lib-search path for linking
+  when the HIPTENSOR_CLANG_ROOT is defined.
+- This needs to be done because
+  on some linux distros the /lib folder contains
+  32bit x86 executables and /lib64 contains
+  64bit x86_64 executables.
+  This can lead to linking errors when
+  32 bit and 64 bit libraries are both found
+  were tried to link together.
+- Original linker failure was:
+  ld.lld: error: Scrt1.o is incompatible with
+  elf32-i386
+- The failure occurred when the linker selected
+  a 32-bit libc script from /lib for the
+  64-bit hipTensor link.
+- Reject a non-empty root without a lib
+  directory.
+- Preserve test and sample links when the
+  variable is unset.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...guard-hiptensor-clang-link-directory.patch | 117 ++++++++++++++++++
+ 1 file changed, 117 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0005-guard-hiptensor-clang-link-directory.patch
+
+diff --git a/patches/amd-mainline/rocm-libraries/0005-guard-hiptensor-clang-link-directory.patch b/patches/amd-mainline/rocm-libraries/0005-guard-hiptensor-clang-link-directory.patch
+new file mode 100644
+index 0000000..f74c89d
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0005-guard-hiptensor-clang-link-directory.patch
+@@ -0,0 +1,117 @@
++From 60739bb833e972e127168b9386181f656d2571f7 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Fri, 4 Sep 2026 21:48:27 -0700
++Subject: [PATCH] hipTensor Clang link
++ directory fix
++
++- hipTensor added link path
++  $HIPTENSOR_CLANG_ROOT/lib even if the
++  HIPTENSOR_CLANG_ROOT was not defined.
++  In these cases this defaulted to /lib directory.
++  Add that dir not to lib-search path for linking
++  when the HIPTENSOR_CLANG_ROOT is defined.
++- This needs to be done because
++  on some linux distros the /lib folder contains
++  32bit x86 executables and /lib64 contains
++  64bit x86_64 executables.
++  This can lead to linking errors when
++  32 bit and 64 bit libraries are both found
++  were tried to link together.
++- Original linker failure was:
++  ld.lld: error: Scrt1.o is incompatible with
++  elf32-i386
++- The failure occurred when the linker selected
++  a 32-bit libc script from /lib for the
++  64-bit hipTensor link.
++- Reject a non-empty root without a lib
++  directory.
++- Preserve test and sample links when the
++  variable is unset.
++
++Tools used:
++- Codex: GPT-5
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/hiptensor/samples/CMakeLists.txt | 13 ++++++++++--
++ projects/hiptensor/test/CMakeLists.txt    | 24 +++++++++++++++++++----
++ 2 files changed, 31 insertions(+), 6 deletions(-)
++
++diff --git a/projects/hiptensor/samples/CMakeLists.txt b/projects/hiptensor/samples/CMakeLists.txt
++index dff2c664..b636d8c5 100644
++--- a/projects/hiptensor/samples/CMakeLists.txt
+++++ b/projects/hiptensor/samples/CMakeLists.txt
++@@ -44,12 +44,21 @@ if(CMAKE_PROJECT_NAME STREQUAL "hiptensor")
++             set_target_properties(${BINARY_NAME} PROPERTIES LINKER_LANGUAGE C)
++         endif()
++
+++        if(DEFINED HIPTENSOR_CLANG_ROOT AND NOT "${HIPTENSOR_CLANG_ROOT}" STREQUAL "")
+++            if(NOT IS_DIRECTORY "${HIPTENSOR_CLANG_ROOT}/lib")
+++                message(FATAL_ERROR
+++                        "HIPTENSOR_CLANG_ROOT does not contain a lib directory: ${HIPTENSOR_CLANG_ROOT}")
+++            endif()
+++            target_link_directories(${BINARY_NAME} PRIVATE "${HIPTENSOR_CLANG_ROOT}/lib")
+++        endif()
+++
++         # Sample must propagate the build interface includes to make sure
++         # hiptensor includes are captured at runtime.
++         if(WIN32)
++-            target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor "-L${HIPTENSOR_CLANG_ROOT}/lib")
+++            target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor)
++         else()
++-            target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor "-L${HIPTENSOR_CLANG_ROOT}/lib" "-Wl,-rpath=$ORIGIN/../${CMAKE_INSTALL_LIBDIR}" "-fno-rtlib-add-rpath")
+++            target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor
+++                                  "-Wl,-rpath=$ORIGIN/../${CMAKE_INSTALL_LIBDIR}" "-fno-rtlib-add-rpath")
++         endif()
++         target_include_directories(${BINARY_NAME} PRIVATE
++                                 ${CMAKE_CURRENT_SOURCE_DIR}
++diff --git a/projects/hiptensor/test/CMakeLists.txt b/projects/hiptensor/test/CMakeLists.txt
++index 920faf98..5a1172ce 100644
++--- a/projects/hiptensor/test/CMakeLists.txt
+++++ b/projects/hiptensor/test/CMakeLists.txt
++@@ -187,12 +187,20 @@ function(add_hiptensor_test BINARY_NAME YAML_CONFIG_FILE TEST_SOURCES)
++     target_compile_options(${BINARY_NAME} PRIVATE ${CLANG_DRIVER_MODE})
++     target_link_options(${BINARY_NAME} PRIVATE ${CLANG_DRIVER_MODE})
++
+++    if(DEFINED HIPTENSOR_CLANG_ROOT AND NOT "${HIPTENSOR_CLANG_ROOT}" STREQUAL "")
+++        if(NOT IS_DIRECTORY "${HIPTENSOR_CLANG_ROOT}/lib")
+++            message(FATAL_ERROR
+++                    "HIPTENSOR_CLANG_ROOT does not contain a lib directory: ${HIPTENSOR_CLANG_ROOT}")
+++        endif()
+++        target_link_directories(${BINARY_NAME} PRIVATE "${HIPTENSOR_CLANG_ROOT}/lib")
+++    endif()
+++
++     # Test must propagate the build interface includes to make sure
++     # hiptensor includes are captured at runtime.
++     if(WIN32)
++-        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest "-L${HIPTENSOR_CLANG_ROOT}/lib")
+++        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest)
++     else()
++-        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest "-L${HIPTENSOR_CLANG_ROOT}/lib"
+++        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest
++                               "-Wl,-rpath=$ORIGIN/../${CMAKE_INSTALL_LIBDIR}" "-fno-rtlib-add-rpath")
++     endif()
++
++@@ -270,12 +278,20 @@ function(add_hiptensor_unit_test)
++     target_compile_options(${BINARY_NAME} PRIVATE ${CLANG_DRIVER_MODE})
++     target_link_options(${BINARY_NAME} PRIVATE ${CLANG_DRIVER_MODE})
++
+++    if(DEFINED HIPTENSOR_CLANG_ROOT AND NOT "${HIPTENSOR_CLANG_ROOT}" STREQUAL "")
+++        if(NOT IS_DIRECTORY "${HIPTENSOR_CLANG_ROOT}/lib")
+++            message(FATAL_ERROR
+++                    "HIPTENSOR_CLANG_ROOT does not contain a lib directory: ${HIPTENSOR_CLANG_ROOT}")
+++        endif()
+++        target_link_directories(${BINARY_NAME} PRIVATE "${HIPTENSOR_CLANG_ROOT}/lib")
+++    endif()
+++
++     # Test must propagate the build interface includes to make sure
++     # hiptensor includes are captured at runtime.
++     if(WIN32)
++-        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest "-L${HIPTENSOR_CLANG_ROOT}/lib")
+++        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest)
++     else()
++-        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest "-L${HIPTENSOR_CLANG_ROOT}/lib"
+++        target_link_libraries(${BINARY_NAME} PRIVATE hiptensor::hiptensor hiptensor_llvm GTest::gtest
++                               "-Wl,-rpath=$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
++     endif()
++     target_include_directories(${BINARY_NAME} PRIVATE
