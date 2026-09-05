@@ -1,0 +1,56 @@
+From 4e28722ffc5fbf495855e61bbbbb344968b0ee24 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 23:24:53 -0700
+Subject: [PATCH] therock_dev rccl-translate
+ gfx1250 support check
+
+- Build rccl-translate only when RCCL's
+  filtered target list contains gfx1250.
+- A configured THEROCK_TEST_AMDGPU_TARGETS
+  list may omit gfx1250 and cause that rccl
+  is not build for the gfx1250. In this case
+  also the rccl-translate can not be build
+  for gfx1250.
+- The list defaults to all targets only when
+  test targets and families are both unset.
+- Keep the ASAN guard because RCCL filters
+  gfx1250 from sanitizer builds.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ comm-libs/CMakeLists.txt | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/comm-libs/CMakeLists.txt b/comm-libs/CMakeLists.txt
+index 4f354fc..bf70b9c 100644
+--- a/comm-libs/CMakeLists.txt
++++ b/comm-libs/CMakeLists.txt
+@@ -67,12 +67,21 @@ if(THEROCK_ENABLE_RCCL)
+   therock_cmake_subproject_activate(rccl)
+   list(APPEND _rccl_subproject_names rccl)
+ 
+-  # rccl-translate unbundles gfx1250 device code from librccl.so. Under ASAN,
+-  # GPU_TARGETS is filtered to xnack+ arches only (gfx942, gfx950), so gfx1250
+-  # is never compiled into librccl.so and the unbundle step fails with
++  # Use the targets assigned to RCCL after applying its project exclusions.
++  get_target_property(_rccl_gpu_targets rccl THEROCK_AMDGPU_TARGETS)
++  therock_filter_amdgpu_targets(_rccl_gpu_targets rccl ${_rccl_gpu_targets})
++
++  # rccl-translate unbundles gfx1250 device code from librccl.so, which uses
++  # RCCL's filtered GPU targets. An explicitly configured
++  # THEROCK_TEST_AMDGPU_TARGETS list does not necessarily contain gfx1250, and
++  # project exclusions can further reduce RCCL's targets. Enable translation
++  # only when RCCL's filtered list contains gfx1250. Under ASAN, RCCL modifies
++  # GPU_TARGETS for xnack+ and filters out unsupported targets, so gfx1250 is
++  # never compiled into librccl.so and the unbundle step fails with
+   # "No code objects for architecture 'gfx1250'".
+   if(THEROCK_ENABLE_ROCJITSU_HOTSWAP AND THEROCK_FLAG_KPACK_SPLIT_ARTIFACTS
+-     AND NOT THEROCK_SANITIZER)
++     AND NOT THEROCK_SANITIZER
++     AND "gfx1250" IN_LIST _rccl_gpu_targets)
+     therock_cmake_subproject_dist_dir(_rccl_dist_dir rccl)
+     therock_cmake_subproject_dist_dir(_rocjitsu_dist_dir rocjitsu)
+     therock_cmake_subproject_dist_dir(_rocjitsu_hotswap_dist_dir rocjitsu-hotswap)
