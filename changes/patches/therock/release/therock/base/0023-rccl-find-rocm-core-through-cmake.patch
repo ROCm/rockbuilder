@@ -1,0 +1,87 @@
+From 7a60ec3aa1cc2cbe2a9f0335e69e98f0cf23e610 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 6 Sep 2026 11:26:54 -0700
+Subject: [PATCH] Add RCCL rocm-core CMake lookup backport
+
+- Add a TheRock 10.0 nested rocm-systems
+  backport of commit ee708bde10.
+- RCCL failed to link when ROCM_PATH was empty
+  because -L${ROCM_PATH}/lib became -L/lib
+  and on some linux distributions the /lib folder
+  contains 32 bit libraries and lib64
+  contains 64 bit.
+- For ROCm 6 and newer, find rocm-core with
+  its CMake package first.
+  Otherwise, use find_library with
+  ROCMCORE_PATH and ROCM_PATH hints plus lib
+  and lib64 suffixes.
+- Link the resolved full path instead of manual
+  -L and -l flags.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...10-rccl-find-rocm-core-through-cmake.patch | 52 +++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-systems/0010-rccl-find-rocm-core-through-cmake.patch
+
+diff --git a/patches/amd-mainline/rocm-systems/0010-rccl-find-rocm-core-through-cmake.patch b/patches/amd-mainline/rocm-systems/0010-rccl-find-rocm-core-through-cmake.patch
+new file mode 100644
+index 0000000..dcc7506
+--- /dev/null
++++ b/patches/amd-mainline/rocm-systems/0010-rccl-find-rocm-core-through-cmake.patch
+@@ -0,0 +1,52 @@
++From a12efd85c8d001d4531f17bcb9cfee253a4ce2f8 Mon Sep 17 00:00:00 2001
++From: Afzal Patel <122491982+afzpatel@users.noreply.github.com>
++Date: Sun, 6 Sep 2026 11:26:38 -0700
++Subject: [PATCH] Add RCCL rocm-core CMake lookup backport
++
++- Add a TheRock 10.0 nested rocm-systems
++  backport of commit ee708bde10.
++- RCCL failed to link when ROCM_PATH was empty
++  because -L${ROCM_PATH}/lib became -L/lib
++  and on some linux distributions the /lib folder
++  contains 32 bit libraries and lib64
++  contains 64 bit.
++- For ROCm 6 and newer, find rocm-core with
++  its CMake package first.
++  Otherwise, use find_library with
++  ROCMCORE_PATH and ROCM_PATH hints plus lib
++  and lib64 suffixes.
++- Link the resolved full path instead of manual
++  -L and -l flags.
++
++Tools used:
++- Codex: GPT-5
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/rccl/src/CMakeLists.txt | 13 ++++++++++++-
++ 1 file changed, 12 insertions(+), 1 deletion(-)
++
++diff --git a/projects/rccl/src/CMakeLists.txt b/projects/rccl/src/CMakeLists.txt
++index 3d8730df9d..553313318d 100644
++--- a/projects/rccl/src/CMakeLists.txt
+++++ b/projects/rccl/src/CMakeLists.txt
++@@ -1121,7 +1121,18 @@ target_link_libraries(rccl PRIVATE   hsa-runtime64::hsa-runtime64)
++ target_link_libraries(rccl PRIVATE   ${SMI_LIBRARIES})
++ # librocm-core provides getROCmVersion() for reporting the runtime ROCm version.
++ if(ROCM_MAJOR_VERSION GREATER_EQUAL 6)
++-  target_link_libraries(rccl PRIVATE -L${ROCM_PATH}/lib -lrocm-core)
+++  find_package(rocm-core QUIET)
+++  if(TARGET rocm-core)
+++    target_link_libraries(rccl PRIVATE rocm-core)
+++  else()
+++    find_library(ROCM_CORE_LIB NAMES rocm-core
+++      HINTS "${ROCMCORE_PATH}" "${ROCM_PATH}"
+++      PATH_SUFFIXES lib lib64)
+++    if(NOT ROCM_CORE_LIB)
+++      message(FATAL_ERROR "Could not find librocm-core")
+++    endif()
+++    target_link_libraries(rccl PRIVATE ${ROCM_CORE_LIB})
+++  endif()
++ endif()
++ # Wrap fmt in $<BUILD_INTERFACE:...> so it's only used while building rccl
++ # and is omitted from the exported rccl-targets export set. Without this,
