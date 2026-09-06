@@ -1,0 +1,236 @@
+From f826997d2b4d60d86a284d41d6c27d56f2eb1494 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 5 Sep 2026 13:29:25 -0700
+Subject: [PATCH 18/22] CK2 MXFP4 GPU support
+
+- Keep CK2 MXFP4 variants on gfx950
+- Preserve gfx90a non-FP4 and INT4 paths
+- Reject gfx90a MXFP4 before JIT dispatch
+- Test target filtering and runtime rejection
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/fused_moe.py                   |  13 ++++
+ aiter/jit/utils/moe_recipes.py       |  14 +++-
+ op_tests/test_gfx90a_mxfp4_guards.py | 108 +++++++++++++++++++++++++++
+ setup.py                             |  12 ++-
+ 4 files changed, 144 insertions(+), 3 deletions(-)
+ create mode 100644 op_tests/test_gfx90a_mxfp4_guards.py
+
+diff --git a/aiter/fused_moe.py b/aiter/fused_moe.py
+index 26ee6313..21aa7ad8 100644
+--- a/aiter/fused_moe.py
++++ b/aiter/fused_moe.py
+@@ -534,6 +534,16 @@ def get_inter_dim(w1_shape, w2_shape):
+     return E, model_dim, inter_dim
+
+
++def _uses_mxfp4_weights(quant_type, w1, w2) -> bool:
++    has_distinct_fp4_dtype = dtypes.fp4x2 != dtypes.i4x2
++    ret = (
++        has_distinct_fp4_dtype
++        and quant_type == QuantType.per_1x32
++        and (w1.dtype == dtypes.fp4x2 or w2.dtype == dtypes.fp4x2)
++    )
++    return ret
++
++
+ def fused_moe(
+     hidden_states,
+     w1,  # [expert(local_expert:EP), inter_dim*2, dim] N,K
+@@ -575,6 +585,9 @@ def fused_moe(
+     # hidden_states, or the call raises; when given it is what gets returned.
+     output: torch.Tensor | None = None,
+ ):
++    gfx = get_gfx()
++    if gfx == "gfx90a" and _uses_mxfp4_weights(quant_type, w1, w2):
++        raise RuntimeError("MXFP4 fused MoE is unsupported on gfx90a")
+     if (
+         any(
+             tensor is not None
+diff --git a/aiter/jit/utils/moe_recipes.py b/aiter/jit/utils/moe_recipes.py
+index bbaceeb5..5768b6c4 100644
+--- a/aiter/jit/utils/moe_recipes.py
++++ b/aiter/jit/utils/moe_recipes.py
+@@ -16,6 +16,15 @@ _DTYPE_MAP = {
+ }
+
+ _QUANT_ALIAS = {"per_128x128": "per_1x128"}
++_MXFP4_CK2STAGES_SUPPORTED_GPU_ARCHS = ("gfx950",)
++
++
++def _filter_moe_variant_gpu_archs(variant: dict, gpu_archs: list[str]) -> list[str]:
++    supported_gpu_archs = variant.get("supported_gpu_archs")
++    ret_arr = list(gpu_archs)
++    if supported_gpu_archs is not None:
++        ret_arr = [arch for arch in ret_arr if arch in supported_gpu_archs]
++    return ret_arr
+
+
+ def _build_moe_variant(
+@@ -192,5 +201,8 @@ def get_moe_ck2stages_prebuild_variants(aiter_csrc_dir: str) -> list[dict]:
+                     preshuffle_mode=preshuffle,
+                     is_splitk=splitk,
+                 )
+-                results.append({"md_name": md_name, "blob_gen_cmd": blob_gen_cmd})
++                variant = {"md_name": md_name, "blob_gen_cmd": blob_gen_cmd}
++                if "fp4x2" in (a_dtype, b_dtype):
++                    variant["supported_gpu_archs"] = _MXFP4_CK2STAGES_SUPPORTED_GPU_ARCHS
++                results.append(variant)
+     return results
+diff --git a/op_tests/test_gfx90a_mxfp4_guards.py b/op_tests/test_gfx90a_mxfp4_guards.py
+new file mode 100644
+index 00000000..5a181fc3
+--- /dev/null
++++ b/op_tests/test_gfx90a_mxfp4_guards.py
+@@ -0,0 +1,108 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import importlib
++from types import SimpleNamespace
++from unittest.mock import Mock
++
++import pytest
++
++from aiter import ActivationType, QuantType
++from aiter.jit.utils import moe_recipes
++
++fused_moe_module = importlib.import_module("aiter.fused_moe")
++
++
++def test_ck2stages_mxfp4_variants_only_target_gfx950(monkeypatch):
++    rows = [
++        {
++            "dtype": "torch.bfloat16",
++            "q_dtype_a": "torch.float8_e4m3fn",
++            "q_dtype_w": "torch.float4_e2m1fn_x2",
++            "q_type": "per_1x32",
++            "act_type": "silu",
++            "doweight_stage1": "0",
++        },
++        {
++            "dtype": "torch.bfloat16",
++            "q_dtype_a": "torch.float4_e2m1fn_x2",
++            "q_dtype_w": "torch.float4_e2m1fn_x2",
++            "q_type": "per_1x32",
++            "act_type": "silu",
++            "doweight_stage1": "0",
++        },
++        {
++            "dtype": "torch.bfloat16",
++            "q_dtype_a": "torch.float8_e4m3fn",
++            "q_dtype_w": "torch.float8_e4m3fn",
++            "q_type": "per_token",
++            "act_type": "silu",
++            "doweight_stage1": "0",
++        },
++    ]
++    monkeypatch.setattr(moe_recipes, "_get_tuned_fmoe_rows", lambda: rows)
++
++    variants = moe_recipes.get_moe_ck2stages_prebuild_variants("/csrc")
++    mxfp4_variants = [variant for variant in variants if "_fp4x2_" in variant["md_name"]]
++    non_mxfp4_variants = [variant for variant in variants if "_fp4x2_" not in variant["md_name"]]
++
++    assert any("_f8_fp4x2_" in variant["md_name"] for variant in mxfp4_variants)
++    assert any("_fp4x2_fp4x2_" in variant["md_name"] for variant in mxfp4_variants)
++    assert non_mxfp4_variants
++    for variant in mxfp4_variants:
++        assert variant["supported_gpu_archs"] == ("gfx950",)
++        assert moe_recipes._filter_moe_variant_gpu_archs(variant, ["gfx90a"]) == []
++        assert moe_recipes._filter_moe_variant_gpu_archs(
++            variant, ["gfx90a", "gfx950"]
++        ) == ["gfx950"]
++    for variant in non_mxfp4_variants:
++        assert "supported_gpu_archs" not in variant
++        assert moe_recipes._filter_moe_variant_gpu_archs(
++            variant, ["gfx90a", "gfx950"]
++        ) == ["gfx90a", "gfx950"]
++
++
++def _mock_low_bit_dtypes(monkeypatch):
++    fp4_dtype = object()
++    int4_dtype = object()
++    monkeypatch.setattr(fused_moe_module.dtypes, "fp4x2", fp4_dtype)
++    monkeypatch.setattr(fused_moe_module.dtypes, "i4x2", int4_dtype)
++    return fp4_dtype, int4_dtype
++
++
++def _call_public_fused_moe(weight_dtype):
++    weight = SimpleNamespace(dtype=weight_dtype)
++    ret = fused_moe_module.fused_moe(
++        hidden_states=None,
++        w1=weight,
++        w2=weight,
++        topk_weight=None,
++        topk_ids=None,
++        activation=ActivationType.Silu,
++        quant_type=QuantType.per_1x32,
++    )
++    return ret
++
++
++def test_public_fused_moe_rejects_mxfp4_on_gfx90a(monkeypatch):
++    fp4_dtype, _ = _mock_low_bit_dtypes(monkeypatch)
++    backend = Mock()
++    monkeypatch.setattr(fused_moe_module, "get_gfx", lambda: "gfx90a")
++    monkeypatch.setattr(fused_moe_module, "fused_moe_", backend)
++
++    with pytest.raises(RuntimeError, match=r"MXFP4.*gfx90a"):
++        _call_public_fused_moe(fp4_dtype)
++
++    backend.assert_not_called()
++
++
++def test_public_fused_moe_preserves_int4_on_gfx90a(monkeypatch):
++    _, int4_dtype = _mock_low_bit_dtypes(monkeypatch)
++    backend = Mock(return_value="int4-result")
++    monkeypatch.setattr(fused_moe_module, "get_gfx", lambda: "gfx90a")
++    monkeypatch.setattr(fused_moe_module, "fused_moe_", backend)
++
++    ret = _call_public_fused_moe(int4_dtype)
++
++    assert ret == "int4-result"
++    backend.assert_called_once()
+diff --git a/setup.py b/setup.py
+index 66b5fb96..14a1e58f 100644
+--- a/setup.py
++++ b/setup.py
+@@ -296,7 +296,10 @@ if PREBUILD_KERNELS != 0:
+         from jit.utils.mha_recipes import (
+             get_mha_varlen_prebuild_variants_by_names,
+         )
+-        from jit.utils.moe_recipes import get_moe_ck2stages_prebuild_variants
++        from jit.utils.moe_recipes import (
++            _filter_moe_variant_gpu_archs,
++            get_moe_ck2stages_prebuild_variants,
++        )
+
+         exclude_ops = get_exclude_ops()
+         all_opts_args_build, _ = core.get_args_of_build("all", exclude=exclude_ops)
+@@ -313,6 +316,11 @@ if PREBUILD_KERNELS != 0:
+         if ENABLE_CK and moe_base_args is not None:
+             moe_variants = get_moe_ck2stages_prebuild_variants(core.AITER_CSRC_DIR)
+             for v in moe_variants:
++                variant_gpu_archs = _filter_moe_variant_gpu_archs(
++                    v, moe_base_args["gpu_archs"]
++                )
++                if not variant_gpu_archs:
++                    continue
+                 all_opts_args_build.append(
+                     {
+                         "md_name": v["md_name"],
+@@ -322,7 +330,7 @@ if PREBUILD_KERNELS != 0:
+                         "extra_include": moe_base_args["extra_include"],
+                         "blob_gen_cmd": v["blob_gen_cmd"],
+                         "third_party": moe_base_args["third_party"],
+-                        "gpu_archs": moe_base_args["gpu_archs"],
++                        "gpu_archs": variant_gpu_archs,
+                     }
+                 )
+
+--
+2.43.0
