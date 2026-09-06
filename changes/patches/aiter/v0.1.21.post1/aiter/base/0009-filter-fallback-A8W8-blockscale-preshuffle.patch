@@ -1,0 +1,57 @@
+From efecfc949edc1e2495cedfef4c7542480997b78b Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 00:58:31 -0700
+Subject: [PATCH 09/22] A8W8 blockscale preshuffle
+
+- Exclude gfx1100 from preshuffled code objects
+- Preserve validated GPU targets in mixed builds
+- Use the existing Triton blockscale fallback
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json  |  8 ++++++++
+ op_tests/test_jit_module_archs.py | 10 ++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index 3ac3c213..64d81ca4 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -274,6 +274,14 @@
+         "blob_gen_cmd": "f'{AITER_CSRC_DIR}/ck_gemm_a8w8_blockscale_bpreshuffle/gen_instances.py --working_path {{}} --tune_file {AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_FILE}'"
+     },
+     "module_gemm_a8w8_blockscale_bpreshuffle_cktile": {
++        "supported_gpu_archs": [
++            "gfx90a",
++            "gfx940",
++            "gfx941",
++            "gfx942",
++            "gfx950",
++            "gfx1250"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/gemm_a8w8_blockscale_bpreshuffle_cktile_pybind.cu'",
+             "f'{AITER_CSRC_DIR}/py_itfs_cu/gemm_common.cu'",
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index 1f8c9bfe..a62fd1c1 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -71,3 +71,13 @@ def test_a8w8_blockscale_cktile_filters_gfx1100(monkeypatch):
+     args = core.get_args_of_build("module_gemm_a8w8_blockscale_cktile")
+
+     assert args["gpu_archs"] == ["gfx90a"]
++
++
++def test_a8w8_blockscale_bpreshuffle_filters_gfx1100(monkeypatch):
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100", "gfx950"])
++
++    args = core.get_args_of_build(
++        "module_gemm_a8w8_blockscale_bpreshuffle_cktile"
++    )
++
++    assert args["gpu_archs"] == ["gfx950"]
+--
+2.43.0
