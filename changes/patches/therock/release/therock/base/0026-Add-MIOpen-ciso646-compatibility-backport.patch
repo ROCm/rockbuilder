@@ -1,0 +1,60 @@
+From ab318b4d021f21bce221b9b7e77c8fa2e7edf9ba Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 6 Sep 2026 23:52:32 -0700
+Subject: [PATCH] Add MIOpen ciso646 compatibility backport
+
+- Backport the MIOpen develop source change
+  for GCC 15 warning that ciso646 is not a
+  standard header in C++20.
+  MIOpen promoted that warning to an error.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...pen-remove-deprecated-ciso646-header.patch | 33 +++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0006-MIOpen-remove-deprecated-ciso646-header.patch
+
+diff --git a/patches/amd-mainline/rocm-libraries/0006-MIOpen-remove-deprecated-ciso646-header.patch b/patches/amd-mainline/rocm-libraries/0006-MIOpen-remove-deprecated-ciso646-header.patch
+new file mode 100644
+index 0000000..10438eb
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0006-MIOpen-remove-deprecated-ciso646-header.patch
+@@ -0,0 +1,33 @@
++From f03a85d16fea5fbbbfe84235214c9f30cab0f723 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Sun, 6 Sep 2026 23:50:37 -0700
++Subject: [PATCH] MIOpen remove deprecated ciso646 header
++
++- Backport the MIOpen develop source change
++  for GCC 15 warning that ciso646 is not a
++  standard header in C++20.
++  MIOpen promoted that warning to an error.
++
++Tools used:
++- GPT-5.6 Sol: gpt-5.6-sol-high
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/miopen/src/include/miopen/serializable.hpp | 1 -
++ 1 file changed, 1 deletion(-)
++
++diff --git a/projects/miopen/src/include/miopen/serializable.hpp b/projects/miopen/src/include/miopen/serializable.hpp
++index f7563f50..f0ba10fc 100644
++--- a/projects/miopen/src/include/miopen/serializable.hpp
+++++ b/projects/miopen/src/include/miopen/serializable.hpp
++@@ -27,7 +27,6 @@
++ #ifndef GUARD_MLOPEN_SERIALIZABLE_HPP
++ #define GUARD_MLOPEN_SERIALIZABLE_HPP
++
++-#include <ciso646>
++ #include <miopen/config.h>
++ #include <iostream>
++ #include <sstream>
++--
++2.52.0
++
+--
+2.52.0
