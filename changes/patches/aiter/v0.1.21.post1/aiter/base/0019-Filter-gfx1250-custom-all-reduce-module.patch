@@ -1,0 +1,73 @@
+From da7831baafe6dc1b7f1837ee09800d6ff0f26f4f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 7 Sep 2026 12:50:10 -0700
+Subject: [PATCH 19/22] Filter gfx1250 custom all-reduce module
+
+- Restrict the dedicated custom all-reduce
+  module to gfx1250.
+- Avoid building the MI450 transport and kernels
+  for unsupported GPU targets.
+- Keep the generic custom all-reduce path for
+  older GPU architectures.
+- Add metadata filter regression coverage.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json |  3 +++
+ op_tests/test_jit_arch_guard.py  | 17 +++++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index 03bdd43a..02f87e14 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -141,6 +141,9 @@
+         "blob_gen_cmd": "''"
+     },
+     "module_custom_all_reduce_gfx1250": {
++        "supported_gpu_archs": [
++            "gfx1250"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/custom_all_reduce_gfx1250_pybind.cu'",
+             "f'{AITER_CSRC_DIR}/kernels/custom_all_reduce_gfx1250.cu'"
+diff --git a/op_tests/test_jit_arch_guard.py b/op_tests/test_jit_arch_guard.py
+index 306ce06f..a97254f8 100644
+--- a/op_tests/test_jit_arch_guard.py
++++ b/op_tests/test_jit_arch_guard.py
+@@ -2,13 +2,30 @@
+ # Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+ """Unit tests for the JIT arch-coverage guard offload-target parser."""
+
++import json
+ import os
+ import tempfile
++from pathlib import Path
+
+ from aiter.jit import core
+ from aiter.jit.core import _so_offload_archs
+
+
++def test_gfx1250_custom_all_reduce_filter():
++    config_path = (
++        Path(__file__).parents[1] / "aiter" / "jit" / "optCompilerConfig.json"
++    )
++    with config_path.open(encoding="utf-8") as config_file:
++        config = json.load(config_file)
++
++    supported = config["module_custom_all_reduce_gfx1250"]["supported_gpu_archs"]
++
++    assert supported == ["gfx1250"]
++    assert core._get_module_gpu_archs(
++        supported, ["gfx90a", "gfx1100", "gfx1201", "gfx1250"]
++    ) == ["gfx1250"]
++
++
+ def _patch_jit_dir(tmpdir):
+     """Point the arch helpers at an isolated jit dir."""
+     orig = core.get_user_jit_dir
+--
+2.43.0
