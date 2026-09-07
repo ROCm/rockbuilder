@@ -1,0 +1,95 @@
+From d145ce53560b9054ee402b065509ec643aa9a4d9 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 6 Sep 2026 12:54:43 -0700
+Subject: [PATCH] Add hipBLASLt validation job
+ limit
+
+- On 32 cpu 32GB memory systems the validation
+  kernel killed joblib workers and Clang
+  processes with SIGKILL.
+- Fix by allowing to pass the max cpu count option
+  to hipBLASLt and then job count to
+  TensileLogic validation.
+
+Tools used:
+- Codex: GPT-5
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ math-libs/BLAS/CMakeLists.txt                 |  1 +
+ ...blaslt-limit-tensile-validation-jobs.patch | 54 +++++++++++++++++++
+ 2 files changed, 55 insertions(+)
+ create mode 100644 patches/amd-mainline/rocm-libraries/0004-hipblaslt-limit-tensile-validation-jobs.patch
+
+diff --git a/math-libs/BLAS/CMakeLists.txt b/math-libs/BLAS/CMakeLists.txt
+index 03b0970..f272407 100644
+--- a/math-libs/BLAS/CMakeLists.txt
++++ b/math-libs/BLAS/CMakeLists.txt
+@@ -166,6 +166,7 @@ therock_cmake_subproject_declare(hipBLASLt
+   CMAKE_ARGS
+     -DHIP_PLATFORM=amd
+     -DHIPBLASLT_ENABLE_BLIS=OFF  # TODO: Evaluate
++    -DTENSILELITE_BUILD_PARALLEL_LEVEL=${TENSILELITE_BUILD_PARALLEL_LEVEL}
+     -DTENSILELITE_BUILD_TESTING=OFF
+     -DTENSILELITE_ENABLE_CLIENT=$<IF:$<BOOL:${WIN32}>,OFF,${THEROCK_BUILD_TESTING}>
+     -DHIPBLASLT_BUILD_TESTING=${THEROCK_BUILD_TESTING}
+diff --git a/patches/amd-mainline/rocm-libraries/0004-hipblaslt-limit-tensile-validation-jobs.patch b/patches/amd-mainline/rocm-libraries/0004-hipblaslt-limit-tensile-validation-jobs.patch
+new file mode 100644
+index 0000000..08135b3
+--- /dev/null
++++ b/patches/amd-mainline/rocm-libraries/0004-hipblaslt-limit-tensile-validation-jobs.patch
+@@ -0,0 +1,54 @@
++From a60ec004c9a5c00d3d342d22e58c84343e118b47 Mon Sep 17 00:00:00 2001
++From: Mika Laitio <mika.laitio@amd.com>
++Date: Sun, 6 Sep 2026 12:09:25 -0700
++Subject: [PATCH] hipBLASLt limit Tensile
++ validation jobs
++
++- On 32 cpu 32GB memory systems the validation
++  kernel killed joblib workers and Clang
++  processes with SIGKILL.
++- Fix by allowing to pass the max cpu count option
++  to hipBLASLt and then job count to
++  TensileLogic validation.
++
++Tools used:
++- Codex: GPT-5
++
++Signed-off-by: Mika Laitio <mika.laitio@amd.com>
++---
++ projects/hipblaslt/cmake/HipBLASLtCodegen.cmake           | 3 +++
++ projects/hipblaslt/tensilelite/Tensile/Common/Parallel.py | 4 ++--
++ 2 files changed, 5 insertions(+), 2 deletions(-)
++
++diff --git a/projects/hipblaslt/cmake/HipBLASLtCodegen.cmake b/projects/hipblaslt/cmake/HipBLASLtCodegen.cmake
++index d4651bc7..f0ce44b5 100644
++--- a/projects/hipblaslt/cmake/HipBLASLtCodegen.cmake
+++++ b/projects/hipblaslt/cmake/HipBLASLtCodegen.cmake
++@@ -48,2 +48,3 @@ function(hipblaslt_create_device_library)
++     set(_opts_list "--architecture=${_arches_semi}" "--cxx-compiler=${_cdl_CXX_COMPILER}")
+++    set(_logic_opts_list)
++     if(_cdl_OFFLOAD_BUNDLER)
++@@ -56,2 +57,3 @@ function(hipblaslt_create_device_library)
++         list(APPEND _opts_list "--jobs=${_cdl_JOBS}")
+++        list(APPEND _logic_opts_list "--jobs=${_cdl_JOBS}")
++     endif()
++@@ -90,2 +92,3 @@ function(hipblaslt_create_device_library)
++             "${_cdl_LOGIC_PATH}"
+++            ${_logic_opts_list}
++             --known-bugs
++diff --git a/projects/hipblaslt/tensilelite/Tensile/Common/Parallel.py b/projects/hipblaslt/tensilelite/Tensile/Common/Parallel.py
++index 1a2bf9e1..a97b591b 100644
++--- a/projects/hipblaslt/tensilelite/Tensile/Common/Parallel.py
+++++ b/projects/hipblaslt/tensilelite/Tensile/Common/Parallel.py
++@@ -214,7 +214,7 @@ def ParallelMap2(
++     from .GlobalParameters import globalParameters
++-
++-    threadCount = procs if procs else CPUThreadCount(enable)
++-
+++
++     threadCount = CPUThreadCount(enable)
++-
+++    if procs:
+++        threadCount = min(threadCount, procs)
+++
++     if threadCount <= 1 and globalParameters["ShowProgressBar"]:

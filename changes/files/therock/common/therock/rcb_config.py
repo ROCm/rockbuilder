@@ -135,6 +135,10 @@ def main(sanitizer=None, rockbuilder_hash=None, rockbuilder_dirty=None):
         "RCB_SAFE_CPU_JOB_COUNT_COMPILE",
         "",
     )
+    moderate_cpu_count_compile = os.environ.get(
+        "RCB_MODERATE_CPU_JOB_COUNT_COMPILE",
+        "",
+    )
     safe_cpu_count_link = os.environ.get("RCB_SAFE_CPU_JOB_COUNT_LINK", "")
     cmake_cmd = [
         "cmake",
@@ -160,8 +164,14 @@ def main(sanitizer=None, rockbuilder_hash=None, rockbuilder_dirty=None):
     cmake_cmd.append(f"-DTHEROCK_TEST_AMDGPU_TARGETS={amdgpu_targets}")
     print(
         f"safe_cpu_count_compile: {safe_cpu_count_compile} "
+        f"moderate_cpu_count_compile: {moderate_cpu_count_compile} "
         f"safe_cpu_count_link: {safe_cpu_count_link}"
     )
+    if moderate_cpu_count_compile != "":
+        cmake_cmd.append(
+            "-DTENSILELITE_BUILD_PARALLEL_LEVEL="
+            + moderate_cpu_count_compile
+        )
     if safe_cpu_count_compile != "":
         cmake_cmd.append(
             "-DLLVM_PARALLEL_COMPILE_JOBS="
