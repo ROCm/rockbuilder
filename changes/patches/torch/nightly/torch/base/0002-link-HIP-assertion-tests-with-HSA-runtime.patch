@@ -1,4 +1,4 @@
-From d3a75f8dd6d19a1fbc6b2043c17d3d2a07a028a5 Mon Sep 17 00:00:00 2001
+From a2f9b66407a12a7dd3a5e5a2956596ec96d0a863 Mon Sep 17 00:00:00 2001
 From: Mika Laitio <mika.laitio@amd.com>
 Date: Fri, 21 Aug 2026 08:05:17 -0700
 Subject: [PATCH 2/2] propagate HSA runtime through c10 HIP
@@ -34,18 +34,17 @@ Signed-off-by: Mika Laitio <mika.laitio@amd.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/c10/hip/CMakeLists.txt b/c10/hip/CMakeLists.txt
-index 0f86f03ca9a..f5c79a0c988 100644
+index ba99d69ab22..d4f8bad51c8 100644
 --- a/c10/hip/CMakeLists.txt
 +++ b/c10/hip/CMakeLists.txt
-@@ -45,7 +45,7 @@ if(NOT BUILD_LIBTORCHLESS)
-   endif()
- 
-   # ---[ Dependency of c10_hip
+@@ -49,7 +49,7 @@ if(NOT BUILD_LIBTORCHLESS)
+   # (see cmake/public/LoadHIP.cmake) is attached directly to the hip::amdhip64
+   # imported target, so every consumer -- this one included -- inherits it
+   # regardless of how many levels of target_link_libraries separate them.
 -  target_link_libraries(c10_hip PUBLIC ${C10_LIB} hip::host)
 +  target_link_libraries(c10_hip PUBLIC ${C10_LIB} hip::host hsa-runtime64::hsa-runtime64)
  
    target_include_directories(
        c10_hip PUBLIC
 -- 
-2.43.0
-
+2.52.0
