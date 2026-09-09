@@ -42,12 +42,17 @@ New or newly ported kernel paths
      - wvSplitKQ_rdna_
      - wvSplitKQ_partial_
      - wvSplitKQ_reduce_
+     - wvSplitKQ_reduce_8_
+     - wvSplitKQ_reduce_16_
    - GPU support:
      - gfx90a uses packed wave64 FNUZ decoding, caches activation tiles in
        LDS, uses 512-thread blocks for large output-column shapes, and
        provides a branch-free reduction specialization for 16 splits.
-     - gfx1100 uses wave32 OCP decoding and caches activation tiles in LDS.
-     - gfx1200 and gfx1201 use wave32 OCP decoding without LDS caching.
+     - gfx1100 uses packed wave32 OCP FP8x4 decoding and caches activation
+       tiles in LDS.
+     - gfx1200 and gfx1201 use packed wave32 OCP FP8x4 decoding without LDS
+       caching.
+     - Eight- and sixteen-split shapes use branch-free reduction kernels.
      - gfx942 and gfx950 retain the existing native CDNA path.
    - Testing:
      - Use testing/module_custom/wvsplitkq_compare.cu for the interactive or
