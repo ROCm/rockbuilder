@@ -22,11 +22,15 @@ The same source and test shapes run on:
 - `gfx1200`
 - `gfx1201`
 
-This is meaningful because the cases cover both Wave Split-K dispatch paths,
-one-to-four activation rows, output-column tails, and small and large inner
-dimensions. Performance should only be compared between implementations on the
-same GPU. Raw timings from different GPU architectures are not directly
-comparable.
+The shape matrix contains `1x4x16`, `1x7x496`, `1x4096x32768`, `2x60x96`,
+`3x17x6192`, `3x65x1024`, `4x320x16400`, and `4x2048x16384`. The `1x7x496`
+and `3x65x1024` workloads also appear in AITER's Python validation. The two
+large workloads provide longer-running measurements with one and four
+activation rows and different output widths. Together, the cases cover both
+Wave Split-K dispatch paths, one-to-four activation rows, output-column tails,
+and small and large inner dimensions. Performance should only be compared
+between implementations on the same GPU. Raw timings from different GPU
+architectures are not directly comparable.
 
 The application currently tests FP16 output. The AITER kernel also supports
 BF16 output, which can be added as a separate comparison.
@@ -68,22 +72,27 @@ copied approximation.
 make run
 ```
 
-`make run` rebuilds the application before starting it. Run
+`make run` rebuilds the application before starting it. By default, the
+application runs every implementation without prompting. Run
 `./build/wvsplitkq_compare` directly to use an existing build, or `make clean`
 to remove the build directory.
 
-Answer `y` or `n` for:
+Pass `-q` to answer `y` or `n` for:
 
 1. Legacy production AITER `wvSplitKQ`.
 2. Optimized AITER split-K, except on `gfx942`.
 3. HIP FP8 dequantization plus rocBLAS FP16 GEMM.
 4. CPU FP32 reference.
 
+```bash
+./build/wvsplitkq_compare -q
+```
+
 Selecting the CPU reference provides the most useful accuracy summary. When it
 is disabled, the rocBLAS path becomes the accuracy reference if selected.
 
-For non-interactive runs, set `AITER_WVSPLITKQ_COMPARE` to `all`, `legacy`,
-`splitk`, `rocblas`, or `cpu`:
+To select one implementation without prompting, set
+`AITER_WVSPLITKQ_COMPARE` to `all`, `legacy`, `splitk`, `rocblas`, or `cpu`:
 
 ```bash
 AITER_WVSPLITKQ_COMPARE=all ./build/wvsplitkq_compare

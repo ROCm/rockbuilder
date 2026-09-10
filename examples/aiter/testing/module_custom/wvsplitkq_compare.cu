@@ -72,9 +72,13 @@ struct Shape
 
 constexpr Shape kShapes[] = {
     {1, 4, 16},
+    {1, 7, 496},
+    {1, 4096, 32768},
     {2, 60, 96},
     {3, 17, 6192},
+    {3, 65, 1024},
     {4, 320, 16400},
+    {4, 2048, 16384},
 };
 
 struct ErrorMetrics
@@ -760,7 +764,7 @@ bool is_supported_architecture(const std::string& architecture)
     return ret;
 }
 
-int run()
+int run(bool query)
 {
     int device = 0;
     HIP_CHECK(hipGetDevice(&device));
@@ -789,7 +793,7 @@ int run()
     bool run_fallback = false;
     bool run_cpu = false;
     const char* selection_environment = std::getenv("AITER_WVSPLITKQ_COMPARE");
-    if(selection_environment == nullptr)
+    if(query)
     {
         run_legacy = prompt_yes_no("Run legacy AITER wvSplitKQ");
         run_splitk = architecture != "gfx942" &&
@@ -797,6 +801,13 @@ int run()
         run_fallback =
             prompt_yes_no("Run HIP FP8 dequantization plus rocBLAS FP16 GEMM");
         run_cpu = prompt_yes_no("Run CPU FP32 accuracy reference");
+    }
+    else if(selection_environment == nullptr)
+    {
+        run_legacy = true;
+        run_splitk = architecture != "gfx942";
+        run_fallback = true;
+        run_cpu = true;
     }
     else
     {
@@ -872,12 +883,16 @@ int run()
 
 } // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
     int ret = 0;
     try
     {
-        ret = run();
+        if(argc > 2 || (argc == 2 && std::string(argv[1]) != "-q"))
+        {
+            throw std::runtime_error("Usage: wvsplitkq_compare [-q]");
+        }
+        ret = run(argc == 2);
     }
     catch(const std::exception& exception)
     {
