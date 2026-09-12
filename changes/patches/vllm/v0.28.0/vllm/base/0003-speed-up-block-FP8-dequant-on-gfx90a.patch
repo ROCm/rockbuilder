@@ -1,0 +1,263 @@
+From ca7bbdf8025e371ba1af7972efdd303b961bf771 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 11 Sep 2026 23:14:40 -0700
+Subject: [PATCH] Speed up block FP8 dequant on gfx90a
+
+- Decode e4m3fn operands with a bit transform.
+- Preserve NaN behavior and stock fallbacks.
+- Select gfx90a from the input tensor device.
+- Add focused eligibility coverage.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../quantization/test_gfx90a_fast_fp8.py      | 124 ++++++++++++++++++
+ .../layers/quantization/utils/fp8_utils.py    |  72 +++++++++-
+ 2 files changed, 195 insertions(+), 1 deletion(-)
+ create mode 100644 tests/kernels/quantization/test_gfx90a_fast_fp8.py
+
+diff --git a/tests/kernels/quantization/test_gfx90a_fast_fp8.py b/tests/kernels/quantization/test_gfx90a_fast_fp8.py
+new file mode 100644
+index 000000000..f891f4855
+--- /dev/null
++++ b/tests/kernels/quantization/test_gfx90a_fast_fp8.py
+@@ -0,0 +1,124 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++from unittest.mock import Mock, patch
++
++import pytest
++import torch
++
++from vllm.model_executor.layers.quantization.utils.fp8_utils import (
++    _gfx90a_fast_fp8_eligible,
++)
++
++
++def _tensor(dtype: torch.dtype) -> Mock:
++    return Mock(dtype=dtype, device=torch.device("cuda:0"), is_cuda=True)
++
++
++def test_fast_fp8_eligible_on_gfx90a() -> None:
++    with (
++        patch(
++            "vllm.model_executor.layers.quantization.utils.fp8_utils."
++            "current_platform.is_rocm",
++            return_value=True,
++        ),
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName="gfx90a:sramecc+:xnack-"),
++        ),
++    ):
++        assert _gfx90a_fast_fp8_eligible(
++            _tensor(torch.float8_e4m3fn),
++            _tensor(torch.float8_e4m3fn),
++            _tensor(torch.float32),
++            _tensor(torch.float32),
++            [128, 128],
++        )
++
++
++@pytest.mark.parametrize(
++    ("a_dtype", "b_dtype", "as_dtype", "bs_dtype", "block_size"),
++    [
++        (
++            torch.float8_e4m3fnuz,
++            torch.float8_e4m3fn,
++            torch.float32,
++            torch.float32,
++            [128, 128],
++        ),
++        (
++            torch.float8_e4m3fn,
++            torch.float8_e4m3fnuz,
++            torch.float32,
++            torch.float32,
++            [128, 128],
++        ),
++        (
++            torch.float8_e4m3fn,
++            torch.float8_e4m3fn,
++            torch.float16,
++            torch.float32,
++            [128, 128],
++        ),
++        (
++            torch.float8_e4m3fn,
++            torch.float8_e4m3fn,
++            torch.float32,
++            torch.float16,
++            [128, 128],
++        ),
++        (
++            torch.float8_e4m3fn,
++            torch.float8_e4m3fn,
++            torch.float32,
++            torch.float32,
++            [64, 128],
++        ),
++    ],
++)
++def test_fast_fp8_rejects_unsupported_inputs(
++    a_dtype: torch.dtype,
++    b_dtype: torch.dtype,
++    as_dtype: torch.dtype,
++    bs_dtype: torch.dtype,
++    block_size: list[int],
++) -> None:
++    with (
++        patch(
++            "vllm.model_executor.layers.quantization.utils.fp8_utils."
++            "current_platform.is_rocm",
++            return_value=True,
++        ),
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName="gfx90a"),
++        ),
++    ):
++        assert not _gfx90a_fast_fp8_eligible(
++            _tensor(a_dtype),
++            _tensor(b_dtype),
++            _tensor(as_dtype),
++            _tensor(bs_dtype),
++            block_size,
++        )
++
++
++def test_fast_fp8_rejects_non_gfx90a() -> None:
++    with (
++        patch(
++            "vllm.model_executor.layers.quantization.utils.fp8_utils."
++            "current_platform.is_rocm",
++            return_value=True,
++        ),
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName="gfx1100"),
++        ),
++    ):
++        assert not _gfx90a_fast_fp8_eligible(
++            _tensor(torch.float8_e4m3fn),
++            _tensor(torch.float8_e4m3fn),
++            _tensor(torch.float32),
++            _tensor(torch.float32),
++            [128, 128],
++        )
+diff --git a/vllm/model_executor/layers/quantization/utils/fp8_utils.py b/vllm/model_executor/layers/quantization/utils/fp8_utils.py
+index 7910db192..ee6c78dba 100644
+--- a/vllm/model_executor/layers/quantization/utils/fp8_utils.py
++++ b/vllm/model_executor/layers/quantization/utils/fp8_utils.py
+@@ -733,6 +733,42 @@ def per_token_group_quant_fp8_packed_for_deepgemm(
+     return x_q, x_s_packed
+
+
++@triton.jit
++def _gfx90a_fast_fp8_to_f16(value):
++    """Decode e4m3fn to fp16 scaled by exactly 2^-8."""
++    value_u16 = value.to(tl.uint16)
++    value_f16_bits = ((value_u16 & 0x80) << 8) | ((value_u16 & 0x7F) << 7)
++    nan_bits = ((value_u16 & 0x80) << 8) | 0x7E00
++    value_f16_bits = tl.where((value_u16 & 0x7F) == 0x7F, nan_bits, value_f16_bits)
++    return value_f16_bits.to(tl.float16, bitcast=True)
++
++
++def _gfx90a_fast_fp8_eligible(
++    A: torch.Tensor,
++    B: torch.Tensor,
++    As: torch.Tensor,
++    Bs: torch.Tensor,
++    block_size: list[int],
++) -> bool:
++    """Return whether the gfx90a-specific e4m3fn decoder is safe to use."""
++    if not current_platform.is_rocm() or not A.is_cuda:
++        return False
++
++    if not (A.device == B.device == As.device == Bs.device):
++        return False
++
++    device_arch = torch.cuda.get_device_properties(A.device).gcnArchName.split(":", 1)[0]
++
++    return (
++        device_arch == "gfx90a"
++        and A.dtype == torch.float8_e4m3fn
++        and B.dtype == torch.float8_e4m3fn
++        and As.dtype == torch.float32
++        and Bs.dtype == torch.float32
++        and list(block_size) == [128, 128]
++    )
++
++
+ @triton.jit
+ def _w8a8_triton_block_scaled_mm(
+     # Pointers to inputs and output
+@@ -764,6 +800,7 @@ def _w8a8_triton_block_scaled_mm(
+     BLOCK_SIZE_N: tl.constexpr,
+     BLOCK_SIZE_K: tl.constexpr,
+     GROUP_SIZE_M: tl.constexpr,
++    FAST_FP8_DECODE: tl.constexpr = False,
+ ):
+     """Triton-accelerated function used to perform linear operations (dot
+     product) on input tensors `A` and `B` with block-wise quantization, and
+@@ -794,6 +831,9 @@ def _w8a8_triton_block_scaled_mm(
+     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+         a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+         b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)
++        if FAST_FP8_DECODE:
++            a = _gfx90a_fast_fp8_to_f16(a)
++            b = _gfx90a_fast_fp8_to_f16(b)
+
+         k_start = k * BLOCK_SIZE_K
+         offs_ks = k_start // group_k
+@@ -804,7 +844,10 @@ def _w8a8_triton_block_scaled_mm(
+         a_ptrs += BLOCK_SIZE_K * stride_ak
+         b_ptrs += BLOCK_SIZE_K * stride_bk
+
+-    if C.dtype.element_ty == tl.bfloat16:
++    if FAST_FP8_DECODE:
++        # Both inputs are scaled by 2^-8 during decoding.
++        c = (accumulator * 65536.0).to(C.dtype.element_ty)
++    elif C.dtype.element_ty == tl.bfloat16:
+         c = accumulator.to(tl.bfloat16)
+     elif C.dtype.element_ty == tl.float16:
+         c = accumulator.to(tl.float16)
+@@ -957,6 +1000,33 @@ def w8a8_triton_block_scaled_mm(
+             triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
+         )
+
++    if _gfx90a_fast_fp8_eligible(A, B, As, Bs, block_size):
++        _w8a8_triton_block_scaled_mm[grid](
++            A.view(torch.uint8),
++            B.view(torch.uint8),
++            C,
++            As,
++            Bs,
++            M,
++            N,
++            K,
++            block_n,
++            block_k,
++            A.stride(-2),
++            A.stride(-1),
++            B.stride(1),
++            B.stride(0),
++            C.stride(-2),
++            C.stride(-1),
++            As.stride(-2),
++            As.stride(-1),
++            Bs.stride(1),
++            Bs.stride(0),
++            FAST_FP8_DECODE=True,
++            **config,
++        )
++        return C
++
+     _w8a8_triton_block_scaled_mm[grid](
+         A,
+         B,
+--
+2.43.0
