@@ -1,0 +1,158 @@
+AITER kernel changes and alternatives
+=====================================
+
+The RockBuilder AITER patch series changes four runtime kernel families.
+Some changes add architecture-specific implementations, while others port
+existing kernels to GPUs that previously could not compile or execute them.
+
+New or newly ported kernel paths
+-------------------------------
+
+1. Quick All-Reduce FP8 Support (module_quick_all_reduce)
+
+   - Module:
+     - module_quick_all_reduce
+   - Kernels:
+     - allreduce_prototype_twoshot
+     - allreduce_rmsnorm_prototype_twoshot
+   - GPU support:
+     - gfx90a uses the HIP E4M3-FNUZ conversion path.
+     - gfx1100 uses software E4M3-FNUZ conversion.
+     - gfx1201 retains native packed FP8 conversion.
+     - Existing native conversion paths remain available on supported newer GPUs.
+   - Testing:
+     - Use op_tests/validation/validate_quick_reduce_fp8_conversion.cu for
+       standalone HIP conversion accuracy.
+     - Use op_tests/validation/validate_quick_reduce_fp8_multigpu.py for
+       multi-GPU PyTorch accuracy.
+     - Compare the result against torch.distributed.all_reduce.
+     - Compare speed against generic custom, symmetric-memory, and RCCL
+       all-reduce paths with HIP event timing.
+     - Standard vLLM does not select Quick Reduce on gfx1100 or gfx1201 because
+       its high-level policy currently restricts Quick Reduce to MI300 systems.
+
+2. Wave Split-K FP8 GEMM Support (module_custom)
+
+   - Module:
+     - module_custom
+   - Operation and kernels:
+     - wvSplitKQ
+     - wvSplitKQ_hf_
+     - wvSplitKQ_hf_sml_
+     - wvSplitKQ_rdna_
+     - wvSplitKQ_partial_
+     - wvSplitKQ_reduce_
+     - wvSplitKQ_reduce_8_
+     - wvSplitKQ_reduce_16_
+   - GPU support:
+     - gfx90a uses packed wave64 FNUZ decoding, caches activation tiles in
+       LDS, uses 512-thread blocks for large output-column shapes, and
+       provides a branch-free reduction specialization for 16 splits.
+     - gfx1100 uses packed wave32 OCP FP8x4 decoding and caches activation
+       tiles in LDS.
+     - gfx1200 and gfx1201 use packed wave32 OCP FP8x4 decoding without LDS
+       caching.
+     - Eight- and sixteen-split shapes use branch-free reduction kernels.
+     - gfx942 and gfx950 retain the existing native CDNA path.
+   - Testing:
+     - Use testing/module_custom/wvsplitkq_compare.cu for the interactive or
+       environment-selected legacy, split-K, rocBLAS, and CPU comparison.
+     - Use op_tests/validation/validate_gfx90a_wv_split_kq.py on gfx90a.
+     - Use op_tests/validation/validate_rdna_wv_split_kq.py on gfx1100,
+       gfx1200, or gfx1201.
+     - Compare accuracy against dequantized FP32 PyTorch matrix multiplication.
+     - Add HIP event timing and compare performance against matching CK and
+       Triton FP8 GEMM configurations.
+
+3. Fused QK RMSNorm Quantization Support (module_fused_qk_rmsnorm_group_quant)
+
+   - Module:
+     - module_fused_qk_rmsnorm_group_quant
+   - Kernel:
+     - fused_qk_rmsnorm_group_quant_kernel
+   - Public operations:
+     - fused_qk_rmsnorm_group_quant
+     - fused_qk_rmsnorm_per_token_quant
+   - GPU support:
+     - gfx90a uses the existing CDNA arithmetic and HIP FP8 conversion.
+     - gfx1100 uses scalar FP32 multiplication and software FP8 conversion.
+     - gfx1201 uses scalar FP32 multiplication and native FP8 conversion.
+     - The module remains available across configured CDNA and RDNA targets.
+   - Testing:
+     - Use op_tests/test_fused_qk_rmsnorm_group_quant.py for accuracy and
+       performance testing.
+     - Compare accuracy against PyTorch RMSNorm followed by explicit
+       quantization.
+     - Compare speed against separate AITER operations and
+       Triton fused_mxfp8_quant where the output formats match.
+
+4. Plain TopK Wave32 Support (module_topk_plain)
+
+   - Module:
+     - module_topk_plain
+   - Kernels:
+     - topk_sort_kernel
+     - topk_filter_kernel
+     - topk_merge_kernel
+   - GPU support:
+     - gfx90a, gfx94x, and gfx950 use the existing wave64 path.
+     - gfx11xx, including gfx1100, use the new wave32 sort and merge path.
+     - gfx12xx and gfx1250, including gfx1201, use the new wave32 path.
+   - Testing:
+     - Use op_tests/test_topk_plain.py for combined accuracy and performance
+       testing.
+     - The test already compares AITER against torch.topk and Triton and
+       reports timing and speedups.
+     - Compare values and index sets for accuracy, with special handling for
+       tied values.
+
+Alternative implementations
+---------------------------
+
+The alternatives below provide comparable functionality, but they are not
+always drop-in replacements. Layout requirements, fusion, communication
+protocols, quantization formats, and performance can differ.
+
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+| Added GPUs     | Module             | Kernel               | AITER alt    |MIOpen| CK        | Other       |
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+| gfx90a         | module_quick_all_  | allreduce_prototype_ | Generic      | None | None      | PyNCCL/RCCL |
+| gfx1100        | reduce             | twoshot              | custom AR;   |      |           |             |
+|                |                    |                      | symmetric-   |      |           | torch.      |
+|                |                    | allreduce_rmsnorm_   | memory AR    |      |           | distributed |
+|                |                    | prototype_twoshot    |              |      |           |             |
+|                |                    |                      |              |      |           | Triton      |
+|                |                    |                      |              |      |           | RMSNorm     |
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+| gfx90a         | module_custom      | wvSplitKQ            | Generic      | None | Generic   | Generic     |
+| gfx1100        |                    |                      | AITER FP8    |      | FP8 GEMM  | Triton FP8  |
+| gfx1200        |                    | wvSplitKQ_hf_        | GEMM routes  |      |           | GEMM        |
+| gfx1201        |                    | wvSplitKQ_hf_sml_    |              |      |           |             |
+|                |                    | wvSplitKQ_rdna_      |              |      |           | No automatic|
+|                |                    |                      |              |      |           | fallback    |
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+| gfx1100        | module_fused_qk_   | fused_qk_rmsnorm_   | Separate     | None | Comparable| Triton      |
+| gfx1200        | rmsnorm_group_     | group_quant_kernel  | RMSNorm and  |      | composed  | fused_      |
+| gfx1201        | quant              |                      | quantization |      | operations| mxfp8_quant |
+|                |                    | fused_qk_rmsnorm_    | operations   |      |           |             |
+|                |                    | per_token_quant     |              |      | Not direct| Separate    |
+|                |                    |                      |              |      |           | Triton ops  |
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+| gfx11xx        | module_topk_plain  | topk_sort_kernel    | top_k_per_   | None | No        | torch.topk  |
+| gfx12xx        |                    | topk_filter_kernel  | row_prefill  |      | selected  |             |
+| gfx1250        |                    | topk_merge_kernel   |              |      | fallback  | Triton      |
+|                |                    |                      |              |      |           | possible    |
++----------------+--------------------+----------------------+--------------+------+-----------+-------------+
+
+MIOpen is not involved in these implementations or their fallback selection.
+These operations concern collective communication, specialized inference GEMM,
+quantization, and selection rather than MIOpen's neural-network operator set.
+
+Related filter-only changes
+---------------------------
+
+- module_chunk_gdr_fwd_h keeps its HIP implementation on gfx90a, gfx94x,
+  gfx950, gfx1200, and gfx1201. gfx1100 is routed to its Triton fallback.
+- The A8W8, DeepGEMM, Opus MoE, MXFP4, VSA, CK2, and gfx1250 all-reduce
+  patches filter unsupported modules or select existing fallbacks. They do
+  not add new kernel families.

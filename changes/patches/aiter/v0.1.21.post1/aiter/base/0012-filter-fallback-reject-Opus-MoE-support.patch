@@ -1,0 +1,54 @@
+From 0ad7a20399b2a558112c53f855d8984b20029c7f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 01:02:35 -0700
+Subject: [PATCH 12/22] Opus MoE support
+
+- Build Opus MoE kernels only for gfx950
+- Let fused MoE discard unsupported Opus configs
+- Reject direct Opus JIT on unsupported GPUs
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json  |  3 +++
+ op_tests/test_jit_module_archs.py | 12 ++++++++++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index ed951118..88accd02 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -615,6 +615,9 @@
+         "blob_gen_cmd": "''"
+     },
+     "module_moe_opus": {
++        "supported_gpu_archs": [
++            "gfx950"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/opus_moe_pybind.cu'",
+             "f'{AITER_CSRC_DIR}/opus_moe/opus_moe.cu'"
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index a0162c74..02be0041 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -101,3 +101,15 @@ def test_deepgemm_rejects_gfx1100(monkeypatch):
+         match=r"module_deepgemm.*gfx1100",
+     ):
+         core.get_args_of_build("module_deepgemm")
++
++
++def test_opus_moe_keeps_only_gfx950(monkeypatch):
++    monkeypatch.setattr(
++        core,
++        "get_gfx_list",
++        lambda: ["gfx1100", "gfx950", "gfx90a"],
++    )
++
++    args = core.get_args_of_build("module_moe_opus")
++
++    assert args["gpu_archs"] == ["gfx950"]
+--
+2.43.0

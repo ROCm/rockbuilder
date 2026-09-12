@@ -1,0 +1,162 @@
+From d9ac9fa351fd73af8080c0ce20ba217c01c2aa0a Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 11 Sep 2026 10:29:07 -0700
+Subject: [PATCH] Enable AITER INT8 linear on gfx90a
+
+- Register only the AITER W8A8 custom op on
+  CDNA2.
+- Keep broader AITER FP8 linear paths gated.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py   | 70 +++++++++++++++++++
+ vllm/_aiter_ops.py                            | 26 +++++++
+ .../kernels/linear/scaled_mm/aiter.py         |  2 +-
+ 3 files changed, 97 insertions(+), 1 deletion(-)
+ create mode 100644 tests/rocm/aiter/test_gfx90a_int8_linear.py
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+new file mode 100644
+index 000000000..a1dee87b0
+--- /dev/null
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -0,0 +1,70 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++from unittest.mock import patch
++
++import pytest
++
++
++@pytest.mark.parametrize(
++    ("cdna_version", "expected"),
++    [(2, True), (3, False), (4, False)],
++)
++def test_aiter_cdna2_support(cdna_version: int, expected: bool) -> None:
++    from vllm._aiter_ops import is_aiter_found_and_supported_on_cdna2
++
++    with (
++        patch("vllm._aiter_ops.IS_AITER_FOUND", True),
++        patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
++        patch("vllm.platforms.rocm.get_cdna_version", return_value=cdna_version),
++    ):
++        assert is_aiter_found_and_supported_on_cdna2() is expected
++
++
++def test_cdna2_enables_only_int8_linear_gate() -> None:
++    from vllm._aiter_ops import rocm_aiter_ops
++
++    with (
++        patch("vllm._aiter_ops.is_aiter_found_and_supported", return_value=False),
++        patch(
++            "vllm._aiter_ops.is_aiter_found_and_supported_on_cdna2",
++            return_value=True,
++        ),
++        patch.object(rocm_aiter_ops, "_AITER_ENABLED", True),
++        patch.object(rocm_aiter_ops, "_LINEAR_ENABLED", True),
++    ):
++        assert rocm_aiter_ops.is_int8_linear_enabled() is True
++        assert rocm_aiter_ops.is_linear_enabled() is None
++        assert rocm_aiter_ops.is_linear_fp8_enabled() is None
++
++
++def test_cdna2_registers_only_w8a8_gemm() -> None:
++    import vllm._aiter_ops as aiter_ops
++    from vllm._aiter_ops import rocm_aiter_ops
++
++    original_registered = aiter_ops._OPS_REGISTERED
++    aiter_ops._OPS_REGISTERED = False
++    try:
++        with (
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported",
++                return_value=False,
++            ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_rdna4",
++                return_value=False,
++            ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_cdna2",
++                return_value=True,
++            ),
++            patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
++            patch("vllm._aiter_ops.direct_register_custom_op") as register,
++        ):
++            rocm_aiter_ops.register_ops_once()
++
++        register.assert_called_once()
++        assert register.call_args.kwargs["op_name"] == "rocm_aiter_w8a8_gemm"
++        assert aiter_ops._OPS_REGISTERED is True
++    finally:
++        aiter_ops._OPS_REGISTERED = original_registered
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 2721dec0b..b1eae0835 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -154,6 +154,15 @@ def is_aiter_found_and_supported() -> bool:
+     return False
+
+
++def is_aiter_found_and_supported_on_cdna2() -> bool:
++    """Check whether AITER's gfx90a-compatible kernels can be used."""
++    if current_platform.is_rocm() and IS_AITER_FOUND:
++        from vllm.platforms.rocm import get_cdna_version
++
++        return get_cdna_version() == 2
++    return False
++
++
+ def is_aiter_found_and_supported_on_rdna4() -> bool:
+     """RDNA4 (gfx12) analog of `is_aiter_found_and_supported()`.
+
+@@ -1822,6 +1831,13 @@ class rocm_aiter_ops:
+     def is_linear_enabled(cls) -> bool:
+         return cls._AITER_ENABLED and cls._LINEAR_ENABLED
+
++    @classmethod
++    def is_int8_linear_enabled(cls) -> bool:
++        return (
++            is_aiter_found_and_supported()
++            or is_aiter_found_and_supported_on_cdna2()
++        ) and cls._AITER_ENABLED and cls._LINEAR_ENABLED
++
+     @classmethod
+     @if_aiter_supported
+     def is_linear_fp8_enabled(cls) -> bool:
+@@ -2033,6 +2049,16 @@ class rocm_aiter_ops:
+             if not current_platform.is_rocm():
+                 return
+
++            if is_aiter_found_and_supported_on_cdna2():
++                if not _OPS_REGISTERED:
++                    direct_register_custom_op(
++                        op_name="rocm_aiter_w8a8_gemm",
++                        op_func=_rocm_aiter_w8a8_gemm_impl,
++                        fake_impl=_rocm_aiter_w8a8_gemm_fake,
++                    )
++                    _OPS_REGISTERED = True
++                return
++
+             from vllm.platforms.rocm import on_gfx11
+
+             if on_gfx11() and not _OPS_REGISTERED:
+diff --git a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+index b1518f21c..438bc5097 100644
+--- a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
++++ b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+@@ -48,7 +48,7 @@ class AiterInt8ScaledMMLinearKernel(CutlassInt8ScaledMMLinearKernel):
+         except Exception:
+             return False, "requires `aiter` to be installed."
+
+-        if not rocm_aiter_ops.is_linear_enabled():
++        if not rocm_aiter_ops.is_int8_linear_enabled():
+             return (
+                 False,
+                 "requires setting `VLLM_ROCM_USE_AITER=1` "
+--
+2.43.0

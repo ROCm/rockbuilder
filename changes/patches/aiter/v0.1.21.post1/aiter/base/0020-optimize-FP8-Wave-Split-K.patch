@@ -1,0 +1,898 @@
+From 5d14f4d33a667ea0bb8c5f946056f38e89b1e5e4 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 8 Sep 2026 17:53:19 -0700
+Subject: [PATCH 20/22] Optimize FP8 Wave Split-K
+
+- Add N-specialized two-stage FP8 kernels
+- Select splits per shape and architecture
+- Use packed gfx90a FP8 conversion
+- Reuse LDS data across wider gfx90a blocks
+- Specialize the 16-split reduction path
+- Preserve legacy and graph-safe workspace use
+- Extend CDNA and RDNA validation coverage
+
+Tools used:
+- Cursor: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/ops/custom.py                           |  88 +++++-
+ csrc/include/custom.h                         |   9 +
+ csrc/include/rocm_ops.hpp                     |  12 +-
+ csrc/kernels/custom_kernels.cu                | 296 ++++++++++++++++++
+ csrc/py_itfs_cu/custom.cu                     |  88 ++++++
+ .../validation/validate_gfx90a_wv_split_kq.py |  97 +++++-
+ .../validation/validate_rdna_wv_split_kq.py   |  96 +++++-
+ 7 files changed, 669 insertions(+), 17 deletions(-)
+
+diff --git a/aiter/ops/custom.py b/aiter/ops/custom.py
+index 93096f42..9beef8de 100644
+--- a/aiter/ops/custom.py
++++ b/aiter/ops/custom.py
+@@ -1,6 +1,9 @@
+ # SPDX-License-Identifier: MIT
+-# Copyright (C) 2024-2025, Advanced Micro Devices, Inc. All rights reserved.
++# Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+
++import os
++
++import torch
+ from torch import Tensor
+
+ from ..jit.core import compile_ops
+@@ -24,12 +27,91 @@ def wv_splitk_small_fp16_bf16(
+ def LLMM1(in_a: Tensor, in_b: Tensor, out_c: Tensor, rows_per_block: int) -> None: ...
+
+
+-@compile_ops("module_custom", develop=True)
+-def wvSplitKQ(
++@compile_ops("module_custom", fc_name="wvSplitKQ", develop=True)
++def _wvSplitKQLegacy(
++    in_a: Tensor,
++    in_b: Tensor,
++    out_c: Tensor,
++    scale_a: Tensor,
++    scale_b: Tensor,
++    CuCount: int,
++) -> None: ...
++
++
++@compile_ops("module_custom", fc_name="wvSplitKQSplitK", develop=True)
++def _wvSplitKQSplitK(
+     in_a: Tensor,
+     in_b: Tensor,
+     out_c: Tensor,
+     scale_a: Tensor,
+     scale_b: Tensor,
++    workspace: Tensor,
+     CuCount: int,
++    split_count: int,
+ ) -> None: ...
++
++
++def wvSplitKQ(
++    in_a: Tensor,
++    in_b: Tensor,
++    out_c: Tensor,
++    scale_a: Tensor,
++    scale_b: Tensor,
++    CuCount: int,
++    workspace: Tensor | None = None,
++    implementation: str | None = None,
++    split_count: int = 0,
++) -> None:
++    """Run the FP8 Wave Split-K kernel.
++
++    ``implementation`` accepts ``"auto"``, ``"legacy"``, or ``"splitk"``.
++    ``AITER_WVSPLITKQ_IMPL`` provides the process-wide default. Callers that
++    capture graphs can provide a reusable float32 ``workspace``.
++    """
++    mode = (implementation or os.getenv("AITER_WVSPLITKQ_IMPL", "auto")).lower()
++    if mode not in {"auto", "legacy", "splitk"}:
++        raise ValueError(
++            "implementation must be 'auto', 'legacy', or 'splitk', "
++            f"but received {mode!r}"
++        )
++    if split_count not in {0, 1, 2, 4, 8, 16}:
++        raise ValueError(
++            "split_count must be one of 0, 1, 2, 4, 8, or 16, "
++            f"but received {split_count}"
++        )
++
++    properties = torch.cuda.get_device_properties(in_a.device)
++    architecture = properties.gcnArchName.split(":", maxsplit=1)[0]
++    splitk_architectures = {"gfx90a", "gfx1100", "gfx1200", "gfx1201"}
++    problem_size = in_b.size(0) * in_a.size(0) * in_a.size(1)
++    auto_splitk = (
++        architecture in splitk_architectures
++        and 1 <= in_b.size(0) <= 4
++        and (architecture == "gfx90a" or problem_size >= 8192)
++        and in_a.size(0) <= 512
++    )
++    use_splitk = mode == "splitk" or (mode == "auto" and auto_splitk)
++
++    if use_splitk:
++        if architecture not in splitk_architectures:
++            raise RuntimeError(
++                f"Wave Split-K is unsupported on architecture {architecture}"
++            )
++        if workspace is None:
++            workspace = torch.empty(
++                (16, in_b.size(0), in_a.size(0)),
++                dtype=torch.float32,
++                device=in_a.device,
++            )
++        _wvSplitKQSplitK(
++            in_a,
++            in_b,
++            out_c,
++            scale_a,
++            scale_b,
++            workspace,
++            CuCount,
++            split_count,
++        )
++    else:
++        _wvSplitKQLegacy(in_a, in_b, out_c, scale_a, scale_b, CuCount)
+diff --git a/csrc/include/custom.h b/csrc/include/custom.h
+index ac72c76a..5f262182 100644
+--- a/csrc/include/custom.h
++++ b/csrc/include/custom.h
+@@ -25,4 +25,13 @@ void wvSplitKQ(aiter_tensor_t& in_a,
+                aiter_tensor_t& scale_a,
+                aiter_tensor_t& scale_b,
+                const int64_t CuCount);
++
++void wvSplitKQSplitK(aiter_tensor_t& in_a,
++                     aiter_tensor_t& in_b,
++                     aiter_tensor_t& out_c,
++                     aiter_tensor_t& scale_a,
++                     aiter_tensor_t& scale_b,
++                     aiter_tensor_t& workspace,
++                     const int64_t CuCount,
++                     const int64_t split_count);
+ } // namespace aiter
+diff --git a/csrc/include/rocm_ops.hpp b/csrc/include/rocm_ops.hpp
+index 6148a244..149d03f7 100644
+--- a/csrc/include/rocm_ops.hpp
++++ b/csrc/include/rocm_ops.hpp
+@@ -723,7 +723,17 @@ namespace py = pybind11;
+     m.def("wvSplitKQ",                                                                          \
+           &aiter::wvSplitKQ,                                                                    \
+           "wvSplitKQ(Tensor in_a, Tensor in_b, Tensor! out_c, Tensor scale_a, Tensor scale_b, " \
+-          "int CuCount) -> ()");
++          "int CuCount) -> ()");                                                                \
++    m.def("wvSplitKQSplitK",                                                                    \
++          &aiter::wvSplitKQSplitK,                                                              \
++          py::arg("in_a"),                                                                      \
++          py::arg("in_b"),                                                                      \
++          py::arg("out_c"),                                                                     \
++          py::arg("scale_a"),                                                                   \
++          py::arg("scale_b"),                                                                   \
++          py::arg("workspace"),                                                                 \
++          py::arg("CuCount"),                                                                   \
++          py::arg("split_count") = 0);
+
+ #define GEMM_A16W16_ASM_PYBIND                   \
+     m.def("gemm_a16w16_asm",                     \
+diff --git a/csrc/kernels/custom_kernels.cu b/csrc/kernels/custom_kernels.cu
+index 697765ab..34e3ee18 100644
+--- a/csrc/kernels/custom_kernels.cu
++++ b/csrc/kernels/custom_kernels.cu
+@@ -1796,6 +1796,15 @@ __device__ __forceinline__ fp16x4 wv_split_kq_unpack_fp8x4(uint32_t packed)
+     };
+     return ret;
+ }
++
++__device__ __forceinline__ float2 wv_split_kq_unpack_fp8x2(uint16_t packed)
++{
++    __hip_fp8x2_e4m3_fnuz value;
++    value.__x = static_cast<__hip_fp8x2_storage_t>(packed);
++    float2 ret = static_cast<float2>(value);
++    return ret;
++}
++
+ #endif
+
+ template <typename Accumulator>
+@@ -2345,6 +2354,293 @@ __global__ void __launch_bounds__(32) wvSplitKQ_rdna_(const int K,
+ #endif
+ }
+
++constexpr int WVSPLITKQ_MAX_SPLITS = 16;
++
++int wvSplitKQGetSplitCount(
++    const int M, const int K, const int N, const int CuCount, const int warp_size)
++{
++    int ret = 1;
++    if(M > 0 && K >= 512 && N >= 1 && N <= 4 && CuCount > 0)
++    {
++        const bool large_gfx90a = warp_size == 64 && M >= 128 && K >= 8192;
++        const int waves_per_cu = large_gfx90a ? 32 : (N <= 2 ? 8 : 4);
++        const int target_waves = CuCount * waves_per_cu;
++        const int needed       = (target_waves + M - 1) / M;
++        const int k_limit      = std::max(1, K / 256);
++        while(ret < needed && ret < WVSPLITKQ_MAX_SPLITS && ret * 2 <= k_limit)
++        {
++            ret *= 2;
++        }
++    }
++    return ret;
++}
++
++template <typename fp8_t, int N, int WAVE_SIZE, int BLOCK_SIZE>
++__global__ void __launch_bounds__(BLOCK_SIZE) wvSplitKQ_partial_(const int K,
++                                                                const int Kp,
++                                                                const int M,
++                                                                const fp8_t* B,
++                                                                const fp8_t* __restrict__ A,
++                                                                float* workspace,
++                                                                const int split_count)
++{
++#if defined(__gfx90a__) || defined(AITER_WVSPLITKQ_RDNA_WAVE32)
++#if defined(__gfx90a__)
++    using input_t = __hip_fp8_e4m3_fnuz;
++#else
++    using input_t = rocwmma::float8_t;
++#endif
++    const int waves_per_block = blockDim.x / WAVE_SIZE;
++    const int lane            = threadIdx.x % WAVE_SIZE;
++    const int wave            = threadIdx.x / WAVE_SIZE;
++    const int column          = blockIdx.x * waves_per_block + wave;
++    const int split           = blockIdx.y;
++    const auto* weights       = reinterpret_cast<const input_t*>(B);
++    const auto* activations   = reinterpret_cast<const input_t*>(A);
++
++    const int unaligned_chunk = (K + split_count - 1) / split_count;
++    const int chunk           = (unaligned_chunk + 15) & ~15;
++    const int k_begin         = split * chunk;
++    const int k_end           = min(K, k_begin + chunk);
++    float sums[N]             = {};
++
++#if defined(__gfx1200__) || defined(__gfx1201__)
++    if(column < M)
++    {
++        for(int k = k_begin + lane; k < k_end; k += WAVE_SIZE)
++        {
++            const float weight = static_cast<float>(weights[column * Kp + k]);
++#pragma unroll
++            for(int row = 0; row < N; ++row)
++            {
++                sums[row] =
++                    fmaf(static_cast<float>(activations[row * K + k]), weight, sums[row]);
++            }
++        }
++    }
++#else
++    constexpr int k_tile = 256;
++    __shared__ float activation_tile[N * k_tile];
++    for(int tile_begin = k_begin; tile_begin < k_end; tile_begin += k_tile)
++    {
++        const int tile_size = min(k_tile, k_end - tile_begin);
++#if defined(__gfx90a__)
++        constexpr int pairs_per_tile = k_tile / 2;
++        for(int pair_index = threadIdx.x; pair_index < N * pairs_per_tile;
++            pair_index += blockDim.x)
++        {
++            const int row         = pair_index / pairs_per_tile;
++            const int pair_offset = (pair_index % pairs_per_tile) * 2;
++            if(pair_offset < tile_size)
++            {
++                const auto* packed = reinterpret_cast<const uint16_t*>(
++                    &A[row * K + tile_begin + pair_offset]);
++                const float2 values = wv_split_kq_unpack_fp8x2(*packed);
++                activation_tile[row * k_tile + pair_offset]     = values.x;
++                activation_tile[row * k_tile + pair_offset + 1] = values.y;
++            }
++        }
++#else
++        for(int index = threadIdx.x; index < N * k_tile; index += blockDim.x)
++        {
++            const int row    = index / k_tile;
++            const int offset = index % k_tile;
++            if(offset < tile_size)
++            {
++                activation_tile[index] =
++                    static_cast<float>(activations[row * K + tile_begin + offset]);
++            }
++        }
++#endif
++        __syncthreads();
++
++        if(column < M)
++        {
++#if defined(__gfx90a__)
++            for(int offset = lane * 2; offset < tile_size; offset += WAVE_SIZE * 2)
++            {
++                const auto* packed = reinterpret_cast<const uint16_t*>(
++                    &B[column * Kp + tile_begin + offset]);
++                const float2 weights_pair = wv_split_kq_unpack_fp8x2(*packed);
++#pragma unroll
++                for(int row = 0; row < N; ++row)
++                {
++                    sums[row] =
++                        fmaf(activation_tile[row * k_tile + offset], weights_pair.x, sums[row]);
++                    sums[row] = fmaf(
++                        activation_tile[row * k_tile + offset + 1], weights_pair.y, sums[row]);
++                }
++            }
++#else
++            for(int offset = lane; offset < tile_size; offset += WAVE_SIZE)
++            {
++                const float weight =
++                    static_cast<float>(weights[column * Kp + tile_begin + offset]);
++#pragma unroll
++                for(int row = 0; row < N; ++row)
++                {
++                    sums[row] =
++                        fmaf(activation_tile[row * k_tile + offset], weight, sums[row]);
++                }
++            }
++#endif
++        }
++        __syncthreads();
++    }
++#endif
++
++    if(column < M)
++    {
++#pragma unroll
++        for(int offset = WAVE_SIZE / 2; offset > 0; offset /= 2)
++        {
++#pragma unroll
++            for(int row = 0; row < N; ++row)
++            {
++                sums[row] += __shfl_down(sums[row], offset, WAVE_SIZE);
++            }
++        }
++
++        if(lane == 0)
++        {
++#pragma unroll
++            for(int row = 0; row < N; ++row)
++            {
++                workspace[split * N * M + row * M + column] = sums[row];
++            }
++        }
++    }
++#else
++    UNREACHABLE_CODE
++#endif
++}
++
++template <typename scalar_t, int N>
++__global__ void wvSplitKQ_reduce_(const int M,
++                                  const float* __restrict__ workspace,
++                                  scalar_t* C,
++                                  const float* __restrict__ s_A,
++                                  const float* __restrict__ s_B,
++                                  const int split_count)
++{
++    const int output = blockIdx.x * blockDim.x + threadIdx.x;
++    if(output < N * M)
++    {
++        float sum = 0.0f;
++#pragma unroll
++        for(int split = 0; split < WVSPLITKQ_MAX_SPLITS; ++split)
++        {
++            if(split < split_count)
++            {
++                sum += workspace[split * N * M + output];
++            }
++        }
++        C[output] = __float2s<scalar_t>(sum * *s_A * *s_B);
++    }
++}
++
++template <typename scalar_t, int N>
++__global__ void wvSplitKQ_reduce_16_(const int M,
++                                     const float* __restrict__ workspace,
++                                     scalar_t* C,
++                                     const float* __restrict__ s_A,
++                                     const float* __restrict__ s_B)
++{
++    const int output = blockIdx.x * blockDim.x + threadIdx.x;
++    if(output < N * M)
++    {
++        float sum = 0.0f;
++#pragma unroll
++        for(int split = 0; split < WVSPLITKQ_MAX_SPLITS; ++split)
++        {
++            sum += workspace[split * N * M + output];
++        }
++        C[output] = __float2s<scalar_t>(sum * *s_A * *s_B);
++    }
++}
++
++void wvSplitKQSplitK_(void* in_a,
++                      void* in_b,
++                      void* out_c,
++                      const float* scale_a,
++                      const float* scale_b,
++                      float* workspace,
++                      const int M_in,
++                      const int K_in,
++                      const int Kp_in,
++                      const int N_in,
++                      hipStream_t stream,
++                      const int CuCount,
++                      const int warp_size,
++                      int split_count,
++                      const AiterDtype a_scalar_type,
++                      const AiterDtype c_scalar_type)
++{
++    if(split_count == 0)
++    {
++        split_count = wvSplitKQGetSplitCount(M_in, K_in, N_in, CuCount, warp_size);
++    }
++    if(split_count < 1 || split_count > WVSPLITKQ_MAX_SPLITS ||
++       (split_count & (split_count - 1)) != 0)
++    {
++        throw std::runtime_error("wvSplitKQ split count must be one of 1, 2, 4, 8, or 16");
++    }
++
++#define WVSPLITKQ_SPLIT(_N)                                                                    \
++    {                                                                                           \
++        const int threads = warp_size == 64 && M_in >= 128 && K_in >= 8192 ? 512 : 256;         \
++        const int waves_per_block = threads / warp_size;                                       \
++        dim3 partial_grid((M_in + waves_per_block - 1) / waves_per_block, split_count);         \
++        dim3 partial_block(threads);                                                            \
++        if(warp_size == 32)                                                                    \
++        {                                                                                       \
++            wvSplitKQ_partial_<fp8_t, _N, 32, 256><<<partial_grid, partial_block, 0, stream>>>(  \
++                K_in, Kp_in, M_in, a_ptr, b_ptr, workspace, split_count);                       \
++        }                                                                                       \
++        else if(threads == 512)                                                                 \
++        {                                                                                       \
++            wvSplitKQ_partial_<fp8_t, _N, 64, 512><<<partial_grid, partial_block, 0, stream>>>(  \
++                K_in, Kp_in, M_in, a_ptr, b_ptr, workspace, split_count);                       \
++        }                                                                                       \
++        else                                                                                    \
++        {                                                                                       \
++            wvSplitKQ_partial_<fp8_t, _N, 64, 256><<<partial_grid, partial_block, 0, stream>>>(  \
++                K_in, Kp_in, M_in, a_ptr, b_ptr, workspace, split_count);                       \
++        }                                                                                       \
++        dim3 reduce_block(256);                                                                 \
++        dim3 reduce_grid((M_in * _N + reduce_block.x - 1) / reduce_block.x);                    \
++        if(split_count == WVSPLITKQ_MAX_SPLITS)                                                 \
++        {                                                                                       \
++            wvSplitKQ_reduce_16_<fptype, _N><<<reduce_grid, reduce_block, 0, stream>>>(          \
++                M_in, workspace, c_ptr, scale_a, scale_b);                                      \
++        }                                                                                       \
++        else                                                                                    \
++        {                                                                                       \
++            wvSplitKQ_reduce_<fptype, _N><<<reduce_grid, reduce_block, 0, stream>>>(             \
++                M_in, workspace, c_ptr, scale_a, scale_b, split_count);                         \
++        }                                                                                       \
++    }
++
++    AITER_DISPATCH_FLOATING16_TYPES_rmTorch(c_scalar_type, "wvSplitKQSplitK", [&] {
++        using fptype = typename scalar<scalar_t>::type;
++        auto c_ptr   = reinterpret_cast<fptype*>(out_c);
++        AITER_DISPATCH_FP8_TYPES_rmTorch(a_scalar_type, "wvSplitKQSplitK", [&] {
++            auto a_ptr = reinterpret_cast<fp8_t*>(in_a);
++            auto b_ptr = reinterpret_cast<fp8_t*>(in_b);
++            switch(N_in)
++            {
++            case 1: WVSPLITKQ_SPLIT(1) break;
++            case 2: WVSPLITKQ_SPLIT(2) break;
++            case 3: WVSPLITKQ_SPLIT(3) break;
++            case 4: WVSPLITKQ_SPLIT(4) break;
++            default:
++                throw std::runtime_error("Unsupported N value: " + std::to_string(M_in) + "," +
++                                         std::to_string(K_in) + "," + std::to_string(N_in));
++            }
++        });
++    });
++}
++
+ void wvSplitKQ_(void* in_a,
+                 void* in_b,
+                 void* out_c,
+diff --git a/csrc/py_itfs_cu/custom.cu b/csrc/py_itfs_cu/custom.cu
+index 0cb7b46c..dcf44966 100644
+--- a/csrc/py_itfs_cu/custom.cu
++++ b/csrc/py_itfs_cu/custom.cu
+@@ -191,6 +191,94 @@ void wvSplitKQ(aiter_tensor_t& in_a,
+                out_c.dtype());
+ }
+
++int wvSplitKQGetSplitCount(
++    const int M, const int K, const int N, const int CuCount, const int warp_size);
++void wvSplitKQSplitK_(void* in_a,
++                      void* in_b,
++                      void* out_c,
++                      const float* scale_a,
++                      const float* scale_b,
++                      float* workspace,
++                      const int M,
++                      const int K,
++                      const int Kp,
++                      const int N,
++                      hipStream_t stream,
++                      const int CuCount,
++                      const int warp_size,
++                      const int split_count,
++                      const AiterDtype a_scalar_type,
++                      const AiterDtype c_scalar_type);
++void wvSplitKQSplitK(aiter_tensor_t& in_a,
++                     aiter_tensor_t& in_b,
++                     aiter_tensor_t& out_c,
++                     aiter_tensor_t& scale_a,
++                     aiter_tensor_t& scale_b,
++                     aiter_tensor_t& workspace,
++                     const int64_t CuCount,
++                     const int64_t requested_split_count)
++{
++    const auto M  = in_a.size(0);
++    const auto K  = in_a.size(1);
++    const auto N  = in_b.size(0);
++    const auto Kp = in_a.stride(0);
++    AITER_CHECK(K % 16 == 0, "k % 16 == 0");
++    AITER_CHECK(N >= 1 && N <= 4, "wvSplitKQSplitK supports N=1 through N=4");
++    AITER_CHECK(in_a.dtype() == in_b.dtype() && in_a.dtype() == AITER_DTYPE_fp8);
++    AITER_CHECK(out_c.dtype() == AITER_DTYPE_fp16 || out_c.dtype() == AITER_DTYPE_bf16);
++    AITER_CHECK(workspace.dtype() == AITER_DTYPE_fp32, "workspace must use float32");
++    AITER_CHECK(workspace.device_id == in_a.device_id, "workspace must be on the input device");
++    AITER_CHECK(requested_split_count == 0 || requested_split_count == 1 ||
++                    requested_split_count == 2 || requested_split_count == 4 ||
++                    requested_split_count == 8 || requested_split_count == 16,
++                "split_count must be one of 0, 1, 2, 4, 8, or 16");
++
++    HipDeviceGuard device_guard(in_a.device_id);
++    int warp_size = 0;
++    hipError_t status =
++        hipDeviceGetAttribute(&warp_size, hipDeviceAttributeWarpSize, in_a.device_id);
++    AITER_CHECK(status == hipSuccess, "Could not query GPU wave size: ", hipGetErrorString(status));
++
++    hipDeviceProp_t properties;
++    status = hipGetDeviceProperties(&properties, in_a.device_id);
++    AITER_CHECK(status == hipSuccess, "Could not query GPU properties: ", hipGetErrorString(status));
++    const std::string architecture(properties.gcnArchName);
++    const bool supported = architecture.rfind("gfx90a", 0) == 0 ||
++                           architecture.rfind("gfx1100", 0) == 0 ||
++                           architecture.rfind("gfx1200", 0) == 0 ||
++                           architecture.rfind("gfx1201", 0) == 0;
++    AITER_CHECK(supported, "wvSplitKQSplitK is unsupported on ", architecture);
++
++    int split_count = static_cast<int>(requested_split_count);
++    if(split_count == 0)
++    {
++        split_count = wvSplitKQGetSplitCount(M, K, N, CuCount, warp_size);
++    }
++    const int64_t required_workspace = static_cast<int64_t>(split_count) * N * M;
++    AITER_CHECK(workspace.numel() >= required_workspace,
++                "workspace requires ",
++                required_workspace,
++                " float32 elements but has ",
++                workspace.numel());
++
++    wvSplitKQSplitK_(in_a.data_ptr(),
++                     in_b.data_ptr(),
++                     out_c.data_ptr(),
++                     reinterpret_cast<float*>(scale_a.data_ptr()),
++                     reinterpret_cast<float*>(scale_b.data_ptr()),
++                     reinterpret_cast<float*>(workspace.data_ptr()),
++                     M,
++                     K,
++                     Kp,
++                     N,
++                     aiter::getCurrentHIPStream(),
++                     CuCount,
++                     warp_size,
++                     split_count,
++                     in_a.dtype(),
++                     out_c.dtype());
++}
++
+ void LLGemmZZ(void* in_a,
+               void* in_b,
+               void* out_c,
+diff --git a/op_tests/validation/validate_gfx90a_wv_split_kq.py b/op_tests/validation/validate_gfx90a_wv_split_kq.py
+index 1bef4230..13afb782 100644
+--- a/op_tests/validation/validate_gfx90a_wv_split_kq.py
++++ b/op_tests/validation/validate_gfx90a_wv_split_kq.py
+@@ -7,11 +7,17 @@ import aiter
+
+
+ TEST_SHAPES = (
+-    (1, 4, 16),
++    (1, 1, 16),
++    (1, 7, 496),
++    (1, 17, 512),
+     (2, 60, 96),
++    (2, 31, 528),
+     (3, 17, 6192),
++    (3, 65, 1024),
++    (4, 15, 528),
+     (4, 320, 16400),
+ )
++SPLIT_COUNTS = (1, 2, 4, 8, 16)
+
+
+ def quantize_fp8(tensor):
+@@ -20,7 +26,15 @@ def quantize_fp8(tensor):
+     return ret
+
+
+-def validate_shape(output_dtype, rows, columns, inner, cu_count):
++def validate_shape(
++    output_dtype,
++    rows,
++    columns,
++    inner,
++    cu_count,
++    implementation,
++    split_count=0,
++):
+     x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
+     weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
+     x_fp8, x_scale = quantize_fp8(x)
+@@ -29,6 +43,11 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+         torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
+     ).to(output_dtype)
+     actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    workspace = torch.empty(
++        (16, rows, columns),
++        dtype=torch.float32,
++        device="cuda",
++    )
+     aiter.wvSplitKQ(
+         weight_fp8,
+         x_fp8,
+@@ -36,6 +55,9 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+         weight_scale,
+         x_scale,
+         cu_count,
++        workspace=workspace,
++        implementation=implementation,
++        split_count=split_count,
+     )
+     torch.cuda.synchronize()
+     torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
+@@ -43,6 +65,44 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+     return ret
+
+
++def validate_graph_reuse(output_dtype, cu_count):
++    rows, columns, inner = 3, 17, 6192
++    x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
++    weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
++    x_fp8, x_scale = quantize_fp8(x)
++    weight_fp8, weight_scale = quantize_fp8(weight)
++    reference = (
++        torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
++    ).to(output_dtype)
++    actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    workspace = torch.empty(
++        (16, rows, columns),
++        dtype=torch.float32,
++        device="cuda",
++    )
++
++    def launch():
++        aiter.wvSplitKQ(
++            weight_fp8,
++            x_fp8,
++            actual,
++            weight_scale,
++            x_scale,
++            cu_count,
++            workspace=workspace,
++            implementation="splitk",
++        )
++
++    launch()
++    torch.cuda.synchronize()
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        launch()
++    graph.replay()
++    torch.cuda.synchronize()
++    torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
++
++
+ def main():
+     torch.manual_seed(137)
+     properties = torch.cuda.get_device_properties("cuda")
+@@ -53,17 +113,40 @@ def main():
+
+     for output_dtype in (torch.float16, torch.bfloat16):
+         for rows, columns, inner in TEST_SHAPES:
++            implementations = ["splitk", "auto"]
++            if (rows, columns, inner) not in {(2, 31, 528), (4, 15, 528)}:
++                implementations.append("legacy")
++            for implementation in implementations:
++                max_error = validate_shape(
++                    output_dtype,
++                    rows,
++                    columns,
++                    inner,
++                    properties.multi_processor_count,
++                    implementation,
++                )
++                print(
++                    f"PASS dtype={output_dtype} shape=({rows},{columns},{inner}) "
++                    f"implementation={implementation} "
++                    f"max_abs_error={max_error:.8g}"
++                )
++
++        for split_count in SPLIT_COUNTS:
+             max_error = validate_shape(
+                 output_dtype,
+-                rows,
+-                columns,
+-                inner,
++                3,
++                17,
++                6192,
+                 properties.multi_processor_count,
++                "splitk",
++                split_count,
+             )
+             print(
+-                f"PASS dtype={output_dtype} shape=({rows},{columns},{inner}) "
+-                f"max_abs_error={max_error:.8g}"
++                f"PASS dtype={output_dtype} shape=(3,17,6192) "
++                f"split_count={split_count} max_abs_error={max_error:.8g}"
+             )
++        validate_graph_reuse(output_dtype, properties.multi_processor_count)
++        print(f"PASS dtype={output_dtype} caller_workspace_graph_reuse")
+
+
+ if __name__ == "__main__":
+diff --git a/op_tests/validation/validate_rdna_wv_split_kq.py b/op_tests/validation/validate_rdna_wv_split_kq.py
+index 823c83c1..b3fad355 100644
+--- a/op_tests/validation/validate_rdna_wv_split_kq.py
++++ b/op_tests/validation/validate_rdna_wv_split_kq.py
+@@ -8,11 +8,17 @@ import aiter
+
+ SUPPORTED_ARCHITECTURES = {"gfx1100", "gfx1200", "gfx1201"}
+ TEST_SHAPES = (
+-    (1, 4, 16),
++    (1, 1, 16),
++    (1, 7, 496),
++    (1, 17, 512),
+     (2, 60, 96),
++    (2, 31, 528),
+     (3, 17, 6192),
++    (3, 65, 1024),
++    (4, 15, 528),
+     (4, 320, 16400),
+ )
++SPLIT_COUNTS = (1, 2, 4, 8, 16)
+
+
+ def quantize_fp8(tensor):
+@@ -21,7 +27,15 @@ def quantize_fp8(tensor):
+     return ret
+
+
+-def validate_shape(output_dtype, rows, columns, inner, cu_count):
++def validate_shape(
++    output_dtype,
++    rows,
++    columns,
++    inner,
++    cu_count,
++    implementation,
++    split_count=0,
++):
+     x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
+     weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
+     x_fp8, x_scale = quantize_fp8(x)
+@@ -30,6 +44,11 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+         torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
+     ).to(output_dtype)
+     actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    workspace = torch.empty(
++        (16, rows, columns),
++        dtype=torch.float32,
++        device="cuda",
++    )
+     aiter.wvSplitKQ(
+         weight_fp8,
+         x_fp8,
+@@ -37,6 +56,9 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+         weight_scale,
+         x_scale,
+         cu_count,
++        workspace=workspace,
++        implementation=implementation,
++        split_count=split_count,
+     )
+     torch.cuda.synchronize()
+     torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
+@@ -44,6 +66,44 @@ def validate_shape(output_dtype, rows, columns, inner, cu_count):
+     return ret
+
+
++def validate_graph_reuse(output_dtype, cu_count):
++    rows, columns, inner = 3, 17, 6192
++    x = torch.randn((rows, inner), dtype=output_dtype, device="cuda")
++    weight = torch.randn((columns, inner), dtype=output_dtype, device="cuda")
++    x_fp8, x_scale = quantize_fp8(x)
++    weight_fp8, weight_scale = quantize_fp8(weight)
++    reference = (
++        torch.matmul(x_fp8.float(), weight_fp8.float().t()) * x_scale * weight_scale
++    ).to(output_dtype)
++    actual = torch.empty((rows, columns), dtype=output_dtype, device="cuda")
++    workspace = torch.empty(
++        (16, rows, columns),
++        dtype=torch.float32,
++        device="cuda",
++    )
++
++    def launch():
++        aiter.wvSplitKQ(
++            weight_fp8,
++            x_fp8,
++            actual,
++            weight_scale,
++            x_scale,
++            cu_count,
++            workspace=workspace,
++            implementation="splitk",
++        )
++
++    launch()
++    torch.cuda.synchronize()
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        launch()
++    graph.replay()
++    torch.cuda.synchronize()
++    torch.testing.assert_close(actual, reference, rtol=1e-2, atol=1e-2)
++
++
+ def main():
+     torch.manual_seed(137)
+     properties = torch.cuda.get_device_properties("cuda")
+@@ -57,17 +117,41 @@ def main():
+
+     for output_dtype in (torch.float16, torch.bfloat16):
+         for rows, columns, inner in TEST_SHAPES:
++            for implementation in ("legacy", "splitk", "auto"):
++                max_error = validate_shape(
++                    output_dtype,
++                    rows,
++                    columns,
++                    inner,
++                    properties.multi_processor_count,
++                    implementation,
++                )
++                print(
++                    f"PASS architecture={architecture} dtype={output_dtype} "
++                    f"shape=({rows},{columns},{inner}) implementation={implementation} "
++                    f"max_abs_error={max_error:.8g}"
++                )
++
++        for split_count in SPLIT_COUNTS:
+             max_error = validate_shape(
+                 output_dtype,
+-                rows,
+-                columns,
+-                inner,
++                3,
++                17,
++                6192,
+                 properties.multi_processor_count,
++                "splitk",
++                split_count,
+             )
+             print(
+                 f"PASS architecture={architecture} dtype={output_dtype} "
+-                f"shape=({rows},{columns},{inner}) max_abs_error={max_error:.8g}"
++                f"shape=(3,17,6192) split_count={split_count} "
++                f"max_abs_error={max_error:.8g}"
+             )
++        validate_graph_reuse(output_dtype, properties.multi_processor_count)
++        print(
++            f"PASS architecture={architecture} dtype={output_dtype} "
++            "caller_workspace_graph_reuse"
++        )
+
+
+ if __name__ == "__main__":
+--
+2.43.0

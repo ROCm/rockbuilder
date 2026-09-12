@@ -1,0 +1,157 @@
+From 7ad441b4cef18f8943bb38d3bdb18c5e64faaf3e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 9 Sep 2026 04:54:40 -0700
+Subject: [PATCH 21/22] Optimize RDNA FP8 Wave Split-K
+
+- Add packed OCP FP8x4 conversion
+- Specialize the eight-split reduction path
+- Reduce gfx1100 and gfx1201 kernel latency
+
+Tools used:
+- Cursor: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/kernels/custom_kernels.cu | 87 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 84 insertions(+), 3 deletions(-)
+
+diff --git a/csrc/kernels/custom_kernels.cu b/csrc/kernels/custom_kernels.cu
+index 34e3ee18..471d7cc1 100644
+--- a/csrc/kernels/custom_kernels.cu
++++ b/csrc/kernels/custom_kernels.cu
+@@ -2356,6 +2356,16 @@ __global__ void __launch_bounds__(32) wvSplitKQ_rdna_(const int K,
+
+ constexpr int WVSPLITKQ_MAX_SPLITS = 16;
+
++#if defined(AITER_WVSPLITKQ_RDNA_WAVE32)
++__device__ __forceinline__ float4 wv_split_kq_unpack_ocp_fp8x4(uint32_t packed)
++{
++    __hip_fp8x4_e4m3 value;
++    value.__x = static_cast<__hip_fp8x4_storage_t>(packed);
++    float4 ret = static_cast<float4>(value);
++    return ret;
++}
++#endif
++
+ int wvSplitKQGetSplitCount(
+     const int M, const int K, const int N, const int CuCount, const int warp_size)
+ {
+@@ -2407,14 +2417,23 @@ __global__ void __launch_bounds__(BLOCK_SIZE) wvSplitKQ_partial_(const int K,
+ #if defined(__gfx1200__) || defined(__gfx1201__)
+     if(column < M)
+     {
+-        for(int k = k_begin + lane; k < k_end; k += WAVE_SIZE)
++        for(int k = k_begin + lane * 4; k < k_end; k += WAVE_SIZE * 4)
+         {
+-            const float weight = static_cast<float>(weights[column * Kp + k]);
++            const auto* packed_weight =
++                reinterpret_cast<const uint32_t*>(&B[column * Kp + k]);
++            const float4 weight_quad = wv_split_kq_unpack_ocp_fp8x4(*packed_weight);
+ #pragma unroll
+             for(int row = 0; row < N; ++row)
+             {
++                const auto* packed_activation =
++                    reinterpret_cast<const uint32_t*>(&A[row * K + k]);
++                const float4 activation_quad =
++                    wv_split_kq_unpack_ocp_fp8x4(*packed_activation);
+                 sums[row] =
+-                    fmaf(static_cast<float>(activations[row * K + k]), weight, sums[row]);
++                    fmaf(activation_quad.x, weight_quad.x, sums[row]);
++                sums[row] = fmaf(activation_quad.y, weight_quad.y, sums[row]);
++                sums[row] = fmaf(activation_quad.z, weight_quad.z, sums[row]);
++                sums[row] = fmaf(activation_quad.w, weight_quad.w, sums[row]);
+             }
+         }
+     }
+@@ -2440,6 +2459,24 @@ __global__ void __launch_bounds__(BLOCK_SIZE) wvSplitKQ_partial_(const int K,
+                 activation_tile[row * k_tile + pair_offset + 1] = values.y;
+             }
+         }
++#elif defined(__gfx1100__)
++        constexpr int quads_per_tile = k_tile / 4;
++        for(int quad_index = threadIdx.x; quad_index < N * quads_per_tile;
++            quad_index += blockDim.x)
++        {
++            const int row         = quad_index / quads_per_tile;
++            const int quad_offset = (quad_index % quads_per_tile) * 4;
++            if(quad_offset < tile_size)
++            {
++                const auto* packed = reinterpret_cast<const uint32_t*>(
++                    &A[row * K + tile_begin + quad_offset]);
++                const float4 values = wv_split_kq_unpack_ocp_fp8x4(*packed);
++                activation_tile[row * k_tile + quad_offset]     = values.x;
++                activation_tile[row * k_tile + quad_offset + 1] = values.y;
++                activation_tile[row * k_tile + quad_offset + 2] = values.z;
++                activation_tile[row * k_tile + quad_offset + 3] = values.w;
++            }
++        }
+ #else
+         for(int index = threadIdx.x; index < N * k_tile; index += blockDim.x)
+         {
+@@ -2471,6 +2508,25 @@ __global__ void __launch_bounds__(BLOCK_SIZE) wvSplitKQ_partial_(const int K,
+                         activation_tile[row * k_tile + offset + 1], weights_pair.y, sums[row]);
+                 }
+             }
++#elif defined(__gfx1100__)
++            for(int offset = lane * 4; offset < tile_size; offset += WAVE_SIZE * 4)
++            {
++                const auto* packed = reinterpret_cast<const uint32_t*>(
++                    &B[column * Kp + tile_begin + offset]);
++                const float4 weights_quad = wv_split_kq_unpack_ocp_fp8x4(*packed);
++#pragma unroll
++                for(int row = 0; row < N; ++row)
++                {
++                    sums[row] =
++                        fmaf(activation_tile[row * k_tile + offset], weights_quad.x, sums[row]);
++                    sums[row] = fmaf(
++                        activation_tile[row * k_tile + offset + 1], weights_quad.y, sums[row]);
++                    sums[row] = fmaf(
++                        activation_tile[row * k_tile + offset + 2], weights_quad.z, sums[row]);
++                    sums[row] = fmaf(
++                        activation_tile[row * k_tile + offset + 3], weights_quad.w, sums[row]);
++                }
++            }
+ #else
+             for(int offset = lane; offset < tile_size; offset += WAVE_SIZE)
+             {
+@@ -2539,6 +2595,26 @@ __global__ void wvSplitKQ_reduce_(const int M,
+     }
+ }
+
++template <typename scalar_t, int N>
++__global__ void wvSplitKQ_reduce_8_(const int M,
++                                    const float* __restrict__ workspace,
++                                    scalar_t* C,
++                                    const float* __restrict__ s_A,
++                                    const float* __restrict__ s_B)
++{
++    const int output = blockIdx.x * blockDim.x + threadIdx.x;
++    if(output < N * M)
++    {
++        float sum = 0.0f;
++#pragma unroll
++        for(int split = 0; split < 8; ++split)
++        {
++            sum += workspace[split * N * M + output];
++        }
++        C[output] = __float2s<scalar_t>(sum * *s_A * *s_B);
++    }
++}
++
+ template <typename scalar_t, int N>
+ __global__ void wvSplitKQ_reduce_16_(const int M,
+                                      const float* __restrict__ workspace,
+@@ -2614,6 +2690,11 @@ void wvSplitKQSplitK_(void* in_a,
+             wvSplitKQ_reduce_16_<fptype, _N><<<reduce_grid, reduce_block, 0, stream>>>(          \
+                 M_in, workspace, c_ptr, scale_a, scale_b);                                      \
+         }                                                                                       \
++        else if(split_count == 8)                                                               \
++        {                                                                                       \
++            wvSplitKQ_reduce_8_<fptype, _N><<<reduce_grid, reduce_block, 0, stream>>>(           \
++                M_in, workspace, c_ptr, scale_a, scale_b);                                      \
++        }                                                                                       \
+         else                                                                                    \
+         {                                                                                       \
+             wvSplitKQ_reduce_<fptype, _N><<<reduce_grid, reduce_block, 0, stream>>>(             \
+--
+2.43.0
