@@ -1,0 +1,151 @@
+From 86d0259adc45c47c6d1ec08797642275a40ae49d Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 12 Sep 2026 22:39:10 -0700
+Subject: [PATCH] Route gfx1100 INT8 through Triton
+
+- Keep CKTile routing for gfx1200 and gfx1201.
+- Select the tuned AITER Triton path on gfx1100.
+- Use AITER default so gfx90a can fall back.
+- Preserve the common wave32 gate and op setup.
+- Update architecture-specific route coverage.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 18 +++++++++---------
+ vllm/_aiter_ops.py                          | 20 +++++++++++++-------
+ 2 files changed, 22 insertions(+), 16 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index 8ef472da2..b166ad895 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -40,8 +40,8 @@ def test_aiter_cdna2_support(device_arch: str, expected: bool) -> None:
+         ("gfx942", False),
+     ],
+ )
+-def test_aiter_cktile_int8_support(device_arch: str, expected: bool) -> None:
+-    from vllm._aiter_ops import is_aiter_found_and_supported_on_cktile_int8
++def test_aiter_wave32_int8_support(device_arch: str, expected: bool) -> None:
++    from vllm._aiter_ops import is_aiter_found_and_supported_on_wave32_int8
+
+     with (
+         patch("vllm._aiter_ops.IS_AITER_FOUND", True),
+@@ -52,7 +52,7 @@ def test_aiter_cktile_int8_support(device_arch: str, expected: bool) -> None:
+             return_value=Mock(gcnArchName=device_arch),
+         ),
+     ):
+-        assert is_aiter_found_and_supported_on_cktile_int8() is expected
++        assert is_aiter_found_and_supported_on_wave32_int8() is expected
+
+
+ def test_cdna2_enables_only_int8_linear_gate() -> None:
+@@ -72,7 +72,7 @@ def test_cdna2_enables_only_int8_linear_gate() -> None:
+         assert rocm_aiter_ops.is_linear_fp8_enabled() is None
+
+
+-def test_cktile_enables_only_int8_linear_gate() -> None:
++def test_wave32_enables_only_int8_linear_gate() -> None:
+     from vllm._aiter_ops import rocm_aiter_ops
+
+     with (
+@@ -82,7 +82,7 @@ def test_cktile_enables_only_int8_linear_gate() -> None:
+             return_value=False,
+         ),
+         patch(
+-            "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++            "vllm._aiter_ops.is_aiter_found_and_supported_on_wave32_int8",
+             return_value=True,
+         ),
+         patch.object(rocm_aiter_ops, "_AITER_ENABLED", True),
+@@ -96,8 +96,8 @@ def test_cktile_enables_only_int8_linear_gate() -> None:
+ @pytest.mark.parametrize(
+     ("device_arch", "backend_name"),
+     [
+-        ("gfx90a", "gemm_a8w8_CK"),
+-        ("gfx1100", "gemm_a8w8_CKTile"),
++        ("gfx90a", "gemm_a8w8"),
++        ("gfx1100", "gemm_a8w8_Triton"),
+         ("gfx1201:sramecc-:xnack-", "gemm_a8w8_CKTile"),
+     ],
+ )
+@@ -144,7 +144,7 @@ def test_cdna2_registers_only_w8a8_gemm() -> None:
+                 return_value=True,
+             ),
+             patch(
+-                "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_wave32_int8",
+                 return_value=False,
+             ),
+             patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
+@@ -181,7 +181,7 @@ def test_gfx11_registers_int8_and_sparse_ops() -> None:
+                 return_value=False,
+             ),
+             patch(
+-                "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_wave32_int8",
+                 return_value=True,
+             ),
+             patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 49993520f..92e83e94d 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -162,15 +162,19 @@ def is_aiter_found_and_supported_on_cdna2() -> bool:
+     return False
+
+
+-_AITER_CKTILE_INT8_ARCHITECTURES = frozenset({"gfx1100", "gfx1200", "gfx1201"})
++_AITER_CKTILE_INT8_ARCHITECTURES = frozenset({"gfx1200", "gfx1201"})
++_AITER_TRITON_INT8_ARCHITECTURES = frozenset({"gfx1100"})
++_AITER_WAVE32_INT8_ARCHITECTURES = (
++    _AITER_CKTILE_INT8_ARCHITECTURES | _AITER_TRITON_INT8_ARCHITECTURES
++)
+
+
+-def is_aiter_found_and_supported_on_cktile_int8() -> bool:
+-    """Check whether AITER's wave32 CKTile INT8 kernel can be used."""
++def is_aiter_found_and_supported_on_wave32_int8() -> bool:
++    """Check whether AITER's wave32 INT8 backends can be used."""
+     ret = False
+     if current_platform.is_rocm() and IS_AITER_FOUND and torch.cuda.is_available():
+         device_arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
+-        ret = device_arch in _AITER_CKTILE_INT8_ARCHITECTURES
++        ret = device_arch in _AITER_WAVE32_INT8_ARCHITECTURES
+     return ret
+
+
+@@ -668,8 +672,10 @@ def _rocm_aiter_w8a8_gemm_impl(
+     device_arch = torch.cuda.get_device_properties(A.device).gcnArchName.split(":", 1)[0]
+     if device_arch in _AITER_CKTILE_INT8_ARCHITECTURES:
+         from aiter import gemm_a8w8_CKTile as gemm_a8w8
++    elif device_arch in _AITER_TRITON_INT8_ARCHITECTURES:
++        from aiter import gemm_a8w8_Triton as gemm_a8w8
+     else:
+-        from aiter import gemm_a8w8_CK as gemm_a8w8
++        from aiter import gemm_a8w8
+
+     # gemm_a8w8(a, b, scale_a, scale_b, bias) expects
+     # a to be [M, K]
+@@ -1852,7 +1858,7 @@ class rocm_aiter_ops:
+         return (
+             is_aiter_found_and_supported()
+             or is_aiter_found_and_supported_on_cdna2()
+-            or is_aiter_found_and_supported_on_cktile_int8()
++            or is_aiter_found_and_supported_on_wave32_int8()
+         ) and cls._AITER_ENABLED and cls._LINEAR_ENABLED
+
+     @classmethod
+@@ -2068,7 +2074,7 @@ class rocm_aiter_ops:
+
+             if (
+                 is_aiter_found_and_supported_on_cdna2()
+-                or is_aiter_found_and_supported_on_cktile_int8()
++                or is_aiter_found_and_supported_on_wave32_int8()
+             ):
+                 if not _OPS_REGISTERED:
+                     direct_register_custom_op(
+--
+2.43.0
