@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 13 Sep 2026 23:50:00 -0700
+Subject: [PATCH] Extend gfx1201 INT8 Triton
+ threshold
+
+- Route N=11008 K=4096 through Triton for M<16.
+- Keep CKTile at M=16 and above.
+- Remove a 16-22% latency regression at M=9-15.
+- Validate every boundary from M=9 through M=16.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 1 +
+ vllm/_aiter_ops.py                          | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index 0000000000..0000000000 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -99,6 +99,7 @@ def test_wave32_enables_only_int8_linear_gate() -> None:
+         (15, 1280, 8192, True),
+         (16, 1280, 8192, False),
+         (8, 11008, 4096, True),
++        (15, 11008, 4096, True),
+         (16, 11008, 4096, False),
+         (32, 4096, 11008, True),
+         (40, 4096, 11008, False),
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 0000000000..0000000000 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -667,7 +667,7 @@ def _use_aiter_triton_int8_on_gfx1201(m: int, n: int, k: int) -> bool:
+     if (n, k) == (1280, 8192):
+         ret = m < 16
+     elif (n, k) == (11008, 4096):
+-        ret = m <= 8
++        ret = m < 16
+     elif (n, k) == (4096, 11008):
+         ret = m <= 32
+     elif (n, k) == (28672, 8192):
+--
+2.52.0
