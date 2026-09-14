@@ -1,0 +1,138 @@
+From d13915508c3fca1b296dcf580271730eae4b2784 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 13 Sep 2026 19:14:25 -0700
+Subject: [PATCH] Route gfx1201 INT8 GEMM by shape
+
+- Route seven measured small-M W8A8 shape
+  ranges to Triton when it beats CKTile.
+- Keep CKTile for unlisted and larger shapes.
+- Account for N- and K-dependent crossovers;
+  one M threshold regresses some models.
+- Cover selector and device routing boundaries.
+- Validate 32 tests and runtime comparisons on
+  an RX 9070 XT.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 44 ++++++++++++++++++---
+ vllm/_aiter_ops.py                          | 32 +++++++++++++--
+ 2 files changed, 68 insertions(+), 8 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index b166ad8955..334c83479f 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -94,18 +94,52 @@ def test_wave32_enables_only_int8_linear_gate() -> None:
+
+
+ @pytest.mark.parametrize(
+-    ("device_arch", "backend_name"),
++    ("m", "n", "k", "expected"),
+     [
+-        ("gfx90a", "gemm_a8w8"),
+-        ("gfx1100", "gemm_a8w8_Triton"),
+-        ("gfx1201:sramecc-:xnack-", "gemm_a8w8_CKTile"),
++        (15, 1280, 8192, True),
++        (16, 1280, 8192, False),
++        (8, 11008, 4096, True),
++        (16, 11008, 4096, False),
++        (32, 4096, 11008, True),
++        (40, 4096, 11008, False),
++        (64, 28672, 8192, True),
++        (80, 28672, 8192, False),
++        (128, 28672, 4096, True),
++        (256, 28672, 4096, False),
++        (32, 4096, 14336, True),
++        (64, 4096, 14336, False),
++        (8, 6144, 4096, True),
++        (16, 6144, 4096, False),
++        (1, 8192, 28672, False),
++        (1, 4096, 4096, False),
+     ],
+ )
+-def test_int8_routes_by_tensor_device(device_arch: str, backend_name: str) -> None:
++def test_gfx1201_int8_triton_shape_selection(
++    m: int, n: int, k: int, expected: bool
++) -> None:
++    from vllm._aiter_ops import _use_aiter_triton_int8_on_gfx1201
++
++    assert _use_aiter_triton_int8_on_gfx1201(m, n, k) is expected
++
++
++@pytest.mark.parametrize(
++    ("device_arch", "m", "n", "k", "backend_name"),
++    [
++        ("gfx90a", 32, 8192, 1024, "gemm_a8w8"),
++        ("gfx1100", 32, 8192, 1024, "gemm_a8w8_Triton"),
++        ("gfx1201:sramecc-:xnack-", 32, 8192, 1024, "gemm_a8w8_CKTile"),
++        ("gfx1201:sramecc-:xnack-", 8, 11008, 4096, "gemm_a8w8_Triton"),
++    ],
++)
++def test_int8_routes_by_tensor_device(
++    device_arch: str, m: int, n: int, k: int, backend_name: str
++) -> None:
+     from vllm._aiter_ops import _rocm_aiter_w8a8_gemm_impl
+
+     inputs = [Mock() for _ in range(4)]
+     inputs[0].device = torch.device("cuda:0")
++    inputs[0].shape = (m, k)
++    inputs[1].shape = (n, k)
+     expected = Mock()
+     with (
+         patch(
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 92e83e94d8..a4b6b7cd41 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -661,6 +661,26 @@ def _rocm_aiter_mla_decode_fwd_fake(
+     pass
+
+
++def _use_aiter_triton_int8_on_gfx1201(m: int, n: int, k: int) -> bool:
++    """Select Triton only for gfx1201 shapes where it clearly beats CKTile."""
++    ret = False
++    if (n, k) == (1280, 8192):
++        ret = m < 16
++    elif (n, k) == (11008, 4096):
++        ret = m <= 8
++    elif (n, k) == (4096, 11008):
++        ret = m <= 32
++    elif (n, k) == (28672, 8192):
++        ret = m <= 64
++    elif (n, k) == (28672, 4096):
++        ret = m <= 128
++    elif (n, k) == (4096, 14336):
++        ret = m <= 32
++    elif (n, k) == (6144, 4096):
++        ret = m <= 8
++    return ret
++
++
+ def _rocm_aiter_w8a8_gemm_impl(
+     A: torch.Tensor,
+     B: torch.Tensor,
+@@ -670,10 +690,16 @@ def _rocm_aiter_w8a8_gemm_impl(
+     output_dtype: torch.dtype = torch.float16,
+ ) -> torch.Tensor:
+     device_arch = torch.cuda.get_device_properties(A.device).gcnArchName.split(":", 1)[0]
+-    if device_arch in _AITER_CKTILE_INT8_ARCHITECTURES:
+-        from aiter import gemm_a8w8_CKTile as gemm_a8w8
+-    elif device_arch in _AITER_TRITON_INT8_ARCHITECTURES:
++    use_triton = device_arch in _AITER_TRITON_INT8_ARCHITECTURES
++    if device_arch == "gfx1201":
++        use_triton = _use_aiter_triton_int8_on_gfx1201(
++            A.shape[0], B.shape[0], A.shape[1]
++        )
++
++    if use_triton:
+         from aiter import gemm_a8w8_Triton as gemm_a8w8
++    elif device_arch in _AITER_CKTILE_INT8_ARCHITECTURES:
++        from aiter import gemm_a8w8_CKTile as gemm_a8w8
+     else:
+         from aiter import gemm_a8w8
+
+--
+2.52.0
