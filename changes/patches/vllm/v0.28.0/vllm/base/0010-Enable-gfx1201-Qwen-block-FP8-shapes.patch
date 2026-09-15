@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 15 Sep 2026 07:09:22 -0700
+Subject: [PATCH] Enable gfx1201 Qwen block FP8 shapes
+
+- Route four tuned Qwen 3 4B shapes to AITER.
+- Keep other untuned RDNA4 shapes on vLLM.
+- Validate 115.68 output tokens per second.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ vllm/_aiter_ops.py |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index e7aac7029e..9ccbb8969e 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -3043,17 +3043,21 @@
+         }
+         rdna4_tuned = gfx950_tuned | {
+             (2048, 2048),
++            (2560, 4096),
++            (2560, 9728),
+             (2624, 6144),
+             (3072, 6144),
+             (3584, 512),
+             (4096, 512),
+             (6144, 1536),
+             (6144, 2048),
++            (6144, 2560),
+             (7168, 2304),
+             (7168, 16384),
+             (7168, 18432),
+             (8192, 8192),
+             (16384, 1536),
++            (19456, 2560),
+             (24576, 1536),
+             (32768, 512),
+             (36864, 7168),
+--
+2.43.0
