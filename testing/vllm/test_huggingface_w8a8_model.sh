@@ -20,6 +20,7 @@ OUTPUT_TOKENS="${W8A8_BENCHMARK_OUTPUT_TOKENS:-128}"
 INPUT_TOKENS=""
 EXECUTION_MODE=""
 FP8_BACKEND=""
+MOE_BACKEND="${W8A8_BENCHMARK_MOE_BACKEND:-}"
 PYTHON_FILE="$(mktemp --tmpdir rockbuilder-w8a8-model.XXXXXX.py)"
 
 
@@ -52,11 +53,13 @@ Options:
   --output-tokens COUNT Tokens generated per prompt (default: ${OUTPUT_TOKENS})
   --execution-mode MODE Required mode: eager or default
   --fp8-backend BACKEND Required for block FP8: vllm or aiter
+  --moe-backend BACKEND Optional INT8 MoE backend: triton or aiter
   -h, --help            Show this help
 
 For INT8, the script respects VLLM_ROCM_USE_AITER and
-VLLM_ROCM_USE_AITER_LINEAR, which both default to 1. For block FP8,
---fp8-backend sets both variables to 0 for vllm or 1 for aiter.
+VLLM_ROCM_USE_AITER_LINEAR, which both default to 1. For block FP8, the aiter
+backend enables both variables. The vllm backend disables AITER linear kernels
+and preserves an explicit VLLM_ROCM_USE_AITER value, which defaults to 0.
 
 Set VLLM_BUILD_GIT_HASH or AITER_BUILD_GIT_HASH when a wheel does not retain
 its source Git revision. Otherwise, the script records any revision available
@@ -113,6 +116,10 @@ parse_arguments() {
         ;;
       --fp8-backend)
         FP8_BACKEND="${2:?--fp8-backend requires a backend}"
+        shift 2
+        ;;
+      --moe-backend)
+        MOE_BACKEND="${2:?--moe-backend requires a backend}"
         shift 2
         ;;
       -h | --help)
@@ -204,6 +211,10 @@ main() {
     fail "invalid FP8 backend: ${FP8_BACKEND}; use vllm or aiter"
     return 1
   fi
+  if [[ -n "${MOE_BACKEND}" && "${MOE_BACKEND}" != "triton" && "${MOE_BACKEND}" != "aiter" ]]; then
+    fail "invalid MoE backend: ${MOE_BACKEND}; use triton or aiter"
+    return 1
+  fi
 
   if ! python3 "${UTILS_PATH}"; then
     fail "test environment validation failed"
@@ -228,7 +239,7 @@ main() {
       export VLLM_ROCM_USE_AITER=1
       export VLLM_ROCM_USE_AITER_LINEAR=1
     else
-      export VLLM_ROCM_USE_AITER=0
+      export VLLM_ROCM_USE_AITER="${VLLM_ROCM_USE_AITER:-0}"
       export VLLM_ROCM_USE_AITER_LINEAR=0
     fi
   else
@@ -269,6 +280,7 @@ main() {
   printf 'Input tokens per request: %s\n' "${INPUT_TOKENS}"
   printf 'Execution mode: %s\n' "${EXECUTION_MODE}"
   printf 'Requested FP8 backend: %s\n' "${FP8_BACKEND:-not applicable}"
+  printf 'Requested MoE backend: %s\n' "${MOE_BACKEND:-auto}"
   printf 'Result: %s\n' "${RESULT_FILE}"
   printf 'Log: %s\n' "${log_file}"
 
@@ -483,6 +495,7 @@ def main() -> None:
     execution_mode = sys.argv[10]
     quantization_mode = sys.argv[11]
     requested_fp8_backend = sys.argv[12] or None
+    requested_moe_backend = sys.argv[13] or None
     started_at = datetime.now(UTC)
 
     if not torch.cuda.is_available():
@@ -508,13 +521,22 @@ def main() -> None:
     quantization_config = model_config.get("quantization_config", {})
     if quantization_mode == "int8-w8a8":
         config_groups = quantization_config.get("config_groups", {}).values()
-        is_expected_quantization = any(
+        is_compressed_tensors_w8a8 = any(
             group.get("weights", {}).get("num_bits") == 8
             and group.get("weights", {}).get("type") == "int"
             and group.get("input_activations", {}).get("num_bits") == 8
             and group.get("input_activations", {}).get("type") == "int"
             for group in config_groups
         )
+        global_quant_config = quantization_config.get("global_quant_config", {})
+        quark_weight = global_quant_config.get("weight", {})
+        quark_input = global_quant_config.get("input_tensors", {})
+        is_quark_w8a8 = (
+            quantization_config.get("quant_method") == "quark"
+            and quark_weight.get("dtype") == "int8"
+            and quark_input.get("dtype") == "int8"
+        )
+        is_expected_quantization = is_compressed_tensors_w8a8 or is_quark_w8a8
         quantization_name = "INT8 W8A8"
     else:
         is_expected_quantization = (
@@ -574,6 +596,8 @@ def main() -> None:
     }
     if force_aiter_linear:
         llm_arguments["linear_backend"] = "aiter"
+    if requested_moe_backend is not None:
+        llm_arguments["moe_backend"] = requested_moe_backend
 
     initialization_start = time.perf_counter()
     llm = LLM(**llm_arguments)
@@ -642,6 +666,7 @@ def main() -> None:
         f"vLLM={vllm_info['version']} (git={vllm_revision}); "
         f"AITER={aiter_info['version']} (git={aiter_revision}); "
         f"FP8 backend={requested_fp8_backend or 'not applicable'}; "
+        f"MoE backend={requested_moe_backend or 'auto'}; "
         f"VLLM_ROCM_USE_AITER={os.environ.get('VLLM_ROCM_USE_AITER')}; "
         f"VLLM_ROCM_USE_AITER_LINEAR={os.environ.get('VLLM_ROCM_USE_AITER_LINEAR')}"
     )
@@ -687,6 +712,7 @@ def main() -> None:
         "tokenizers_parallelism": os.environ.get("TOKENIZERS_PARALLELISM"),
         "linear_backend_argument": "aiter" if force_aiter_linear else "auto",
         "requested_fp8_backend": requested_fp8_backend,
+        "requested_moe_backend": requested_moe_backend,
         "selected_linear_kernel": "",
         "selected_fp8_implementation": "",
         "gfx90a_fast_fp8_candidate": (
@@ -770,6 +796,7 @@ PYTHON
     "${EXECUTION_MODE}" \
     "${QUANTIZATION_MODE}" \
     "${FP8_BACKEND}" \
+    "${MOE_BACKEND}" \
     2>&1 | tee "${log_file}"
   python_status="${PIPESTATUS[0]}"
 
