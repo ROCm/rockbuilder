@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 13 Sep 2026 22:50:00 -0700
+Subject: [PATCH] Route gfx90a INT8 cliff
+ through Triton
+
+- Route N=1280 K=8192 to Triton from M=64.
+- Keep faster CK through M=63 and other shapes.
+- Avoid the CK default-kernel cliff on MI210.
+- Cover selector and device routing boundaries.
+- Validate 24 shapes and 37 gate tests on MI210.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 20 +++++++++++++++++++-
+ vllm/_aiter_ops.py                          | 10 +++++++++-
+ 2 files changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index 334c83479f..0000000000 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -122,10 +122,28 @@ def test_gfx1201_int8_triton_shape_selection(
+     assert _use_aiter_triton_int8_on_gfx1201(m, n, k) is expected
+
+
++@pytest.mark.parametrize(
++    ("m", "n", "k", "expected"),
++    [
++        (63, 1280, 8192, False),
++        (64, 1280, 8192, True),
++        (256, 1280, 8192, True),
++        (64, 4096, 8192, False),
++    ],
++)
++def test_gfx90a_int8_triton_shape_selection(
++    m: int, n: int, k: int, expected: bool
++) -> None:
++    from vllm._aiter_ops import _use_aiter_triton_int8_on_gfx90a
++
++    assert _use_aiter_triton_int8_on_gfx90a(m, n, k) is expected
++
++
+ @pytest.mark.parametrize(
+     ("device_arch", "m", "n", "k", "backend_name"),
+     [
+-        ("gfx90a", 32, 8192, 1024, "gemm_a8w8"),
++        ("gfx90a", 63, 1280, 8192, "gemm_a8w8"),
++        ("gfx90a", 64, 1280, 8192, "gemm_a8w8_Triton"),
+         ("gfx1100", 32, 8192, 1024, "gemm_a8w8_Triton"),
+         ("gfx1201:sramecc-:xnack-", 32, 8192, 1024, "gemm_a8w8_CKTile"),
+         ("gfx1201:sramecc-:xnack-", 8, 11008, 4096, "gemm_a8w8_Triton"),
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index a4b6b7cd41..0000000000 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -661,6 +661,12 @@ def _rocm_aiter_mla_decode_fwd_fake(
+     pass
+
+
++def _use_aiter_triton_int8_on_gfx90a(m: int, n: int, k: int) -> bool:
++    """Select Triton for the measured gfx90a CK performance cliff."""
++    ret = (n, k) == (1280, 8192) and m >= 64
++    return ret
++
++
+ def _use_aiter_triton_int8_on_gfx1201(m: int, n: int, k: int) -> bool:
+     """Select Triton only for gfx1201 shapes where it clearly beats CKTile."""
+     ret = False
+@@ -691,7 +697,9 @@ def _rocm_aiter_w8a8_gemm_impl(
+ ) -> torch.Tensor:
+     device_arch = torch.cuda.get_device_properties(A.device).gcnArchName.split(":", 1)[0]
+     use_triton = device_arch in _AITER_TRITON_INT8_ARCHITECTURES
+-    if device_arch == "gfx1201":
++    if device_arch == "gfx90a":
++        use_triton = _use_aiter_triton_int8_on_gfx90a(A.shape[0], B.shape[0], A.shape[1])
++    elif device_arch == "gfx1201":
+         use_triton = _use_aiter_triton_int8_on_gfx1201(
+             A.shape[0], B.shape[0], A.shape[1]
+         )
+--
+2.52.0

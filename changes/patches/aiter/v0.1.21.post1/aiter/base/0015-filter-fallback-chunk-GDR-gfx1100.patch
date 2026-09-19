@@ -1,0 +1,124 @@
+From 803e2cd1f4ca3dc5f39c7a5ef1b0ad4ef51d65da Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 01:30:41 -0700
+Subject: [PATCH 15/22] chunk GDR gfx1100
+
+- Filter HIP kernels to supported GPU targets
+- Route gfx1100 hidden-state work to Triton
+- Preserve HIP kernels in mixed GPU builds
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json              |  9 +++++++
+ .../gated_delta_rule/prefill/chunk.py         | 25 ++++++++++++++++++-
+ op_tests/test_gated_delta_rule.py             |  5 ++--
+ op_tests/test_jit_module_archs.py             | 12 +++++++++
+ 4 files changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index f87c0282..03bdd43a 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -1930,6 +1930,15 @@
+         "blob_gen_cmd": "''"
+     },
+     "module_chunk_gdr_fwd_h": {
++        "supported_gpu_archs": [
++            "gfx90a",
++            "gfx940",
++            "gfx941",
++            "gfx942",
++            "gfx950",
++            "gfx1200",
++            "gfx1201"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/chunk_gated_delta_rule_fwd_h_pybind.cu'",
+             "f'{AITER_CSRC_DIR}/kernels/chunk_gated_delta_rule_fwd_h.cu'"
+diff --git a/aiter/ops/triton/_triton_kernels/gated_delta_rule/prefill/chunk.py b/aiter/ops/triton/_triton_kernels/gated_delta_rule/prefill/chunk.py
+index 82e2989a..c19cc5dc 100644
+--- a/aiter/ops/triton/_triton_kernels/gated_delta_rule/prefill/chunk.py
++++ b/aiter/ops/triton/_triton_kernels/gated_delta_rule/prefill/chunk.py
+@@ -32,6 +32,29 @@ from .fused_cumsum_kkt import fused_chunk_local_cumsum_scaled_dot_kkt_fwd
+ from .fused_solve_tril_recompute import fused_solve_tril_recompute_w_u
+
+ _SUPPORTED_GFX12_ARCHS = frozenset({"gfx1200", "gfx1201"})
++_CHUNK_HIP_ARCHS = frozenset(
++    {
++        "gfx90a",
++        "gfx940",
++        "gfx941",
++        "gfx942",
++        "gfx950",
++        "gfx1200",
++        "gfx1201",
++    }
++)
++
++
++def _is_unsupported_chunk_hip_runtime(device: torch.device) -> bool:
++    ret = False
++    try:
++        props = torch.cuda.get_device_properties(device)
++        arch = getattr(props, "gcnArchName", "")
++        arch = arch.split(":")[0] if arch else ""
++        ret = bool(arch and arch not in _CHUNK_HIP_ARCHS)
++    except Exception:  # noqa: BLE001
++        pass
++    return ret
+
+
+ def _is_unsupported_gfx12_runtime(device: torch.device) -> bool:
+@@ -325,7 +348,7 @@ def chunk_gated_delta_rule_fwd_opt_vk(
+         )
+
+     if use_chunk_hip and (
+-        _is_unsupported_gfx12_runtime(q.device)
++        _is_unsupported_chunk_hip_runtime(q.device)
+         or (num_decodes > 0 and prefill_metadata is None)
+     ):
+         use_chunk_hip = False
+diff --git a/op_tests/test_gated_delta_rule.py b/op_tests/test_gated_delta_rule.py
+index cea72fa2..ce297a84 100644
+--- a/op_tests/test_gated_delta_rule.py
++++ b/op_tests/test_gated_delta_rule.py
+@@ -1875,11 +1875,12 @@ def test_chunk_opt_vk_hip_downgrade_preserves_indexed_state_args(monkeypatch):
+     assert captured["inplace_final_state"] is True
+
+
+-def test_chunk_opt_vk_unsupported_gfx12_downgrades_to_triton(monkeypatch):
++@pytest.mark.parametrize("gfx", ["gfx1100", "gfx1250"])
++def test_chunk_opt_vk_unsupported_hip_arch_downgrades_to_triton(monkeypatch, gfx):
+     chunk_module = importlib.import_module(
+         "aiter.ops.triton._triton_kernels.gated_delta_rule.prefill.chunk"
+     )
+-    props = type("DeviceProperties", (), {"gcnArchName": "gfx1250"})()
++    props = type("DeviceProperties", (), {"gcnArchName": gfx})()
+     monkeypatch.setattr(torch.cuda, "get_device_properties", lambda device: props)
+     monkeypatch.setattr(
+         chunk_module,
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index e4abefef..d8f1eede 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -133,3 +133,15 @@ def test_vsa_sparse_attention_rejects_gfx1100(monkeypatch):
+         match=r"module_vsa_sparse_attention.*gfx1100",
+     ):
+         core.get_args_of_build("module_vsa_sparse_attention")
++
++
++def test_chunk_gdr_filters_gfx1100_from_mixed_build(monkeypatch):
++    monkeypatch.setattr(
++        core,
++        "get_gfx_list",
++        lambda: ["gfx1100", "gfx1201", "gfx90a"],
++    )
++
++    args = core.get_args_of_build("module_chunk_gdr_fwd_h")
++
++    assert args["gpu_archs"] == ["gfx1201", "gfx90a"]
+--
+2.43.0

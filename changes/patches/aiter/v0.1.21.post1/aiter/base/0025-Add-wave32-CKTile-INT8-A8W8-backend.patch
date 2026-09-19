@@ -1,0 +1,1157 @@
+From 57ffa91d8d3d394184fbfb7e9ffaf20ccbc7a793 Mon Sep 17 00:00:00 2001
+From: Zoltan Lakatos <zoltan.lakatos@streamhpc.com>
+Date: Sat, 12 Sep 2026 03:46:28 -0700
+Subject: [PATCH] Add wave32 CKTile INT8 A8W8 backend
+
+- Adapt the upstream CKTile A8W8 prototype for
+  gfx1100, gfx1200, and gfx1201.
+- Use CK's 16x16x16 INT8 WMMA primitive.
+- Keep the path explicit for backend comparisons.
+- Pad unsupported dimensions before launch.
+- Restrict output to BF16 and scales to FP32.
+- Leave existing default dispatch unchanged.
+- Add a default, CKTile, and Triton benchmark.
+
+Tools used:
+- Cursor: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json              |  18 +
+ aiter/ops/gemm_op_a8w8.py                     |  88 +++-
+ csrc/ck_gemm_a8w8/gemm_a8w8_cktile.cu         |  62 +++
+ csrc/ck_gemm_a8w8/gemm_a8w8_common.py         |  62 +++
+ csrc/ck_gemm_a8w8/gen_instances_cktile.py     | 273 +++++++++++
+ csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile.h  |  16 +
+ .../include/gemm_a8w8_cktile_common.cuh       | 422 ++++++++++++++++++
+ csrc/pybind/gemm_a8w8_cktile_pybind.cu        |  17 +
+ op_tests/test_gemm_a8w8_backends.py           |  80 ++++
+ 9 files changed, 1034 insertions(+), 4 deletions(-)
+ create mode 100644 csrc/ck_gemm_a8w8/gemm_a8w8_cktile.cu
+ create mode 100644 csrc/ck_gemm_a8w8/gen_instances_cktile.py
+ create mode 100644 csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile.h
+ create mode 100644 csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile_common.cuh
+ create mode 100644 csrc/pybind/gemm_a8w8_cktile_pybind.cu
+ create mode 100644 op_tests/test_gemm_a8w8_backends.py
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index 02f87e14c..c02a0af6e 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -221,6 +221,24 @@
+         ],
+         "blob_gen_cmd": "f'{AITER_CSRC_DIR}/ck_gemm_a8w8/gen_instances.py --working_path {{}} --tune_file {AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_FILE}'"
+     },
++    "module_gemm_a8w8_cktile": {
++        "supported_gpu_archs": [
++            "gfx1100",
++            "gfx1200",
++            "gfx1201"
++        ],
++        "srcs": [
++            "f'{AITER_CSRC_DIR}/pybind/gemm_a8w8_cktile_pybind.cu'",
++            "f'{AITER_CSRC_DIR}/ck_gemm_a8w8/gemm_a8w8_cktile.cu'"
++        ],
++        "extra_include": [
++            "f'{AITER_CSRC_DIR}/ck_gemm_a8w8/include'"
++        ],
++        "flags_extra_hip": [
++            "'-mllvm -enable-noalias-to-md-conversion=1'"
++        ],
++        "blob_gen_cmd": "f'{AITER_CSRC_DIR}/ck_gemm_a8w8/gen_instances_cktile.py --working_path {{}} --tune_file {AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_FILE}'"
++    },
+     "module_gemm_a8w8_blockscale": {
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/gemm_a8w8_blockscale_pybind.cu'",
+diff --git a/aiter/ops/gemm_op_a8w8.py b/aiter/ops/gemm_op_a8w8.py
+index 4dcf60c45..c6b2cd31b 100644
+--- a/aiter/ops/gemm_op_a8w8.py
++++ b/aiter/ops/gemm_op_a8w8.py
+@@ -96,6 +96,71 @@ def gemm_a8w8_ck(
+ ) -> torch.Tensor: ...
+
+
++@compile_ops(
++    "module_gemm_a8w8_cktile",
++    fc_name="gemm_a8w8_cktile",
++    gen_fake=gen_gemm_a8w8_ck_fake_tensors,
++)
++def gemm_a8w8_cktile(
++    XQ: torch.Tensor,
++    WQ: torch.Tensor,
++    x_scale: torch.Tensor,
++    w_scale: torch.Tensor,
++    Out: torch.Tensor,
++    bias: torch.Tensor | None = None,
++    splitK: int = 0,
++) -> torch.Tensor: ...
++
++
++def gemm_a8w8_CKTile(
++    XQ: Tensor,
++    WQ: Tensor,
++    x_scale: Tensor,
++    w_scale: Tensor,
++    bias: Tensor | None = None,
++    dtype: torch.dtype = dtypes.bf16,
++    splitK: int = 0,
++) -> Tensor:
++    """Run the experimental wave32 CKTile INT8 A8W8 comparison backend."""
++    if dtype != dtypes.bf16:
++        raise ValueError(f"CKTile INT8 comparison requires bfloat16 output, got {dtype}")
++
++    m, k = XQ.shape
++    n = WQ.shape[0]
++    if WQ.shape[1] != k:
++        raise ValueError(f"XQ and WQ K dimensions differ: {k} != {WQ.shape[1]}")
++    if x_scale.shape != (m, 1) or w_scale.shape != (n, 1):
++        raise ValueError(
++            "CKTile INT8 comparison requires x_scale[M, 1] and w_scale[N, 1], "
++            f"got {tuple(x_scale.shape)} and {tuple(w_scale.shape)}"
++        )
++
++    padded_m = ((m + 15) // 16) * 16
++    padded_n = ((n + 127) // 128) * 128
++    padded_k = ((k + 255) // 256) * 256
++    pad_m = padded_m - m
++    pad_n = padded_n - n
++    pad_k = padded_k - k
++
++    xq_padded = F.pad(XQ, (0, pad_k, 0, pad_m))
++    wq_padded = F.pad(WQ, (0, pad_k, 0, pad_n))
++    x_scale_padded = F.pad(x_scale, (0, 0, 0, pad_m))
++    w_scale_padded = F.pad(w_scale, (0, 0, 0, pad_n))
++    bias_padded = F.pad(bias, (0, pad_n)) if bias is not None else None
++    out = torch.empty(padded_m, padded_n, dtype=dtype, device=XQ.device)
++    padded_ret = gemm_a8w8_cktile(
++        xq_padded,
++        wq_padded,
++        x_scale_padded,
++        w_scale_padded,
++        out,
++        bias_padded,
++        splitK,
++    )
++    ret = padded_ret[:m, :n]
++    return ret
++
++
+ def gen_gemm_a8w8_bpreshuffle_ck_fake_tensors(
+     XQ: torch.Tensor,
+     WQ: torch.Tensor,
+@@ -584,6 +649,21 @@ def gemm_a8w8_fake(
+     return torch.empty(XQ.shape[0], WQ.shape[0], dtype=dtype, device=XQ.device)
+
+
++def gemm_a8w8_Triton(
++    XQ: Tensor,
++    WQ: Tensor,
++    x_scale: Tensor,
++    w_scale: Tensor,
++    bias: Tensor | None = None,
++    dtype: torch.dtype = dtypes.bf16,
++) -> Tensor:
++    """Run the Triton INT8 A8W8 backend directly for comparisons."""
++    from ..ops.triton.gemm.basic.gemm_a8w8 import gemm_a8w8 as gemm_a8w8_triton
++
++    ret = gemm_a8w8_triton(XQ, WQ, x_scale, w_scale, bias, dtype=dtype)
++    return ret
++
++
+ @torch_compile_guard(gen_fake=gemm_a8w8_fake)
+ def gemm_a8w8(
+     XQ: Tensor,
+@@ -602,10 +682,10 @@ def gemm_a8w8(
+         # RDNA (gfx11/gfx12): the CK/asm a8w8 kernel is unavailable; route to the
+         # portable Triton kernel. Registered/faked via @torch_compile_guard above,
+         # so callers stay torch.compile- and graph-capture-safe.
+-        from ..ops.triton.gemm.basic.gemm_a8w8 import gemm_a8w8 as gemm_a8w8_triton
+-
+-        return gemm_a8w8_triton(XQ, WQ, x_scale, w_scale, bias, dtype=dtype)
+-    return gemm_a8w8_CK(XQ, WQ, x_scale, w_scale, bias, dtype, splitK)
++        ret = gemm_a8w8_Triton(XQ, WQ, x_scale, w_scale, bias, dtype)
++    else:
++        ret = gemm_a8w8_CK(XQ, WQ, x_scale, w_scale, bias, dtype, splitK)
++    return ret
+
+
+ def gemm_a8w8_ASM(
+diff --git a/csrc/ck_gemm_a8w8/gemm_a8w8_cktile.cu b/csrc/ck_gemm_a8w8/gemm_a8w8_cktile.cu
+new file mode 100644
+index 000000000..8fc9052db
+--- /dev/null
++++ b/csrc/ck_gemm_a8w8/gemm_a8w8_cktile.cu
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: MIT
++// Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#include <string>
++
++#include <torch/extension.h>
++
++#include "gemm_a8w8_cktile_common.cuh"
++#include "gemm_a8w8_cktile_manifest.h"
++
++using RowwiseKernel = torch::Tensor (*)(torch::Tensor&,
++                                        torch::Tensor&,
++                                        torch::Tensor&,
++                                        torch::Tensor&,
++                                        torch::Tensor&,
++                                        std::optional<torch::Tensor>,
++                                        int);
++
++template <typename ABDataType, typename DDataType, typename EDataType>
++RowwiseKernel rowwise_dispatch()
++{
++    RowwiseKernel ret =
++        a8w8_cktile_16x128x256_1x4x1_16x16_intrawave_0x0x0_1<ABDataType,
++                                                              DDataType,
++                                                              EDataType,
++                                                              true>;
++    return ret;
++}
++
++
++torch::Tensor gemm_a8w8_cktile(torch::Tensor& XQ,
++                               torch::Tensor& WQ,
++                               torch::Tensor& x_scale,
++                               torch::Tensor& w_scale,
++                               torch::Tensor& Y,
++                               std::optional<torch::Tensor> bias,
++                               int splitK)
++{
++    const std::string gfx = at::cuda::getCurrentDeviceProperties()->gcnArchName;
++    const bool supported_gfx = gfx.starts_with("gfx1100") || gfx.starts_with("gfx1200") ||
++                               gfx.starts_with("gfx1201");
++    TORCH_CHECK(supported_gfx,
++                "CKTile INT8 comparison supports gfx1100/gfx1200/gfx1201, got ",
++                gfx);
++    TORCH_CHECK(XQ.dtype() == at::ScalarType::Char && WQ.dtype() == at::ScalarType::Char,
++                "Weights and activations must both be int8");
++    TORCH_CHECK(x_scale.dtype() == at::ScalarType::Float &&
++                    w_scale.dtype() == at::ScalarType::Float,
++                "Scales must both be float32");
++    TORCH_CHECK(Y.dtype() == at::ScalarType::BFloat16, "Output must be bfloat16");
++    TORCH_CHECK(splitK >= 0 && splitK < 31, "splitK exponent must be in [0, 30]");
++    if(bias != std::nullopt)
++    {
++        TORCH_CHECK(bias.value().dtype() == Y.dtype(),
++                    "Output and bias must have the same dtype");
++    }
++
++    const int KBatch = 1 << splitK;
++    rowwise_dispatch<TILE_I8, TILE_FP32, TILE_BF16>()(
++        XQ, WQ, x_scale, w_scale, Y, bias, KBatch);
++    return Y;
++}
+\ No newline at end of file
+diff --git a/csrc/ck_gemm_a8w8/gemm_a8w8_common.py b/csrc/ck_gemm_a8w8/gemm_a8w8_common.py
+index e0b8f7663..d336408a9 100644
+--- a/csrc/ck_gemm_a8w8/gemm_a8w8_common.py
++++ b/csrc/ck_gemm_a8w8/gemm_a8w8_common.py
+@@ -165,3 +165,65 @@ default_kernels_dict = {
+
+ }
+ # fmt: on
++
++
++@dataclass(frozen=True)
++class tileKernelInstance:
++    M_Tile: int
++    N_Tile: int
++    K_Tile: int
++    M_Warp: int
++    N_Warp: int
++    K_Warp: int
++    M_Warp_Tile: int
++    N_Warp_Tile: int
++    Scheduler: str
++    TiledMMAPermuteN: bool
++    TransposeC: bool
++    UsePersistentKernel: bool
++    BlockPerCu: int
++
++    @property
++    def name(self) -> str:
++        ret = "_".join(
++            [
++                "a8w8_cktile",
++                "x".join(str(x) for x in [self.M_Tile, self.N_Tile, self.K_Tile]),
++                "x".join(str(x) for x in [self.M_Warp, self.N_Warp, self.K_Warp]),
++                "x".join(str(x) for x in [self.M_Warp_Tile, self.N_Warp_Tile]),
++                self.Scheduler.lower(),
++                "x".join(
++                    str(int(x))
++                    for x in [
++                        self.TiledMMAPermuteN,
++                        self.TransposeC,
++                        self.UsePersistentKernel,
++                    ]
++                ),
++                str(self.BlockPerCu),
++            ]
++        )
++        return ret
++
++
++# Initial wave32 WMMA candidate for gfx1100 and gfx1201. Keep this separate
++# from the gfx9 CK instances until architecture-specific tuning is available.
++kernels_list_cktile = {
++    0: tileKernelInstance(
++        16,
++        128,
++        256,
++        1,
++        4,
++        1,
++        16,
++        16,
++        "Intrawave",
++        False,
++        False,
++        False,
++        1,
++    ),
++}
++
++default_kernels_dict_cktile = {-1: kernels_list_cktile[0]}
+diff --git a/csrc/ck_gemm_a8w8/gen_instances_cktile.py b/csrc/ck_gemm_a8w8/gen_instances_cktile.py
+new file mode 100644
+index 000000000..a7267854c
+--- /dev/null
++++ b/csrc/ck_gemm_a8w8/gen_instances_cktile.py
+@@ -0,0 +1,273 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++import argparse
++import os
++import shutil
++import sys
++from pathlib import Path
++
++this_dir = os.path.dirname(os.path.abspath(__file__))
++AITER_CORE_DIR = (
++    os.path.join(os.path.abspath(f"{this_dir}/../../../"), "aiter/jit/utils")
++    if os.path.exists(
++        os.path.join(os.path.abspath(f"{this_dir}/../../../"), "aiter_meta")
++    )
++    else os.path.abspath(f"{this_dir}/../../aiter/jit/utils")
++)
++sys.path.insert(0, AITER_CORE_DIR)
++from chip_info import write_lookup_header  # noqa: E402
++
++from gemm_a8w8_common import (  # noqa: E402
++    default_kernels_dict_cktile,
++    tileKernelInstance,
++    kernels_list_cktile,
++)
++
++"""
++a8w8_gemm instance gen for cktile
++"""
++
++
++class gemm_a8w8_fwd_codegen:
++    def __init__(self, working_path, istune=False, tune_file=None):
++        self.working_path = working_path
++        if not os.path.exists(working_path):
++            os.makedirs(working_path)
++
++        self.impl_path = os.path.join(working_path, "impl")
++        self.instances_path = os.path.join(working_path, "instances")
++        self.istune = istune
++        self.tune_file = tune_file
++
++    def get_tune_dict(self):
++        # This first comparison backend deliberately has no tuned table.
++        # Architecture-specific candidates will be added after it runs correctly.
++        ret = default_kernels_dict_cktile
++        return ret
++
++    def gen_code(self, kernels_dict: dict):
++        """
++        Codegen for cktile gemm a8w8
++        """
++        # generate instances code
++        for _, k in kernels_dict.items():
++            self.gen_instance(k)
++
++        # generate lookup dict for kernel instances
++        self.gen_lookup_dict(kernels_dict)
++
++        # generate manifest header for kernel instances
++        self.gen_manifest_head(kernels_dict)
++
++    def run(self):
++        """
++        Run codegen and generate all the files together
++        """
++
++        if os.path.exists(self.impl_path):
++            shutil.rmtree(self.impl_path)
++        os.mkdir(self.impl_path)
++        if os.path.exists(self.instances_path):
++            shutil.rmtree(self.instances_path)
++        os.mkdir(self.instances_path)
++
++        # generate code for cktile
++        if self.istune:
++            # generate code for default kernels
++            self.gen_code(kernels_list_cktile)
++        else:
++            # generate code for tuned kernels from tune_file
++            self.gen_code(self.get_tune_dict())
++
++    def gen_instance(self, k: tileKernelInstance):
++        TILE_INSTANCE_IMPL = f"""// SPDX-License-Identifier: MIT
++// Copyright (c) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#include "gemm_a8w8_cktile_common.cuh"
++
++template <typename ABDataType, typename DDataType, typename EDataType, bool HasBias>
++torch::Tensor
++{k.name}(
++    torch::Tensor &XQ,
++    torch::Tensor &WQ,
++    torch::Tensor &x_scale,
++    torch::Tensor &w_scale,
++    torch::Tensor &Y,
++    std::optional<torch::Tensor> bias,
++    int k_batch
++    )
++{{
++    // Get M, N, K from input tensors.
++    int M = XQ.numel() / XQ.size(-1);
++    int N = WQ.size(0);
++    int K = WQ.size(1);
++
++    // Instantiate tile gemm instance.
++    __TILE_INSTANCE_PLACEHOLDER__
++
++}}
++
++"""
++
++        # This comparison module is restricted to gfx11/gfx12, whose INT8
++        # WMMA instruction uses a 16x16x16 warp tile.
++        K_Warp_Tile = "16"
++
++        TILE_INSTANCE = f"""constexpr ck_tile::index_t K_Warp_Tile = {K_Warp_Tile};
++    using TileGemmInstance = TileGemmConfig<
++            {k.M_Tile}, {k.N_Tile}, {k.K_Tile},
++            {k.M_Warp}, {k.N_Warp}, {k.K_Warp},
++            {k.M_Warp_Tile}, {k.N_Warp_Tile}, K_Warp_Tile,
++            {str(k.TiledMMAPermuteN).lower()},
++            {str(k.TransposeC).lower()},
++            {str(k.UsePersistentKernel).lower()},
++            ck_tile::GemmPipelineScheduler::{k.Scheduler},
++            {k.BlockPerCu}>;
++
++    // Run kernel instance.
++    return gemm_a8w8_cktile_impl<ABDataType, DDataType, EDataType, HasBias, TileGemmInstance>(XQ, WQ, x_scale, w_scale, Y, bias, k_batch);
++"""
++
++        TILE_INSTANCE_IMPL_str = TILE_INSTANCE_IMPL.replace(
++            "__TILE_INSTANCE_PLACEHOLDER__", TILE_INSTANCE
++        )
++
++        Path(os.path.join(self.impl_path, f"{k.name}.cuh")).write_text(
++            TILE_INSTANCE_IMPL_str
++        )
++
++        INSTANCE_template = """// SPDX-License-Identifier: MIT
++// Copyright (c) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#include "impl/{name}.cuh"
++
++{ifdef_start}
++
++template torch::Tensor
++{name}<{dtypes}>(
++    torch::Tensor &XQ,
++    torch::Tensor &WQ,
++    torch::Tensor &x_scale,
++    torch::Tensor &w_scale,
++    torch::Tensor &Y,
++    std::optional<torch::Tensor> bias,
++    int KBatch);
++
++{ifdef_end}
++
++"""
++        eight_waves = k.M_Warp * k.N_Warp * k.K_Warp == 8
++        ifdef_start = "#ifndef __gfx942__" if eight_waves else ""
++        ifdef_end = "#endif" if eight_waves else ""
++
++        instance = INSTANCE_template.format(
++            name=k.name,
++            dtypes="TILE_I8, TILE_FP32, TILE_BF16, true",
++            ifdef_start=ifdef_start,
++            ifdef_end=ifdef_end,
++        )
++        instance_path = os.path.join(self.instances_path, f"{k.name}_i8_fp32_bf16.cpp")
++        Path(instance_path).write_text(instance, encoding="utf-8")
++
++    def gen_lookup_dict(self, kernels_dict: dict):
++        LOOKUP_head = """#pragma once
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#ifdef USE_ROCM
++
++#define GENERATE_LOOKUP_TABLE(ABTYPE, DTYPE, ETYPE, HasBias)                                                                                      \\
++   {                                                                                                                             \\"""
++
++        LOOKUP_template = """
++       {{{MNK},                                                                                                       \\
++        {kernel_name}<ABTYPE, DTYPE, ETYPE, HasBias>}},                       \\"""
++
++        LOOKUP_end = """
++   }
++
++#endif // USE_ROCM
++"""
++        write_lookup_header(
++            os.path.join(self.working_path, "gemm_a8w8_cktile_lookup.h"),
++            kernels_dict,
++            LOOKUP_head,
++            LOOKUP_template,
++            LOOKUP_end,
++            self.istune,
++        )
++
++    def gen_manifest_head(self, kernels_dict):
++        """
++        Generate manifest header for kernel instances, declaring all the kernel APIs
++        """
++
++        MAINFEST_head = """#pragma once
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#ifdef USE_ROCM
++
++#include <cstdlib>
++
++#include <torch/extension.h>
++
++{eight_waves_definition}
++"""
++        MAINFEST_template = """
++template <typename ABDataType, typename DDataType, typename EDataType, bool HasBias>
++torch::Tensor
++{kernel_name}(
++    torch::Tensor &XQ,
++    torch::Tensor &WQ,
++    torch::Tensor &x_scale,
++    torch::Tensor &w_scale,
++    torch::Tensor &Y,
++    std::optional<torch::Tensor> bias,
++    int KBatch);
++"""
++        MAINFEST_end = """
++
++#endif // USE_ROCM
++"""
++
++        with open(
++            os.path.join(self.working_path, "gemm_a8w8_cktile_manifest.h"), "w"
++        ) as f:
++            eight_waves_supported = ""
++            f.write(MAINFEST_head.format(eight_waves_definition=eight_waves_supported))
++            for mnk, k in kernels_dict.items():
++                f.write(MAINFEST_template.format(kernel_name=k.name))
++            f.write(MAINFEST_end)
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(
++        prog="generate",
++        description="gen API for CK gemm a8w8 kernel",
++    )
++
++    # the directory for list_blobs/gen_blobs to write files into
++    parser.add_argument(
++        "-w",
++        "--working_path",
++        default="./",
++        required=False,
++        help="the path where all the blobs are going to be generated",
++    )
++
++    parser.add_argument(
++        "-f",
++        "--tune_file",
++        default="aiter/configs/a8w8_tuned_gemm.csv",
++        required=False,
++        help="tune_file include the result after run gemm_a8w8_tune.py",
++    )
++
++    parser.add_argument(
++        "--tune", action="store_true", required=False, help="generated tune instances"
++    )
++
++    args = parser.parse_args()
++    codegen = gemm_a8w8_fwd_codegen(args.working_path, args.tune, args.tune_file)
++    codegen.run()
+diff --git a/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile.h b/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile.h
+new file mode 100644
+index 000000000..b13fb31fa
+--- /dev/null
++++ b/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#pragma once
++
++#include <torch/all.h>
++#include <torch/extension.h>
++
++torch::Tensor gemm_a8w8_cktile(
++    torch::Tensor &XQ,
++    torch::Tensor &WQ,
++    torch::Tensor &x_scale,
++    torch::Tensor &w_scale,
++    torch::Tensor &Y,
++    std::optional<torch::Tensor> bias,
++    int splitK);
+diff --git a/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile_common.cuh b/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile_common.cuh
+new file mode 100644
+index 000000000..c6e656975
+--- /dev/null
++++ b/csrc/ck_gemm_a8w8/include/gemm_a8w8_cktile_common.cuh
+@@ -0,0 +1,422 @@
++#pragma once
++// SPDX-License-Identifier: MIT
++// Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#ifdef USE_ROCM
++
++#undef __HIP_NO_HALF_OPERATORS__
++#undef __HIP_NO_HALF_CONVERSIONS__
++
++#include <cstdlib>
++#include <initializer_list>
++#include <iostream>
++#include <numeric>
++
++#include <ATen/ATen.h>
++#include <ATen/hip/HIPContext.h>
++#include <ATen/hip/impl/HIPGuardImplMasqueradingAsCUDA.h>
++#include <ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h>
++#include <torch/extension.h>
++
++#include "ck_tile/core.hpp"
++#include "ck_tile/host.hpp"
++#include "ck_tile/host/kernel_launch.hpp"
++#include "ck_tile/ops/epilogue.hpp"
++#include "ck_tile/ops/gemm.hpp"
++#include "ck_tile/ops/gemm_quant.hpp"
++
++using TILE_FP32 = float;
++using TILE_I32  = int;
++using TILE_FP16 = ck_tile::half_t;
++using TILE_BF16 = ck_tile::bf16_t;
++using TILE_FP8  = ck_tile::fp8_t;
++using TILE_I8   = int8_t;
++
++using ALayout  = ck_tile::tensor_layout::gemm::RowMajor;
++using BLayout  = ck_tile::tensor_layout::gemm::ColumnMajor;
++using AQLayout = ck_tile::tensor_layout::gemm::RowMajor;
++using BQLayout = ck_tile::tensor_layout::gemm::ColumnMajor;
++using ELayout  = ck_tile::tensor_layout::gemm::RowMajor;
++using DLayout  = ck_tile::tensor_layout::gemm::RowMajor;
++
++template <ck_tile::index_t M_Tile,
++          ck_tile::index_t N_Tile,
++          ck_tile::index_t K_Tile,
++          ck_tile::index_t M_Warp,
++          ck_tile::index_t N_Warp,
++          ck_tile::index_t K_Warp,
++          ck_tile::index_t M_Warp_Tile,
++          ck_tile::index_t N_Warp_Tile,
++          ck_tile::index_t K_Warp_Tile,
++          bool TiledMMAPermuteN                    = false,
++          bool TransposeC                          = false,
++          bool UsePersistentKernel                 = false,
++          ck_tile::GemmPipelineScheduler Scheduler = ck_tile::GemmPipelineScheduler::Intrawave,
++          int BlockPerCu                           = 1>
++struct CreateTileGemmConfig
++{
++    static constexpr ck_tile::index_t M_Tile_v                  = M_Tile;
++    static constexpr ck_tile::index_t N_Tile_v                  = N_Tile;
++    static constexpr ck_tile::index_t K_Tile_v                  = K_Tile;
++    static constexpr ck_tile::index_t M_Warp_v                  = M_Warp;
++    static constexpr ck_tile::index_t N_Warp_v                  = N_Warp;
++    static constexpr ck_tile::index_t K_Warp_v                  = K_Warp;
++    static constexpr ck_tile::index_t M_Warp_Tile_v             = M_Warp_Tile;
++    static constexpr ck_tile::index_t N_Warp_Tile_v             = N_Warp_Tile;
++    static constexpr ck_tile::index_t K_Warp_Tile_v             = K_Warp_Tile;
++    static constexpr bool TiledMMAPermuteN_v                    = TiledMMAPermuteN;
++    static constexpr bool TransposeC_v                          = TransposeC;
++    static constexpr bool UsePersistentKernel_v                 = UsePersistentKernel;
++    static constexpr ck_tile::GemmPipelineScheduler Scheduler_v = Scheduler;
++    static constexpr int BlockPerCu_v                           = BlockPerCu;
++};
++
++template <ck_tile::index_t M_Tile,
++          ck_tile::index_t N_Tile,
++          ck_tile::index_t K_Tile,
++          ck_tile::index_t M_Warp,
++          ck_tile::index_t N_Warp,
++          ck_tile::index_t K_Warp,
++          ck_tile::index_t M_Warp_Tile,
++          ck_tile::index_t N_Warp_Tile,
++          ck_tile::index_t K_Warp_Tile,
++          bool TiledMMAPermuteN                    = false,
++          bool TransposeC                          = false,
++          bool UsePersistentKernel                 = false,
++          ck_tile::GemmPipelineScheduler Scheduler = ck_tile::GemmPipelineScheduler::Intrawave,
++          int BlockPerCu                           = 1>
++using TileGemmConfig = CreateTileGemmConfig<M_Tile,
++                                            N_Tile,
++                                            K_Tile,
++                                            M_Warp,
++                                            N_Warp,
++                                            K_Warp,
++                                            M_Warp_Tile,
++                                            N_Warp_Tile,
++                                            K_Warp_Tile,
++                                            TiledMMAPermuteN,
++                                            TransposeC,
++                                            UsePersistentKernel,
++                                            Scheduler,
++                                            BlockPerCu>;
++
++template <typename EDataType, bool HasBias>
++struct EpilogueTraits;
++
++template <typename EDataType>
++struct EpilogueTraits<EDataType, true>
++{
++    using ElementwiseOp    = ck_tile::element_wise::MultiDAdd;
++    using DsLayout         = ck_tile::tuple<DLayout>;
++    using DsDataType       = ck_tile::tuple<EDataType>;
++    using CShuffleDataType = TILE_FP32;
++};
++
++template <typename EDataType>
++struct EpilogueTraits<EDataType, false>
++{
++    using ElementwiseOp    = ck_tile::element_wise::PassThrough;
++    using DsLayout         = ck_tile::tuple<>;
++    using DsDataType       = ck_tile::tuple<>;
++    using CShuffleDataType = EDataType;
++};
++
++// Needed only for passing AQDataType and BQDataType to QuantGemmKernel
++template <typename Problem, typename Policy = ck_tile::UniversalGemmPipelineAgBgCrPolicy>
++struct QuantGemmPipelineAgBgCrCompV3 : public ck_tile::GemmPipelineAgBgCrCompV3<Problem, Policy>
++{
++    using AQDataType = ck_tile::remove_cvref_t<typename Problem::AQDataType>;
++    using BQDataType = ck_tile::remove_cvref_t<typename Problem::BQDataType>;
++};
++
++template <typename Problem, typename Policy = ck_tile::GemmPipelineAgBgCrCompAsyncEightWavesPolicy>
++struct QuantGemmPipelineAgBgCrCompAsyncEightWaves
++    : public ck_tile::GemmPipelineAgBgCrCompAsyncEightWaves<Problem, Policy>
++{
++    using AQDataType = ck_tile::remove_cvref_t<typename Problem::AQDataType>;
++    using BQDataType = ck_tile::remove_cvref_t<typename Problem::BQDataType>;
++};
++
++template <typename ABDataType,
++          typename DDataType,
++          typename EDataType,
++          typename GemmConfig,
++          typename HostArguments,
++          bool HasBias,
++          bool PreshuffleB,
++          bool UseDoubleSmemBuffer = PreshuffleB>
++void TileGemmComputeImpl(const HostArguments& args)
++{
++    using ComputeDataType = ABDataType;
++    using AccDataType =
++        std::conditional_t<std::is_same_v<ABDataType, TILE_I8>, TILE_I32, TILE_FP32>;
++
++    constexpr bool kPadM = false;
++    constexpr bool kPadN = false;
++    constexpr bool kPadK = false;
++
++    constexpr ck_tile::QuantType QuantMode = ck_tile::QuantType::RowColQuant;
++    constexpr bool eight_waves =
++        (GemmConfig::M_Warp_v * GemmConfig::N_Warp_v * GemmConfig::K_Warp_v == 8);
++
++    constexpr bool TransposeC = GemmConfig::TransposeC_v;
++    // TODO: Try direct store in the future.
++
++    using GemmShape = ck_tile::TileGemmShape<
++        ck_tile::sequence<GemmConfig::M_Tile_v, GemmConfig::N_Tile_v, GemmConfig::K_Tile_v>,
++        ck_tile::sequence<GemmConfig::M_Warp_v, GemmConfig::N_Warp_v, GemmConfig::K_Warp_v>,
++        ck_tile::sequence<GemmConfig::M_Warp_Tile_v,
++                          GemmConfig::N_Warp_Tile_v,
++                          GemmConfig::K_Warp_Tile_v>>;
++
++    constexpr ck_tile::index_t TileParitionerGroupNum = 8;
++    constexpr ck_tile::index_t TileParitionerM01      = 4;
++
++    using TilePartitioner = ck_tile::
++        GemmSpatiallyLocalTilePartitioner<GemmShape, TileParitionerGroupNum, TileParitionerM01>;
++
++    using GemmTraits = ck_tile::TileGemmQuantTraits<kPadM,
++                                                    kPadN,
++                                                    kPadK,
++                                                    false,       // APreshuffleQuant
++                                                    false,       // BPreshuffleQuant
++                                                    PreshuffleB, // PreshuffleB
++                                                    ALayout,
++                                                    BLayout,
++                                                    ELayout,
++                                                    QuantMode,
++                                                    AQLayout,
++                                                    BQLayout,
++                                                    TransposeC,
++                                                    UseDoubleSmemBuffer>;
++
++    using GemmPipelineProblem = ck_tile::
++        GemmPipelineProblemBase<ABDataType, ABDataType, AccDataType, GemmShape, GemmTraits>;
++
++    using BaseGemmPipeline = ck_tile::BaseGemmPipelineAgBgCrCompV3<GemmPipelineProblem>;
++
++    const ck_tile::index_t K_split  = ck_tile::integer_least_multiple(args.K, GemmConfig::K_Tile_v);
++    const ck_tile::index_t num_loop = TilePartitioner::GetLoopNum(K_split);
++    const bool has_hot_loop         = BaseGemmPipeline::BlockHasHotloop(num_loop);
++    const ck_tile::TailNumber tail_num = BaseGemmPipeline::GetBlockLoopTailNum(num_loop);
++
++    const auto Run = [&](const auto has_hot_loop_, const auto tail_number_) {
++        constexpr bool has_hot_loop_v = has_hot_loop_.value;
++        constexpr auto tail_number_v  = tail_number_.value;
++
++        using PipelineProblem = ck_tile::GemmQuantPipelineProblemBase<
++            ABDataType,
++            DDataType,
++            ABDataType,
++            DDataType,
++            AccDataType,
++            GemmShape,
++            GemmTraits,
++            ck_tile::QuantGroupShape<ck_tile::sequence<1, 1, 1>>, // no group size applicable
++            ck_tile::QuantGroupShape<ck_tile::sequence<1, 1, 1>>, // no group size applicable
++            TransposeC,
++            ComputeDataType,
++            GemmConfig::Scheduler_v,
++            has_hot_loop_v,
++            tail_number_v>;
++
++        using GemmPipeline =
++            std::conditional_t<eight_waves,
++                               QuantGemmPipelineAgBgCrCompAsyncEightWaves<PipelineProblem>,
++                               QuantGemmPipelineAgBgCrCompV3<PipelineProblem>>;
++        static_assert(!GemmConfig::TiledMMAPermuteN_v,
++                      "TiledMMAPermuteN=true requires PermuteNEpilogue, not CShuffleEpilogue");
++        using EpTraits     = EpilogueTraits<EDataType, HasBias>;
++        using GemmEpilogue = ck_tile::CShuffleEpilogue<
++            ck_tile::CShuffleEpilogueProblem<ABDataType,
++                                             ABDataType,
++                                             typename EpTraits::DsDataType,
++                                             AccDataType,
++                                             EDataType,
++                                             typename EpTraits::DsLayout,
++                                             ELayout,
++                                             typename EpTraits::ElementwiseOp,
++                                             TilePartitioner::MPerBlock,
++                                             TilePartitioner::NPerBlock,
++                                             GemmConfig::M_Warp_v,
++                                             GemmConfig::N_Warp_v * GemmConfig::K_Warp_v,
++                                             GemmConfig::M_Warp_Tile_v,
++                                             GemmConfig::N_Warp_Tile_v,
++                                             GemmConfig::K_Warp_Tile_v,
++                                             PipelineProblem::TransposeC,
++                                             1,
++                                             false,
++                                             1,
++                                             1,
++                                             false,
++                                             void,
++                                             void,
++                                             false,
++                                             TILE_FP32,
++                                             typename EpTraits::CShuffleDataType>>;
++
++        using Kernel =
++            ck_tile::QuantGemmMultiDKernel<TilePartitioner, GemmPipeline, GemmEpilogue, QuantMode>;
++
++        auto kargs = Kernel::MakeKernelArgs(args);
++
++        const dim3 grids  = Kernel::GridSize(args.M, args.N, args.k_batch);
++        const dim3 blocks = Kernel::BlockSize();
++
++        if(!Kernel::IsSupportedArgument(kargs))
++        {
++            throw std::runtime_error("Wrong! Arguments not supported! Skipping gemm!\n");
++        }
++
++        ck_tile::launch_kernel(
++            ck_tile::stream_config{at::hip::getCurrentHIPStream() /*stream_id*/,
++                                   false /*time_kernel*/,
++                                   1 /*log_level*/},
++            ck_tile::make_kernel<GemmConfig::BlockPerCu_v>(Kernel{}, grids, blocks, 0, kargs));
++    };
++
++    BaseGemmPipeline::TailHandler(Run, has_hot_loop, tail_num);
++}
++
++template <typename ABDataType,
++          typename DDataType,
++          typename EDataType,
++          bool HasBias,
++          typename GemmInstance>
++__forceinline__ torch::Tensor gemm_a8w8_cktile_impl(torch::Tensor& XQ,
++                                                    torch::Tensor& WQ,
++                                                    torch::Tensor& x_scale,
++                                                    torch::Tensor& w_scale,
++                                                    torch::Tensor& Y,
++                                                    std::optional<torch::Tensor> bias,
++                                                    int k_batch = 1)
++{
++    // check
++    TORCH_CHECK(XQ.dtype() == WQ.dtype(), "Weights and activations should have the same dtype!");
++    TORCH_CHECK(x_scale.dtype() == w_scale.dtype(), "Scales should have the same dtype!");
++
++    TORCH_CHECK(XQ.stride(-1) == 1,
++                "CKTile blockscale GEMM: XQ inner dim must be contiguous, "
++                "got strides=[",
++                XQ.stride(0),
++                ",",
++                XQ.stride(1),
++                "]");
++    TORCH_CHECK(WQ.stride(-1) == 1,
++                "CKTile blockscale GEMM: WQ inner dim must be contiguous, "
++                "got strides=[",
++                WQ.stride(0),
++                ",",
++                WQ.stride(1),
++                "]");
++    TORCH_CHECK(Y.stride(-1) == 1,
++                "CKTile blockscale GEMM: Y inner dim must be contiguous, "
++                "got strides=[",
++                Y.stride(0),
++                ",",
++                Y.stride(1),
++                "]");
++
++    // Split-K uses atomic_add into C; zero the output buffer first.
++    // Use zero_() so all rows are cleared regardless of the leading-dimension
++    // stride (e.g. padded tensors produced by vLLM's _maybe_pad_fp8_weight).
++    if(k_batch > 1)
++    {
++        Y.zero_();
++    }
++
++    const int stride_A  = XQ.stride(0);
++    const int stride_B  = WQ.stride(0);
++    const int stride_C  = Y.stride(0);
++    const int stride_AQ = x_scale.stride(0);
++    const int stride_BQ = w_scale.stride(0);
++
++    const int M = XQ.size(0);
++    const int N = WQ.size(0);
++    const int K = XQ.size(1);
++
++    const int AQK = 1; // Row quantization: tensor shape [M, 1]
++    const int BQK = 1; // Column quantization: tensor shape [1, N]
++
++    auto runWithBias = [&]() {
++        using HostArgs = ck_tile::QuantGemmMultiDHostArgs<1>;
++
++        HostArgs args(XQ.data_ptr(),
++                      WQ.data_ptr(),
++                      std::array<const void*, 1>{bias.value().data_ptr()},
++                      Y.data_ptr(),
++                      x_scale.data_ptr(),
++                      w_scale.data_ptr(),
++                      k_batch,
++                      M,
++                      N,
++                      K,
++                      AQK,
++                      BQK,
++                      stride_A,
++                      stride_B,
++                      std::array<ck_tile::index_t, 1>{0},
++                      stride_C,
++                      stride_AQ,
++                      stride_BQ);
++
++        TileGemmComputeImpl<ABDataType,
++                            DDataType,
++                            EDataType,
++                            GemmInstance,
++                            HostArgs,
++                            true,
++                            false,
++                            false>(args);
++    };
++
++    auto runWithoutBias = [&]() {
++        using HostArgs = ck_tile::QuantGemmHostArgs;
++
++        HostArgs args(XQ.data_ptr(),
++                      WQ.data_ptr(),
++                      Y.data_ptr(),
++                      x_scale.data_ptr(),
++                      w_scale.data_ptr(),
++                      k_batch,
++                      M,
++                      N,
++                      K,
++                      AQK,
++                      BQK,
++                      stride_A,
++                      stride_B,
++                      stride_C,
++                      stride_AQ,
++                      stride_BQ);
++
++        TileGemmComputeImpl<ABDataType,
++                            DDataType,
++                            EDataType,
++                            GemmInstance,
++                            HostArgs,
++                            false,
++                            false,
++                            false>(args);
++    };
++
++    if constexpr(HasBias)
++    {
++        if(bias != std::nullopt)
++        {
++            runWithBias();
++        }
++        else
++        {
++            runWithoutBias();
++        }
++    }
++    else
++    {
++        runWithoutBias();
++    }
++
++    return Y;
++}
++
++#endif // USE_ROCM
+diff --git a/csrc/pybind/gemm_a8w8_cktile_pybind.cu b/csrc/pybind/gemm_a8w8_cktile_pybind.cu
+new file mode 100644
+index 000000000..aa5cbeeb6
+--- /dev/null
++++ b/csrc/pybind/gemm_a8w8_cktile_pybind.cu
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: MIT
++// Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++#include "gemm_a8w8_cktile.h"
++
++PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
++{
++    m.def("gemm_a8w8_cktile",
++          &gemm_a8w8_cktile,
++          "Experimental wave32 CKTile INT8 A8W8 GEMM",
++          pybind11::arg("XQ"),
++          pybind11::arg("WQ"),
++          pybind11::arg("x_scale"),
++          pybind11::arg("w_scale"),
++          pybind11::arg("Out"),
++          pybind11::arg("bias")   = std::nullopt,
++          pybind11::arg("splitK") = 0);
++}
+diff --git a/op_tests/test_gemm_a8w8_backends.py b/op_tests/test_gemm_a8w8_backends.py
+new file mode 100644
+index 000000000..1433c4379
+--- /dev/null
++++ b/op_tests/test_gemm_a8w8_backends.py
+@@ -0,0 +1,80 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import argparse
++from collections.abc import Callable
++
++import torch
++import torch.nn.functional as F
++
++import aiter
++
++
++def create_inputs(m: int, n: int, k: int) -> tuple[torch.Tensor, ...]:
++    device = torch.device("cuda")
++    x = torch.randint(-16, 17, (m, k), dtype=torch.int8, device=device)
++    weight = torch.randint(-16, 17, (n, k), dtype=torch.int8, device=device)
++    x_scale = torch.rand((m, 1), dtype=torch.float32, device=device) * 0.01
++    w_scale = torch.rand((n, 1), dtype=torch.float32, device=device) * 0.01
++    ret_arr = (x, weight, x_scale, w_scale)
++    return ret_arr
++
++
++def run_reference(
++    x: torch.Tensor,
++    weight: torch.Tensor,
++    x_scale: torch.Tensor,
++    w_scale: torch.Tensor,
++) -> torch.Tensor:
++    ret = F.linear(x.float() * x_scale, weight.float() * w_scale).bfloat16()
++    return ret
++
++
++def benchmark_ms(
++    op: Callable[[], torch.Tensor],
++    warmup: int,
++    repeat: int,
++) -> float:
++    for _ in range(warmup):
++        op()
++    torch.cuda.synchronize()
++
++    start = torch.cuda.Event(enable_timing=True)
++    end = torch.cuda.Event(enable_timing=True)
++    start.record()
++    for _ in range(repeat):
++        op()
++    end.record()
++    end.synchronize()
++    ret = start.elapsed_time(end) / repeat
++    return ret
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Compare AITER INT8 A8W8 backends")
++    parser.add_argument("--m", type=int, default=16)
++    parser.add_argument("--n", type=int, default=4096)
++    parser.add_argument("--k", type=int, default=4096)
++    parser.add_argument("--warmup", type=int, default=10)
++    parser.add_argument("--repeat", type=int, default=100)
++    args = parser.parse_args()
++
++    inputs = create_inputs(args.m, args.n, args.k)
++    reference = run_reference(*inputs)
++    backends = {
++        "default": lambda: aiter.gemm_a8w8(*inputs),
++        "cktile": lambda: aiter.gemm_a8w8_CKTile(*inputs),
++        "triton": lambda: aiter.gemm_a8w8_Triton(*inputs),
++    }
++
++    arch = torch.cuda.get_device_properties(0).gcnArchName
++    print(f"arch={arch} shape=({args.m}, {args.n}, {args.k})")
++    for name, op in backends.items():
++        output = op()
++        torch.testing.assert_close(output, reference, rtol=0.02, atol=0.02)
++        elapsed_ms = benchmark_ms(op, args.warmup, args.repeat)
++        print(f"{name}: {elapsed_ms:.6f} ms")
++
++
++if __name__ == "__main__":
++    main()
+--
+2.43.0

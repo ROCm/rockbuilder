@@ -1,0 +1,264 @@
+From 3cb418a4e3757615189d370b0b9c3c16ce514ab3 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 12 Sep 2026 17:50:21 -0700
+Subject: [PATCH] Route wave32 INT8 through CKTile
+
+- Enable the INT8-only AITER gate on gfx1100,
+  gfx1200, and gfx1201.
+- Select CKTile from the input tensor device.
+- Preserve classic CK for gfx9 and sparse ops
+  for gfx1100.
+- Add focused gate, route, and registration
+  coverage.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 122 ++++++++++++++++++++
+ vllm/_aiter_ops.py                          |  39 ++++++-
+ 2 files changed, 157 insertions(+), 4 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index ecee187c0..8ef472da2 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -4,6 +4,7 @@
+ from unittest.mock import Mock, patch
+
+ import pytest
++import torch
+
+
+ @pytest.mark.parametrize(
+@@ -29,6 +30,31 @@ def test_aiter_cdna2_support(device_arch: str, expected: bool) -> None:
+         assert is_aiter_found_and_supported_on_cdna2() is expected
+
+
++@pytest.mark.parametrize(
++    ("device_arch", "expected"),
++    [
++        ("gfx90a", False),
++        ("gfx1100", True),
++        ("gfx1200", True),
++        ("gfx1201:sramecc-:xnack-", True),
++        ("gfx942", False),
++    ],
++)
++def test_aiter_cktile_int8_support(device_arch: str, expected: bool) -> None:
++    from vllm._aiter_ops import is_aiter_found_and_supported_on_cktile_int8
++
++    with (
++        patch("vllm._aiter_ops.IS_AITER_FOUND", True),
++        patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
++        patch("torch.cuda.is_available", return_value=True),
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName=device_arch),
++        ),
++    ):
++        assert is_aiter_found_and_supported_on_cktile_int8() is expected
++
++
+ def test_cdna2_enables_only_int8_linear_gate() -> None:
+     from vllm._aiter_ops import rocm_aiter_ops
+
+@@ -46,6 +72,57 @@ def test_cdna2_enables_only_int8_linear_gate() -> None:
+         assert rocm_aiter_ops.is_linear_fp8_enabled() is None
+
+
++def test_cktile_enables_only_int8_linear_gate() -> None:
++    from vllm._aiter_ops import rocm_aiter_ops
++
++    with (
++        patch("vllm._aiter_ops.is_aiter_found_and_supported", return_value=False),
++        patch(
++            "vllm._aiter_ops.is_aiter_found_and_supported_on_cdna2",
++            return_value=False,
++        ),
++        patch(
++            "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++            return_value=True,
++        ),
++        patch.object(rocm_aiter_ops, "_AITER_ENABLED", True),
++        patch.object(rocm_aiter_ops, "_LINEAR_ENABLED", True),
++    ):
++        assert rocm_aiter_ops.is_int8_linear_enabled() is True
++        assert rocm_aiter_ops.is_linear_enabled() is None
++        assert rocm_aiter_ops.is_linear_fp8_enabled() is None
++
++
++@pytest.mark.parametrize(
++    ("device_arch", "backend_name"),
++    [
++        ("gfx90a", "gemm_a8w8_CK"),
++        ("gfx1100", "gemm_a8w8_CKTile"),
++        ("gfx1201:sramecc-:xnack-", "gemm_a8w8_CKTile"),
++    ],
++)
++def test_int8_routes_by_tensor_device(device_arch: str, backend_name: str) -> None:
++    from vllm._aiter_ops import _rocm_aiter_w8a8_gemm_impl
++
++    inputs = [Mock() for _ in range(4)]
++    inputs[0].device = torch.device("cuda:0")
++    expected = Mock()
++    with (
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName=device_arch),
++        ),
++        patch(f"aiter.{backend_name}", return_value=expected) as gemm,
++    ):
++        output = _rocm_aiter_w8a8_gemm_impl(
++            *inputs,
++            output_dtype=torch.bfloat16,
++        )
++
++    assert output is expected
++    gemm.assert_called_once_with(*inputs, None, torch.bfloat16)
++
++
+ def test_cdna2_registers_only_w8a8_gemm() -> None:
+     import vllm._aiter_ops as aiter_ops
+     from vllm._aiter_ops import rocm_aiter_ops
+@@ -66,7 +143,12 @@ def test_cdna2_registers_only_w8a8_gemm() -> None:
+                 "vllm._aiter_ops.is_aiter_found_and_supported_on_cdna2",
+                 return_value=True,
+             ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++                return_value=False,
++            ),
+             patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
++            patch("vllm.platforms.rocm.on_gfx11", return_value=False),
+             patch("vllm._aiter_ops.direct_register_custom_op") as register,
+         ):
+             rocm_aiter_ops.register_ops_once()
+@@ -76,3 +158,43 @@ def test_cdna2_registers_only_w8a8_gemm() -> None:
+         assert aiter_ops._OPS_REGISTERED is True
+     finally:
+         aiter_ops._OPS_REGISTERED = original_registered
++
++
++def test_gfx11_registers_int8_and_sparse_ops() -> None:
++    import vllm._aiter_ops as aiter_ops
++    from vllm._aiter_ops import rocm_aiter_ops
++
++    original_registered = aiter_ops._OPS_REGISTERED
++    aiter_ops._OPS_REGISTERED = False
++    try:
++        with (
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported",
++                return_value=False,
++            ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_rdna4",
++                return_value=False,
++            ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_cdna2",
++                return_value=False,
++            ),
++            patch(
++                "vllm._aiter_ops.is_aiter_found_and_supported_on_cktile_int8",
++                return_value=True,
++            ),
++            patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
++            patch("vllm.platforms.rocm.on_gfx11", return_value=True),
++            patch("vllm._aiter_ops.direct_register_custom_op") as register,
++        ):
++            rocm_aiter_ops.register_ops_once()
++
++        registered_ops = [call.kwargs["op_name"] for call in register.call_args_list]
++        assert registered_ops == [
++            "rocm_aiter_w8a8_gemm",
++            "rocm_aiter_sparse_attn_indexer",
++        ]
++        assert aiter_ops._OPS_REGISTERED is True
++    finally:
++        aiter_ops._OPS_REGISTERED = original_registered
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 2894abc84..49993520f 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -162,6 +162,18 @@ def is_aiter_found_and_supported_on_cdna2() -> bool:
+     return False
+
+
++_AITER_CKTILE_INT8_ARCHITECTURES = frozenset({"gfx1100", "gfx1200", "gfx1201"})
++
++
++def is_aiter_found_and_supported_on_cktile_int8() -> bool:
++    """Check whether AITER's wave32 CKTile INT8 kernel can be used."""
++    ret = False
++    if current_platform.is_rocm() and IS_AITER_FOUND and torch.cuda.is_available():
++        device_arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
++        ret = device_arch in _AITER_CKTILE_INT8_ARCHITECTURES
++    return ret
++
++
+ def is_aiter_found_and_supported_on_rdna4() -> bool:
+     """RDNA4 (gfx12) analog of `is_aiter_found_and_supported()`.
+
+@@ -653,13 +665,18 @@ def _rocm_aiter_w8a8_gemm_impl(
+     bias: torch.Tensor | None = None,
+     output_dtype: torch.dtype = torch.float16,
+ ) -> torch.Tensor:
+-    from aiter import gemm_a8w8_CK
++    device_arch = torch.cuda.get_device_properties(A.device).gcnArchName.split(":", 1)[0]
++    if device_arch in _AITER_CKTILE_INT8_ARCHITECTURES:
++        from aiter import gemm_a8w8_CKTile as gemm_a8w8
++    else:
++        from aiter import gemm_a8w8_CK as gemm_a8w8
+
+-    # gemm_a8w8_CK(a, b, scale_a, scale_b, bias) expects
++    # gemm_a8w8(a, b, scale_a, scale_b, bias) expects
+     # a to be [M, K]
+     # b to be [N, K]
+     # CutlassInt8ScaledMMLinearKernel prepare weight `w_q` in [K, N] format
+-    return gemm_a8w8_CK(A, B, As, Bs, bias, output_dtype)
++    ret = gemm_a8w8(A, B, As, Bs, bias, output_dtype)
++    return ret
+
+
+ def _rocm_aiter_w8a8_gemm_fake(
+@@ -1835,6 +1852,7 @@ class rocm_aiter_ops:
+         return (
+             is_aiter_found_and_supported()
+             or is_aiter_found_and_supported_on_cdna2()
++            or is_aiter_found_and_supported_on_cktile_int8()
+         ) and cls._AITER_ENABLED and cls._LINEAR_ENABLED
+
+     @classmethod
+@@ -2048,13 +2066,26 @@ class rocm_aiter_ops:
+             if not current_platform.is_rocm():
+                 return
+
+-            if is_aiter_found_and_supported_on_cdna2():
++            if (
++                is_aiter_found_and_supported_on_cdna2()
++                or is_aiter_found_and_supported_on_cktile_int8()
++            ):
+                 if not _OPS_REGISTERED:
+                     direct_register_custom_op(
+                         op_name="rocm_aiter_w8a8_gemm",
+                         op_func=_rocm_aiter_w8a8_gemm_impl,
+                         fake_impl=_rocm_aiter_w8a8_gemm_fake,
+                     )
++                    from vllm.platforms.rocm import on_gfx11
++
++                    if on_gfx11():
++                        direct_register_custom_op(
++                            op_name="rocm_aiter_sparse_attn_indexer",
++                            op_func=rocm_aiter_sparse_attn_indexer,
++                            mutates_args=["topk_indices_buffer"],
++                            fake_impl=rocm_aiter_sparse_attn_indexer_fake,
++                            dispatch_key=current_platform.dispatch_key,
++                        )
+                     _OPS_REGISTERED = True
+                 return
+
+--
+2.52.0

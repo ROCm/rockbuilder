@@ -1,0 +1,62 @@
+From 33862259b241a40f931b81619e596fd8cd376c5f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 9 Sep 2026 18:13:16 -0700
+Subject: [PATCH 01/22] Use Clang GPU family macros
+
+- Replace CK-only lowercase family aliases
+- Select RDNA buffer resources without CK
+- Select gfx12 OCP FP8 without CK headers
+
+This fixes architecture detection when AITER is
+built with ENABLE_CK=0 or a translation unit
+does not include the required CK headers. Clang
+provides __GFX11__ and __GFX12__, while CK
+creates lowercase __gfx11__ and __gfx12__
+aliases. Depending on CK aliases caused Opus
+buffer stores to be dropped on gfx1100 and made
+the common interface select FNUZ on gfx12.
+
+Tools used:
+- GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/include/opus/opus.hpp    | 6 ++++--
+ csrc/include/py_itfs_common.h | 5 ++++-
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/csrc/include/opus/opus.hpp b/csrc/include/opus/opus.hpp
+index 731dddbb..96b99a9c 100644
+--- a/csrc/include/opus/opus.hpp
++++ b/csrc/include/opus/opus.hpp
+@@ -1743,8 +1743,10 @@ OPUS_D constexpr auto buffer_default_config() {
+     return 0x00020000;
+ #elif defined(__gfx103__)
+     return 0x31014000;
+-// gfx1200/gfx1201 (Navi 44/48) listed explicitly -- __gfx11__/__gfx12__ are typos (clang predefines only uppercase __GFX11__/__GFX12__), so without this gfx1200/gfx1201 fall into the 0xffffffff sentinel and make_gmem<> stores silently drop.
+-#elif defined(__gfx11__) || defined(__gfx12__) || defined(__gfx1250__) || defined(__gfx1201__) || defined(__gfx1200__)
++// Clang defines uppercase GPU family macros. Composable Kernel supplies
++// lowercase aliases, but those are unavailable with ENABLE_CK=0 or when the
++// required CK headers are not included.
++#elif defined(__GFX11__) || defined(__GFX12__)
+     return 0x31004000;
+ #else
+     return 0xffffffff;
+diff --git a/csrc/include/py_itfs_common.h b/csrc/include/py_itfs_common.h
+index df9ff99e..a1ace6ac 100644
+--- a/csrc/include/py_itfs_common.h
++++ b/csrc/include/py_itfs_common.h
+@@ -25,7 +25,10 @@ bool static isGPUArch(const std::vector<std::string>& archs)
+
+ #ifndef AITER_USE_OCP_FP8
+ #if defined(__HIP_DEVICE_COMPILE__)
+-#if defined(__gfx950__) || defined(__gfx12__)
++// Clang defines uppercase GPU family macros. Composable Kernel supplies
++// lowercase aliases, but those are unavailable with ENABLE_CK=0 or when the
++// required CK headers are not included.
++#if defined(__gfx950__) || defined(__GFX12__)
+ #define AITER_USE_OCP_FP8 1
+ #else
+ #define AITER_USE_OCP_FP8 0
+--
+2.43.0

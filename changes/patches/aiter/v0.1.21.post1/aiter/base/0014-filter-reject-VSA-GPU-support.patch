@@ -1,0 +1,56 @@
+From 63f7e7ed05b7f853ce1cac25a760c6b71ec345bc Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 01:04:59 -0700
+Subject: [PATCH 14/22] VSA GPU support
+
+- Build VSA kernels only for validated gfx9 GPUs
+- Preserve gfx9 objects in mixed GPU builds
+- Reject unsupported JIT requests before compile
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json  |  7 +++++++
+ op_tests/test_jit_module_archs.py | 10 ++++++++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index 9da5bad0..f87c0282 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -1408,6 +1408,13 @@
+         ]
+     },
+     "module_vsa_sparse_attention": {
++        "supported_gpu_archs": [
++            "gfx90a",
++            "gfx940",
++            "gfx941",
++            "gfx942",
++            "gfx950"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/py_itfs_ck/vsa_sparse_attention_kernels.cu'",
+             "f'{AITER_CSRC_DIR}/pybind/vsa_sparse_attention_pybind.cu'"
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index bb054848..e4abefef 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -123,3 +123,13 @@ def test_mxfp4_moe_aux_rejects_gfx1100(monkeypatch):
+         match=r"module_moe_mxfp4_aux.*gfx1100.*gfx950",
+     ):
+         core.get_args_of_build("module_moe_mxfp4_aux")
++
++
++def test_vsa_sparse_attention_rejects_gfx1100(monkeypatch):
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100"])
++
++    with pytest.raises(
++        RuntimeError,
++        match=r"module_vsa_sparse_attention.*gfx1100",
++    ):
++        core.get_args_of_build("module_vsa_sparse_attention")
+--
+2.43.0

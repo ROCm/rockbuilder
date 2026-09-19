@@ -1,0 +1,79 @@
+From 46ed2490ad3340ec812bacf71d5b46c3038ca904 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 11 Sep 2026 22:10:04 -0700
+Subject: [PATCH] Use visible GPU for gfx90a AITER gate
+
+- Avoid physical-device ordering on mixed GPU
+  hosts.
+- Select CDNA2 support from the PyTorch-visible
+  GPU.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py | 18 +++++++++++++-----
+ vllm/_aiter_ops.py                          |  7 +++----
+ 2 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index a1dee87b0..ecee187c0 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -1,22 +1,30 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+-from unittest.mock import patch
++from unittest.mock import Mock, patch
+
+ import pytest
+
+
+ @pytest.mark.parametrize(
+-    ("cdna_version", "expected"),
+-    [(2, True), (3, False), (4, False)],
++    ("device_arch", "expected"),
++    [
++        ("gfx90a:sramecc+:xnack-", True),
++        ("gfx942", False),
++        ("gfx1100", False),
++    ],
+ )
+-def test_aiter_cdna2_support(cdna_version: int, expected: bool) -> None:
++def test_aiter_cdna2_support(device_arch: str, expected: bool) -> None:
+     from vllm._aiter_ops import is_aiter_found_and_supported_on_cdna2
+
+     with (
+         patch("vllm._aiter_ops.IS_AITER_FOUND", True),
+         patch("vllm._aiter_ops.current_platform.is_rocm", return_value=True),
+-        patch("vllm.platforms.rocm.get_cdna_version", return_value=cdna_version),
++        patch("torch.cuda.is_available", return_value=True),
++        patch(
++            "torch.cuda.get_device_properties",
++            return_value=Mock(gcnArchName=device_arch),
++        ),
+     ):
+         assert is_aiter_found_and_supported_on_cdna2() is expected
+
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index b1eae0835..2894abc84 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -156,10 +156,9 @@ def is_aiter_found_and_supported() -> bool:
+
+ def is_aiter_found_and_supported_on_cdna2() -> bool:
+     """Check whether AITER's gfx90a-compatible kernels can be used."""
+-    if current_platform.is_rocm() and IS_AITER_FOUND:
+-        from vllm.platforms.rocm import get_cdna_version
+-
+-        return get_cdna_version() == 2
++    if current_platform.is_rocm() and IS_AITER_FOUND and torch.cuda.is_available():
++        device_arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
++        return device_arch == "gfx90a"
+     return False
+
+
+--
+2.43.0

@@ -1,0 +1,132 @@
+From a7928283f87be7d105c7053c56fe06fbac618d05 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 02:03:03 -0700
+Subject: [PATCH 16/22] fused QK RMSNorm group quant
+
+- Replace CDNA packed multiply on RDNA
+- Convert OCP FP8 through the HIP software path
+- Keep native FP8 conversion where available
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/include/aiter_opus_plus.h               |  9 ++++--
+ csrc/kernels/fused_qk_rmsnorm_group_quant.cu | 29 ++++++++++++--------
+ op_tests/test_jit_module_archs.py            |  8 ++++++
+ 3 files changed, 31 insertions(+), 15 deletions(-)
+
+diff --git a/csrc/include/aiter_opus_plus.h b/csrc/include/aiter_opus_plus.h
+index bb29ca13..455371bc 100644
+--- a/csrc/include/aiter_opus_plus.h
++++ b/csrc/include/aiter_opus_plus.h
+@@ -7,6 +7,7 @@
+ #include <hip/hip_bf16.h>
+ #include <hip/hip_bfloat16.h>
+ #include <hip/hip_fp16.h>
++#include <hip/hip_fp8.h>
+
+ namespace aiter {
+ using namespace opus;
+@@ -60,9 +61,11 @@ OPUS_D decltype(auto) fp32_to_fp8_scaled_x2(const S& s, float inverted_scale)
+                  : "v"(lo), "v"(hi));
+     return __builtin_bit_cast(fp8x2_t, static_cast<int16_t>(w));
+ #else
+-    // Arches without packed fp8-cvt (RDNA3/3.5, host): compile-only stub.
+-    // fp8 KV-cache is unused on these arches; never executed at runtime.
+-    (void)a; (void)b; (void)lo; (void)hi; return fp8x2_t{};
++    // HIP provides a software OCP E4M3 conversion when the target has no
++    // packed FP8 conversion instruction, including RDNA3 and RDNA3.5.
++    const auto packed =
++        __hip_cvt_float2_to_fp8x2(float2{a, b}, __HIP_SATFINITE, __HIP_E4M3);
++    return __builtin_bit_cast(fp8x2_t, packed);
+ #endif
+ }
+
+diff --git a/csrc/kernels/fused_qk_rmsnorm_group_quant.cu b/csrc/kernels/fused_qk_rmsnorm_group_quant.cu
+index a65b13fb..4bd65340 100644
+--- a/csrc/kernels/fused_qk_rmsnorm_group_quant.cu
++++ b/csrc/kernels/fused_qk_rmsnorm_group_quant.cu
+@@ -17,6 +17,19 @@
+
+ namespace aiter {
+
++template <typename Vec>
++__device__ inline void multiply_f32x2(Vec& lhs, const Vec& rhs)
++{
++#if defined(__gfx906__) || defined(__gfx908__) || defined(__gfx90a__) || \
++    defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__) || \
++    defined(__gfx950__)
++    asm volatile("v_pk_mul_f32 %0, %1, %2" : "=v"(lhs) : "v"(lhs), "v"(rhs));
++#else
++    lhs[0] *= rhs[0];
++    lhs[1] *= rhs[1];
++#endif
++}
++
+ template <typename DTYPE_I,
+           typename DTYPE_O,
+           int BlockSize,
+@@ -209,9 +222,7 @@ __global__ void fused_qk_rmsnorm_group_quant_kernel(
+     {
+         for(int i = 0; i < thread_data_size / 2; ++i)
+         {
+-            asm volatile("v_pk_mul_f32 %0, %1, %2"
+-                         : "=v"(thread_data_f2[i])
+-                         : "v"(thread_data_f2[i]), "v"(rcp));
++            multiply_f32x2(thread_data_f2[i], rcp);
+         }
+         for(int i = 0; i < thread_data_size / 2; ++i)
+         {
+@@ -223,9 +234,7 @@ __global__ void fused_qk_rmsnorm_group_quant_kernel(
+                 thread_data_w2[0] += 1.0f;
+                 thread_data_w2[1] += 1.0f;
+             }
+-            asm volatile("v_pk_mul_f32 %0, %1, %2"
+-                         : "=v"(thread_data_f2[i])
+-                         : "v"(thread_data_f2[i]), "v"(thread_data_w2));
++            multiply_f32x2(thread_data_f2[i], thread_data_w2);
+         }
+     }
+
+@@ -398,9 +407,7 @@ __global__ void fused_qk_rmsnorm_group_quant_kernel(
+             vec2_f* fp2 = reinterpret_cast<vec2_f*>(&tdf2);
+             for(int i = 0; i < thread_data_size / 2; ++i)
+             {
+-                asm volatile("v_pk_mul_f32 %0, %1, %2"
+-                             : "=v"(fp2[i])
+-                             : "v"(fp2[i]), "v"(rv2));
++                multiply_f32x2(fp2[i], rv2);
+             }
+             for(int i = 0; i < thread_data_size / 2; ++i)
+             {
+@@ -412,9 +419,7 @@ __global__ void fused_qk_rmsnorm_group_quant_kernel(
+                     wv[0] += 1.0f;
+                     wv[1] += 1.0f;
+                 }
+-                asm volatile("v_pk_mul_f32 %0, %1, %2"
+-                             : "=v"(fp2[i])
+-                             : "v"(fp2[i]), "v"(wv));
++                multiply_f32x2(fp2[i], wv);
+             }
+
+             auto o2p = out2 + idx * static_cast<int64_t>(out2_stride);
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index d8f1eede..55792ab7 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -145,3 +145,11 @@ def test_chunk_gdr_filters_gfx1100_from_mixed_build(monkeypatch):
+     args = core.get_args_of_build("module_chunk_gdr_fwd_h")
+
+     assert args["gpu_archs"] == ["gfx1201", "gfx90a"]
++
++
++def test_fused_qk_group_quant_keeps_gfx1100(monkeypatch):
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100", "gfx90a"])
++
++    args = core.get_args_of_build("module_fused_qk_rmsnorm_group_quant")
++
++    assert args["gpu_archs"] == ["gfx1100", "gfx90a"]
+--
+2.43.0

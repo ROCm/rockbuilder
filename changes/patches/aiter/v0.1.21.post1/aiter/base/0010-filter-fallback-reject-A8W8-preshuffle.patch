@@ -1,0 +1,57 @@
+From 397b00d59d02e1617131a0e7a23327ce58918129 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 00:59:49 -0700
+Subject: [PATCH 10/22] A8W8 preshuffle
+
+- Exclude gfx1100 from FlatMM code objects
+- Preserve validated GPU targets in mixed builds
+- Keep the existing public non-FlatMM fallback
+- Reject direct unsupported CKTile JIT requests
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/optCompilerConfig.json  |  7 +++++++
+ op_tests/test_jit_module_archs.py | 10 ++++++++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/aiter/jit/optCompilerConfig.json b/aiter/jit/optCompilerConfig.json
+index 64d81ca4..edef121d 100644
+--- a/aiter/jit/optCompilerConfig.json
++++ b/aiter/jit/optCompilerConfig.json
+@@ -377,6 +377,13 @@
+         "blob_gen_cmd": "f'{AITER_CSRC_DIR}/opus_gemm/gen_instances.py --working_path {{0}} --tune_files {AITER_ROOT_DIR}/aiter/configs/bf16_tuned_gemm.csv:{AITER_ROOT_DIR}/aiter/configs/model_configs/*_bf16_tuned_gemm.csv:{AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_FILE} --compiled_kids_sidecar={{0}}/../../compiled_kids_opus.json'"
+     },
+     "module_gemm_a8w8_bpreshuffle_cktile": {
++        "supported_gpu_archs": [
++            "gfx90a",
++            "gfx940",
++            "gfx941",
++            "gfx942",
++            "gfx950"
++        ],
+         "srcs": [
+             "f'{AITER_CSRC_DIR}/pybind/gemm_a8w8_bpreshuffle_cktile_pybind.cu'",
+             "f'{AITER_CSRC_DIR}/py_itfs_cu/gemm_common.cu'",
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index a62fd1c1..5f1a3a8b 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -81,3 +81,13 @@ def test_a8w8_blockscale_bpreshuffle_filters_gfx1100(monkeypatch):
+     )
+
+     assert args["gpu_archs"] == ["gfx950"]
++
++
++def test_a8w8_bpreshuffle_cktile_rejects_gfx1100(monkeypatch):
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100"])
++
++    with pytest.raises(
++        RuntimeError,
++        match=r"module_gemm_a8w8_bpreshuffle_cktile.*gfx1100",
++    ):
++        core.get_args_of_build("module_gemm_a8w8_bpreshuffle_cktile")
+--
+2.43.0

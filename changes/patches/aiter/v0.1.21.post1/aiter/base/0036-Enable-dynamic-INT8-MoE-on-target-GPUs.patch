@@ -1,0 +1,899 @@
+From 3fb3229bfb6a22dee14f2a88379eb165950e118e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 00:41:59 -0700
+Subject: [PATCH] Enable dynamic INT8 MoE on target GPUs
+
+Adds dynamic INT8 MoE support for gfx90a,
+gfx1100, and gfx1201.
+Fixes gfx1100 dynamic INT8 MoE by routing it
+through AITER's Triton SmoothQuant kernel because
+CK Quant2 crashes.
+
+Reason:
+- CK Quant2 stage two used unsupported BF16 atomic
+  accumulation on gfx90a and gfx1201.
+- CK Quant2 crashes during stage one on gfx1100.
+
+Fix:
+- Add Quant2 CK kernels for gfx90a and gfx1201.
+- Accumulate stage two in FP32 before casting.
+- Route gfx1100 dynamic INT8 MoE through AITER's
+  Triton SmoothQuant kernel.
+- Build grouped routing data from top-k inputs.
+
+Testing
+- Cover small and prefill-sized routing cases.
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/fused_moe.py                            |  31 ++++-
+ aiter/jit/utils/moe_recipes.py                |  34 +++++-
+ aiter/ops/moe_op.py                           |   4 +-
+ .../fusions/fused_routing_from_topk.py        |  67 ++++++++++
+ .../triton/fusions/fused_routing_from_topk.py |  78 ++++++++++++
+ .../moe/moe_op_gemm_int8_smoothquant.py       | 115 +++++++++++++++++-
+ .../gemm_moe_ck2stages.cu                     |   7 +-
+ .../gemm_moe_ck2stages.h                      |  14 +++
+ .../gemm_moe_ck2stages_common.py              |   1 +
+ .../gen_instances.py                          |   2 +-
+ op_tests/test_dynamic_int8_moe_recipe.py      |  52 ++++++++
+ op_tests/test_gfx90a_mxfp4_guards.py          |  11 +-
+ op_tests/test_moe_2stage.py                   |  13 +-
+ .../moe/test_moe_gemm_int8_smoothquant.py     |  70 +++++++++++
+ op_tests/triton_tests/moe/test_moe_routing.py |  62 ++++++++++
+ 15 files changed, 543 insertions(+), 18 deletions(-)
+ create mode 100644 op_tests/test_dynamic_int8_moe_recipe.py
+
+diff --git a/aiter/fused_moe.py b/aiter/fused_moe.py
+index 21aa7ad86..09c6d36fe 100644
+--- a/aiter/fused_moe.py
++++ b/aiter/fused_moe.py
+@@ -3025,7 +3025,21 @@ def get_2stage_cfgs(
+             stage2_has_bias=True,
+         )
+
+-    if (kernelName1 and "ck2stages" in kernelName1) or (
++    use_int8_ck2stages = (
++        not kernelName1
++        and get_gfx() in ("gfx90a", "gfx1201")
++        and activation == ActivationType.Silu
++        and q_type == QuantType.per_Token
++        and q_dtype_a == dtypes.i8
++        and q_dtype_w == dtypes.i8
++    )
++    if use_int8_ck2stages and get_gfx() == "gfx1201":
++        block_m = 16
++        kernelName1 = (
++            "moe_ck2stages_gemm1_64x16x64x64_1x1_MulABScale_v1_"
++            "Nswizzle0_Quant2_MulRoutedWeight0_silu_I8_I8_B16"
++        )
++    if use_int8_ck2stages or (kernelName1 and "ck2stages" in kernelName1) or (
+         not kernelName1
+         and (
+             (q_type == QuantType.per_1x128 and doweight_stage1)
+@@ -3509,6 +3523,17 @@ def fused_moe_2stages(
+         a2 = a2.view(token_num, topk, inter_dim)
+
+     stage2_sorted_weights = sorted_weights if not doweight_stage1 else None
++    use_fp32_stage2 = (
++        quant_type == QuantType.per_Token
++        and q_dtype_a == dtypes.i8
++        and q_dtype_w == dtypes.i8
++        and get_gfx() in ("gfx90a", "gfx1201")
++    )
++    stage2_out = (
++        torch.zeros_like(moe_out, dtype=dtypes.fp32)
++        if use_fp32_stage2
++        else moe_out
++    )
+     _stage2_call = functools.partial(
+         metadata.stage2,
+         a2,
+@@ -3517,7 +3542,7 @@ def fused_moe_2stages(
+         sorted_ids,
+         sorted_expert_ids,
+         num_valid_ids,
+-        moe_out,
++        stage2_out,
+         topk,
+         w2_scale=(
+             # See stage1 w1_scale note: only reinterpret packed (e8m0) scales;
+@@ -3537,6 +3562,8 @@ def fused_moe_2stages(
+     if kernel_bench_callable is not None:
+         kernel_bench_callable.append(("stage2", _stage2_call))
+     _stage2_call()
++    if use_fp32_stage2:
++        moe_out.copy_(stage2_out)
+
+     return moe_out
+
+diff --git a/aiter/jit/utils/moe_recipes.py b/aiter/jit/utils/moe_recipes.py
+index 5768b6c47..04164a112 100644
+--- a/aiter/jit/utils/moe_recipes.py
++++ b/aiter/jit/utils/moe_recipes.py
+@@ -17,6 +17,7 @@ _DTYPE_MAP = {
+
+ _QUANT_ALIAS = {"per_128x128": "per_1x128"}
+ _MXFP4_CK2STAGES_SUPPORTED_GPU_ARCHS = ("gfx950",)
++_DYNAMIC_INT8_CK2STAGES_SUPPORTED_GPU_ARCHS = ("gfx90a", "gfx1201")
+
+
+ def _filter_moe_variant_gpu_archs(variant: dict, gpu_archs: list[str]) -> list[str]:
+@@ -52,7 +53,7 @@ def _build_moe_variant(
+         parts.append("splitk")
+
+     flags = ""
+-    if preshuffle_mode and b_dtype == "fp4x2":
++    if preshuffle_mode:
+         flags += " --preshuffle"
+     if is_splitk:
+         flags += " --issplitk"
+@@ -151,6 +152,37 @@ def _get_tuned_fmoe_rows() -> list[dict]:
+ def get_moe_ck2stages_prebuild_variants(aiter_csrc_dir: str) -> list[dict]:
+     seen: set[tuple] = set()
+     results: list[dict] = []
++    for c_dtype in ("b16", "f32"):
++        key = (
++            "i8",
++            "i8",
++            c_dtype,
++            "per_token",
++            "silu",
++            2,
++            True,
++            False,
++        )
++        md_name, blob_gen_cmd = _build_moe_variant(
++            aiter_csrc_dir=aiter_csrc_dir,
++            a_dtype="i8",
++            b_dtype="i8",
++            c_dtype=c_dtype,
++            activation="silu",
++            quant_type="per_token",
++            mul_routed_weight_stage=2,
++            preshuffle_mode=True,
++            is_splitk=False,
++        )
++        results.append(
++            {
++                "md_name": md_name,
++                "blob_gen_cmd": blob_gen_cmd,
++                "supported_gpu_archs": _DYNAMIC_INT8_CK2STAGES_SUPPORTED_GPU_ARCHS,
++            }
++        )
++        seen.add(key)
++
+     for row in _get_tuned_fmoe_rows():
+         kn1 = (row.get("kernelName1") or "").strip()
+         kn2 = (row.get("kernelName2") or "").strip()
+diff --git a/aiter/ops/moe_op.py b/aiter/ops/moe_op.py
+index 536253da0..1e3efd26c 100644
+--- a/aiter/ops/moe_op.py
++++ b/aiter/ops/moe_op.py
+@@ -518,6 +518,7 @@ def moe_cktile2stages_gemm2(
+
+
+ dtype2str_dict = {
++    dtypes.fp32: "f32",
+     dtypes.fp16: "f16",
+     dtypes.bf16: "b16",
+     dtypes.fp8: "f8",
+@@ -528,6 +529,7 @@ dtype2str_dict = {
+ }
+
+ str2dtype_dict = {
++    "f32": dtypes.fp32,
+     "f16": dtypes.fp16,
+     "b16": dtypes.bf16,
+ }
+@@ -554,7 +556,7 @@ def get_moe_stage_module(
+     Cdtype = dtype2str_dict[output_dtype]
+
+     preshuffle_str = ""
+-    if preshuffle_mode and weight_dtype == dtypes.fp4x2:
++    if preshuffle_mode:
+         preshuffle_str = "--preshuffle"
+
+     splitk_str = "--issplitk" if is_splitk else ""
+diff --git a/aiter/ops/triton/_triton_kernels/fusions/fused_routing_from_topk.py b/aiter/ops/triton/_triton_kernels/fusions/fused_routing_from_topk.py
+index 3ec45e723..ca5816949 100644
+--- a/aiter/ops/triton/_triton_kernels/fusions/fused_routing_from_topk.py
++++ b/aiter/ops/triton/_triton_kernels/fusions/fused_routing_from_topk.py
+@@ -38,6 +38,23 @@ _fused_routing_from_topk_place_kernel_repr = make_kernel_repr(
+     ],
+ )
+
++_fused_routing_from_topk_metadata_kernel_repr = make_kernel_repr(
++    "_fused_routing_from_topk_metadata_kernel",
++    [
++        "E",
++        "BLOCK_M",
++        "BLOCK_E",
++    ],
++)
++
++_fused_routing_from_topk_block_map_kernel_repr = make_kernel_repr(
++    "_fused_routing_from_topk_block_map_kernel",
++    [
++        "E",
++        "MAX_TILES_PER_EXPERT",
++    ],
++)
++
+
+ @triton.jit(repr=_fused_routing_from_topk_hist_kernel_repr)
+ def _fused_routing_from_topk_hist_kernel(
+@@ -174,3 +191,53 @@ def _fused_routing_from_topk_place_kernel(
+     tl.store(topk_indx_ptr + safe_pos, item_offs.to(tl.int32), mask=item_mask)
+     # gate_scal[pos] = weight at the original flat item
+     tl.store(gate_scal_ptr + safe_pos, weights, mask=item_mask)
++
++
++@triton.jit(repr=_fused_routing_from_topk_metadata_kernel_repr)
++def _fused_routing_from_topk_metadata_kernel(
++    hist_ptr,
++    token_offs_raw_ptr,
++    token_offs_pad_ptr,
++    E: tl.constexpr,
++    BLOCK_M: tl.constexpr,
++    BLOCK_E: tl.constexpr,
++):
++    e_offs = tl.arange(0, BLOCK_E)
++    e_mask = e_offs < E
++    hist = tl.load(hist_ptr + e_offs, mask=e_mask, other=0).to(tl.int32)
++    raw_inclusive = tl.cumsum(hist, axis=0)
++    tiles = tl.cdiv(hist, BLOCK_M)
++    padded_inclusive = tl.cumsum(tiles, axis=0)
++
++    tl.store(token_offs_raw_ptr, 0)
++    tl.store(token_offs_pad_ptr, 0)
++    tl.store(
++        token_offs_raw_ptr + e_offs + 1,
++        raw_inclusive,
++        mask=e_mask,
++    )
++    tl.store(
++        token_offs_pad_ptr + e_offs + 1,
++        padded_inclusive,
++        mask=e_mask,
++    )
++
++
++@triton.jit(repr=_fused_routing_from_topk_block_map_kernel_repr)
++def _fused_routing_from_topk_block_map_kernel(
++    token_offs_pad_ptr,
++    block_pid_map_ptr,
++    E: tl.constexpr,
++    MAX_TILES_PER_EXPERT: tl.constexpr,
++):
++    expert = tl.program_id(0)
++    tile_offs = tl.arange(0, MAX_TILES_PER_EXPERT)
++    tile_start = tl.load(token_offs_pad_ptr + expert)
++    tile_end = tl.load(token_offs_pad_ptr + expert + 1)
++    tile_count = tile_end - tile_start
++    packed = (tile_offs << 16) | expert
++    tl.store(
++        block_pid_map_ptr + tile_start + tile_offs,
++        packed,
++        mask=(expert < E) & (tile_offs < tile_count),
++    )
+diff --git a/aiter/ops/triton/fusions/fused_routing_from_topk.py b/aiter/ops/triton/fusions/fused_routing_from_topk.py
+index 80a80f0ac..ea95458e8 100644
+--- a/aiter/ops/triton/fusions/fused_routing_from_topk.py
++++ b/aiter/ops/triton/fusions/fused_routing_from_topk.py
+@@ -9,7 +9,9 @@ import torch
+ import triton
+
+ from aiter.ops.triton._triton_kernels.fusions.fused_routing_from_topk import (
++    _fused_routing_from_topk_block_map_kernel,
+     _fused_routing_from_topk_hist_kernel,
++    _fused_routing_from_topk_metadata_kernel,
+     _fused_routing_from_topk_offset_kernel,
+     _fused_routing_from_topk_place_kernel,
+ )
+@@ -164,3 +166,79 @@ def fused_routing_from_topk(
+     )
+
+     return hist, topk_indx, gate_indx, gate_scal
++
++
++def fused_routing_data_from_topk(
++    topk_weights: torch.Tensor,
++    topk_ids: torch.Tensor,
++    n_expts_tot: int,
++    block_m: int,
++    expert_map: torch.Tensor | None = None,
++) -> tuple[
++    torch.Tensor,
++    torch.Tensor,
++    torch.Tensor,
++    torch.Tensor,
++    torch.Tensor,
++    torch.Tensor,
++    torch.Tensor,
++]:
++    """Build sorted routing indices and grouped-GEMM expert metadata."""
++    hist, topk_indx, gate_indx, gate_scal = fused_routing_from_topk(
++        topk_weights,
++        topk_ids,
++        n_expts_tot,
++        expert_map,
++    )
++    n_gates = topk_ids.numel()
++    if n_gates <= n_expts_tot:
++        max_n_tiles = n_gates
++    else:
++        max_n_tiles = (
++            n_expts_tot
++            - 1
++            - ((n_expts_tot - n_gates - 1) // block_m)
++        )
++
++    token_offs_raw = torch.empty(
++        n_expts_tot + 1,
++        dtype=torch.int32,
++        device=topk_ids.device,
++    )
++    token_offs_pad = torch.empty_like(token_offs_raw)
++    block_pid_map = torch.full(
++        (max_n_tiles,),
++        -1,
++        dtype=torch.int32,
++        device=topk_ids.device,
++    )
++    block_e = max(triton.next_power_of_2(n_expts_tot), 32)
++    _fused_routing_from_topk_metadata_kernel[(1,)](
++        hist,
++        token_offs_raw,
++        token_offs_pad,
++        E=n_expts_tot,
++        BLOCK_M=block_m,
++        BLOCK_E=block_e,
++        num_warps=1,
++    )
++    max_tiles_per_expert = max(
++        triton.next_power_of_2(triton.cdiv(n_gates, block_m)),
++        1,
++    )
++    _fused_routing_from_topk_block_map_kernel[(n_expts_tot,)](
++        token_offs_pad,
++        block_pid_map,
++        E=n_expts_tot,
++        MAX_TILES_PER_EXPERT=max_tiles_per_expert,
++        num_warps=1,
++    )
++    return (
++        hist,
++        topk_indx,
++        gate_indx,
++        gate_scal,
++        token_offs_raw,
++        token_offs_pad,
++        block_pid_map,
++    )
+diff --git a/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py b/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
+index 717b660ad..1f07580ed 100644
+--- a/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
++++ b/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
+@@ -12,7 +12,14 @@ from aiter.ops.triton._gluon_kernels.gfx942.moe.moe_op_gemm_int8_smoothquant imp
+ from aiter.ops.triton._triton_kernels.moe.moe_op_gemm_int8_smoothquant import (
+     _moe_gemm_int8_smoothquant,
+ )
+-from aiter.ops.triton.moe.moe_routing.routing import RoutingData
++from aiter.ops.triton.fusions.fused_routing_from_topk import (
++    fused_routing_data_from_topk,
++)
++from aiter.ops.triton.moe.moe_routing.routing import (
++    ExptData,
++    RoutingData,
++    compute_expt_data_torch,
++)
+ from aiter.ops.triton.moe.reduce import reduce_grouped
+ from aiter.ops.triton.utils._triton import arch_info
+ from aiter.ops.triton.utils.device_info import get_num_sms
+@@ -477,15 +484,113 @@ def fused_moe_int8_smoothquant(
+     (validated on gfx1151 RDNA3.5, where aiter's fp8/int4 MoE paths are absent).
+     """
+     from aiter.ops.triton.moe.moe_routing.routing import routing
+-    from aiter.ops.triton.moe.quant_moe import smoothquant_quantize
+
+-    _M, H = hidden_states.shape
+     routing_data, gather_idx, scatter_idx = routing(
+         gating_output, topk, sm_first=not renormalize
+     )
+-    gammas = routing_data.gate_scal
++    return _fused_moe_int8_smoothquant_routed(
++        hidden_states,
++        w13,
++        w2,
++        w13_scale,
++        w2_scale,
++        routing_data,
++        gather_idx,
++        scatter_idx,
++        dtype,
++    )
++
++
++def fused_moe_int8_smoothquant_from_topk(
++    hidden_states: torch.Tensor,
++    w13: torch.Tensor,
++    w2: torch.Tensor,
++    w13_scale: torch.Tensor,
++    w2_scale: torch.Tensor,
++    topk_weights: torch.Tensor,
++    topk_ids: torch.Tensor,
++    dtype: torch.dtype = torch.bfloat16,
++) -> torch.Tensor:
++    """Run dynamic INT8 MoE from precomputed top-k routing results."""
++    num_tokens, topk = topk_ids.shape
++    num_experts = w13.shape[0]
++    num_gates = num_tokens * topk
++    tokens_per_expert = max(1, num_gates // num_experts)
++    block_m = max(16, min(triton.next_power_of_2(tokens_per_expert), 128))
++    topk_weights = topk_weights.contiguous()
++    topk_ids = topk_ids.to(torch.int32).contiguous()
++    if num_gates <= 4096:
++        (
++            hist,
++            gather_idx,
++            scatter_idx,
++            gate_scal,
++            token_offs_raw,
++            token_offs_pad,
++            block_pid_map,
++        ) = fused_routing_data_from_topk(
++            topk_weights,
++            topk_ids,
++            num_experts,
++            block_m,
++        )
++        expt_data = ExptData(
++            hist,
++            token_offs_raw,
++            token_offs_pad,
++            block_pid_map,
++        )
++    else:
++        topk_ids_flat = topk_ids.flatten()
++        gather_idx = torch.argsort(topk_ids_flat, stable=True).to(torch.int32)
++        scatter_idx = torch.argsort(gather_idx, stable=True).to(torch.int32)
++        gate_scal = topk_weights.flatten()[gather_idx.long()]
++        hist = torch.bincount(
++            topk_ids_flat.long(),
++            minlength=num_experts,
++        ).to(torch.int32)
++        expt_data = compute_expt_data_torch(
++            hist,
++            num_experts,
++            num_gates,
++            block_m,
++        )
++    routing_data = RoutingData(
++        block_m,
++        gate_scal,
++        hist,
++        num_experts,
++        topk,
++        expt_data,
++    )
++    return _fused_moe_int8_smoothquant_routed(
++        hidden_states,
++        w13,
++        w2,
++        w13_scale,
++        w2_scale,
++        routing_data,
++        gather_idx,
++        scatter_idx,
++        dtype,
++    )
++
++
++def _fused_moe_int8_smoothquant_routed(
++    hidden_states: torch.Tensor,
++    w13: torch.Tensor,
++    w2: torch.Tensor,
++    w13_scale: torch.Tensor,
++    w2_scale: torch.Tensor,
++    routing_data: RoutingData,
++    gather_idx: torch.Tensor,
++    scatter_idx: torch.Tensor,
++    dtype: torch.dtype,
++) -> torch.Tensor:
++    from aiter.ops.triton.moe.quant_moe import smoothquant_quantize
+
+     # GEMM1 gate/up projection: per-token int8 activations, no smoothing.
++    _, H = hidden_states.shape
+     no_smooth_h = torch.ones(H, device=hidden_states.device, dtype=torch.float32)
+     x_int8, x_scale = smoothquant_quantize(hidden_states, no_smooth_h)
+     # GEMM1 + fused gated SiLU: w13 columns are interleaved (g,u,g,u,...) at load
+@@ -523,7 +628,7 @@ def fused_moe_int8_smoothquant(
+         routing_data,
+         None,
+         scatter_idx,
+-        gammas,
++        routing_data.gate_scal,
+         False,
+         dtype,
+         apply_activation=False,
+diff --git a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.cu b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.cu
+index ad92fb1fc..846ac25d4 100644
+--- a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.cu
++++ b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.cu
+@@ -159,8 +159,11 @@ void ck_moe_stage2(torch::Tensor &inter_states,      // [m, k], input token
+                    bool is_shuffled = true)
+ {
+     // std::cerr << __FILE__ << ":" << __LINE__ << " ck_moe_stage2 called!" << nt << " " << block_m.value() << std::endl;
+-    TORCH_CHECK(out.dtype() == at::ScalarType::BFloat16 || out.dtype() == at::ScalarType::Half,
+-                "Out dtype only support BFloat16/Float16!")
++    TORCH_CHECK(
++        out.dtype() == at::ScalarType::BFloat16 ||
++            out.dtype() == at::ScalarType::Half ||
++            out.dtype() == at::ScalarType::Float,
++        "Out dtype only support BFloat16/Float16/Float32!")
+
+     int32_t splitk_local = splitk.has_value() ? splitk.value() : 1;
+
+diff --git a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.h b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.h
+index 108efa9ef..b5f8c1977 100644
+--- a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.h
++++ b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages.h
+@@ -122,6 +122,13 @@ struct MulABScale
+     {
+         e = ck::type_convert<B16>(c);
+     }
++
++    template <>
++    __host__ __device__ constexpr void operator()<F32, float, float, float, float>(
++        F32& e, const float& c, const float& d0, const float& d1, const float& d2) const
++    {
++        e = c;
++    }
+ };
+
+ struct MulABScaleWint4
+@@ -235,6 +242,13 @@ struct MulABScaleExpertWeight
+         e = ck::type_convert<B16>(c);
+     }
+
++    template <>
++    __host__ __device__ constexpr void operator()<F32, float, float, float, float>(
++        F32& e, const float& c, const float& d0, const float& d1, const float& d2) const
++    {
++        e = c;
++    }
++
+     template <>
+     __host__ __device__ constexpr void operator()<F16, int, float, float, float>(
+         F16& e, const int& c, const float& d0, const float& d1, const float& d2) const
+diff --git a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages_common.py b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages_common.py
+index 941e95f57..d84e22c14 100644
+--- a/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages_common.py
++++ b/csrc/ck_gemm_moe_2stages_codegen/gemm_moe_ck2stages_common.py
+@@ -165,6 +165,7 @@ a8w8_gemm1_kernels_list_gfx950= {
+ }
+
+ a8w8_gemm1_kernels_list= {
++    14: kernelInstanceGEMM1(        64,       16,         64,        64,     1,       1,        1,),
+     12: kernelInstanceGEMM1(       128,       16,         64,       128,     1,       2,        1,),
+     11: kernelInstanceGEMM1(       256,       16,        128,       256,     1,       4,        1,),
+      0: kernelInstanceGEMM1(       256,       32,         64,       256,     1,       4,        1,),
+diff --git a/csrc/ck_gemm_moe_2stages_codegen/gen_instances.py b/csrc/ck_gemm_moe_2stages_codegen/gen_instances.py
+index 3a8078b5b..90e0631d2 100644
+--- a/csrc/ck_gemm_moe_2stages_codegen/gen_instances.py
++++ b/csrc/ck_gemm_moe_2stages_codegen/gen_instances.py
+@@ -1047,7 +1047,7 @@ if __name__ == "__main__":
+         default="b16",
+         required=False,
+         type=str,
+-        choices=["f16", "b16"],
++        choices=["f16", "b16", "f32"],
+         help="select out dtype",
+     )
+
+diff --git a/op_tests/test_dynamic_int8_moe_recipe.py b/op_tests/test_dynamic_int8_moe_recipe.py
+new file mode 100644
+index 000000000..863cbd56f
+--- /dev/null
++++ b/op_tests/test_dynamic_int8_moe_recipe.py
+@@ -0,0 +1,52 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import torch
++
++from aiter.jit.utils import moe_recipes
++from aiter.ops.moe_op import get_moe_stage_module
++
++
++_DYNAMIC_INT8_MODULE_PREFIX = "module_moe_ck2stages_i8_i8_preshuffle_on"
++_DYNAMIC_INT8_ARCHS = ("gfx90a", "gfx1201")
++
++
++def test_dynamic_int8_moe_variants_are_prebuilt(monkeypatch):
++    monkeypatch.setattr(moe_recipes, "_get_tuned_fmoe_rows", lambda: [])
++
++    variants = moe_recipes.get_moe_ck2stages_prebuild_variants("/csrc")
++    dynamic_int8 = [
++        variant
++        for variant in variants
++        if variant["md_name"].startswith(_DYNAMIC_INT8_MODULE_PREFIX)
++    ]
++
++    assert len(dynamic_int8) == 2
++    assert any("_b16_" in variant["md_name"] for variant in dynamic_int8)
++    assert any("_f32_" in variant["md_name"] for variant in dynamic_int8)
++    for variant in dynamic_int8:
++        assert variant["supported_gpu_archs"] == _DYNAMIC_INT8_ARCHS
++        assert "-a i8 -b i8" in variant["blob_gen_cmd"][0]
++        assert "-q per_token" in variant["blob_gen_cmd"][0]
++        assert "--preshuffle" in variant["blob_gen_cmd"][0]
++        assert moe_recipes._filter_moe_variant_gpu_archs(
++            variant,
++            ["gfx90a", "gfx1100", "gfx1201"],
++        ) == list(_DYNAMIC_INT8_ARCHS)
++
++
++def test_dynamic_int8_jit_module_supports_fp32_output():
++    md_name, blob_gen_cmd = get_moe_stage_module(
++        input_dtype=torch.int8,
++        weight_dtype=torch.int8,
++        output_dtype=torch.float32,
++        activation=0,
++        quant_type=2,
++        mul_routed_weight_stage=2,
++        preshuffle_mode=True,
++    )
++
++    assert md_name.startswith(_DYNAMIC_INT8_MODULE_PREFIX)
++    assert "_f32_" in md_name
++    assert "-c f32" in blob_gen_cmd[0]
++    assert "--preshuffle" in blob_gen_cmd[0]
+diff --git a/op_tests/test_gfx90a_mxfp4_guards.py b/op_tests/test_gfx90a_mxfp4_guards.py
+index 5a181fc3a..aed94397b 100644
+--- a/op_tests/test_gfx90a_mxfp4_guards.py
++++ b/op_tests/test_gfx90a_mxfp4_guards.py
+@@ -44,18 +44,23 @@ def test_ck2stages_mxfp4_variants_only_target_gfx950(monkeypatch):
+
+     variants = moe_recipes.get_moe_ck2stages_prebuild_variants("/csrc")
+     mxfp4_variants = [variant for variant in variants if "_fp4x2_" in variant["md_name"]]
+-    non_mxfp4_variants = [variant for variant in variants if "_fp4x2_" not in variant["md_name"]]
++    unrestricted_variants = [
++        variant
++        for variant in variants
++        if "_fp4x2_" not in variant["md_name"]
++        and "_i8_i8_" not in variant["md_name"]
++    ]
+
+     assert any("_f8_fp4x2_" in variant["md_name"] for variant in mxfp4_variants)
+     assert any("_fp4x2_fp4x2_" in variant["md_name"] for variant in mxfp4_variants)
+-    assert non_mxfp4_variants
++    assert unrestricted_variants
+     for variant in mxfp4_variants:
+         assert variant["supported_gpu_archs"] == ("gfx950",)
+         assert moe_recipes._filter_moe_variant_gpu_archs(variant, ["gfx90a"]) == []
+         assert moe_recipes._filter_moe_variant_gpu_archs(
+             variant, ["gfx90a", "gfx950"]
+         ) == ["gfx950"]
+-    for variant in non_mxfp4_variants:
++    for variant in unrestricted_variants:
+         assert "supported_gpu_archs" not in variant
+         assert moe_recipes._filter_moe_variant_gpu_archs(
+             variant, ["gfx90a", "gfx950"]
+diff --git a/op_tests/test_moe_2stage.py b/op_tests/test_moe_2stage.py
+index f0fd0a085..e1da18294 100644
+--- a/op_tests/test_moe_2stage.py
++++ b/op_tests/test_moe_2stage.py
+@@ -582,6 +582,7 @@ l_quant = [
+     (aiter.QuantType.per_1x32, dtypes.fp8, dtypes.fp4x2),  # a8w4
+     (aiter.QuantType.per_1x32, dtypes.bf16, dtypes.i4x2),  # a16wi4
+     (aiter.QuantType.per_1x32, dtypes.fp8, dtypes.fp8),  # mxfp8 (a8w8)
++    (aiter.QuantType.per_Token, dtypes.i8, dtypes.i8),  # dynamic int8 a8w8
+ ]
+
+
+@@ -648,7 +649,8 @@ parser.add_argument(
+     6: aiter.QuantType.per_1x32, dtypes.bf16, dtypes.fp4x2,  # a16w4,
+     7: aiter.QuantType.per_1x32, dtypes.fp8, dtypes.fp4x2,  # a8w4,
+     8: aiter.QuantType.per_1x32, dtypes.bf16, dtypes.i4x2,  # a16wi4,
+-    9: aiter.QuantType.per_1x32, dtypes.fp8, dtypes.fp8,  # mxfp8 (a8w8),""",
++    9: aiter.QuantType.per_1x32, dtypes.fp8, dtypes.fp8,  # mxfp8 (a8w8)
++    10: aiter.QuantType.per_Token, dtypes.i8, dtypes.i8,  # dynamic int8 a8w8""",
+ )
+
+ parser.add_argument(
+@@ -1099,7 +1101,11 @@ def _iter_legacy_cases():
+             WQDType=wq_dtype,
+             use_g1u1=True,
+             doweight_stage1=doweight_stage1,
+-            strict_accuracy=False,
++            strict_accuracy=(
++                quant_type == aiter.QuantType.per_Token
++                and aq_dtype == dtypes.i8
++                and wq_dtype == dtypes.i8
++            ),
+             check_aot_cache=False,
+             swiglu_limit=_effective_swiglu_limit(
+                 quant_type, aq_dtype, wq_dtype, args.swiglu_limit
+@@ -1402,7 +1408,8 @@ _case_iters = []
+ if args.bm16_scale_boundary:
+     test_bm16_tiled_scale_boundary()
+ else:
+-    test_output_buffer_contract()
++    if args.quant is None:
++        test_output_buffer_contract()
+     if not args.no_flydsl_csv:
+         _case_iters.append(
+             _iter_with_env(
+diff --git a/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py b/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
+index 98e97a55f..868c2d6ce 100644
+--- a/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
++++ b/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
+@@ -8,6 +8,8 @@ import torch
+
+ # SmoothQuant MoE utilities
+ from aiter.ops.triton.moe.moe_op_gemm_int8_smoothquant import (
++    fused_moe_int8_smoothquant,
++    fused_moe_int8_smoothquant_from_topk,
+     moe_gemm_int8_smoothquant,
+     moe_gemm_smoothquant_torch,
+     preshuffle_weights,
+@@ -281,3 +283,71 @@ def test_op(
+         swiglu_add_residual=apply_activation,
+     )
+     assert_close(ref_y, tri_y, maxtol=maxtol, rmstol=rmstol)
++
++
++@pytest.mark.parametrize(
++    "num_tokens,hidden_dim,intermediate_dim",
++    [(16, 256, 512), (2049, 64, 128)],
++)
++def test_fused_moe_from_topk_matches_logits(
++    num_tokens,
++    hidden_dim,
++    intermediate_dim,
++    device="cuda",
++):
++    torch.manual_seed(0)
++    num_experts = 8
++    topk = 2
++
++    hidden_states = torch.randn(
++        num_tokens,
++        hidden_dim,
++        dtype=torch.bfloat16,
++        device=device,
++    )
++    w13 = torch.randn(
++        num_experts,
++        hidden_dim,
++        intermediate_dim * 2,
++        dtype=torch.bfloat16,
++        device=device,
++    )
++    w2 = torch.randn(
++        num_experts,
++        intermediate_dim,
++        hidden_dim,
++        dtype=torch.bfloat16,
++        device=device,
++    )
++    w13_int8, w13_scale = quantize_weights_int8(w13)
++    w2_int8, w2_scale = quantize_weights_int8(w2)
++    logits = torch.randn(
++        num_tokens,
++        num_experts,
++        dtype=torch.float32,
++        device=device,
++    )
++
++    expected = fused_moe_int8_smoothquant(
++        hidden_states,
++        w13_int8,
++        w2_int8,
++        w13_scale,
++        w2_scale,
++        logits,
++        topk,
++        True,
++    )
++    topk_logits, topk_ids = torch.topk(logits, topk, dim=-1)
++    topk_weights = torch.softmax(topk_logits, dim=-1)
++    actual = fused_moe_int8_smoothquant_from_topk(
++        hidden_states,
++        w13_int8,
++        w2_int8,
++        w13_scale,
++        w2_scale,
++        topk_weights,
++        topk_ids,
++    )
++
++    torch.testing.assert_close(expected, actual)
+diff --git a/op_tests/triton_tests/moe/test_moe_routing.py b/op_tests/triton_tests/moe/test_moe_routing.py
+index f5a7caf01..5e527db60 100644
+--- a/op_tests/triton_tests/moe/test_moe_routing.py
++++ b/op_tests/triton_tests/moe/test_moe_routing.py
+@@ -4,7 +4,12 @@ import torch.nn.functional as F
+ import triton
+
+ from aiter.ops.topk import biased_grouped_topk_torch, grouped_topk_torch
++from aiter.ops.triton.fusions.fused_routing_from_topk import (
++    fused_routing_data_from_topk,
++)
+ from aiter.ops.triton.moe.moe_routing.routing import (
++    ExptData,
++    RoutingData,
+     compute_expt_data_torch,
+     routing,
+     routing_from_hash,
+@@ -405,6 +410,63 @@ def _check_routing_data_bucket(
+             ), f"expert {e} token {tt_r}: weight ref={w_r} test={w_t}"
+
+
++@pytest.mark.parametrize(
++    "n_tokens,n_expts_tot,n_expts_act",
++    [(16, 8, 2), (64, 16, 4)],
++)
++def test_fused_routing_data_from_topk(
++    n_tokens,
++    n_expts_tot,
++    n_expts_act,
++):
++    torch.manual_seed(0)
++    logits = torch.randn(
++        n_tokens,
++        n_expts_tot,
++        dtype=torch.float32,
++        device="cuda",
++    )
++    topk_logits, topk_ids = torch.topk(logits, n_expts_act, dim=-1)
++    topk_weights = torch.softmax(topk_logits, dim=-1)
++    block_m = _routing_block_m(n_tokens, n_expts_act, n_expts_tot)
++    (
++        hist,
++        gather,
++        scatter,
++        gate_scal,
++        token_offs_raw,
++        token_offs_pad,
++        block_pid_map,
++    ) = fused_routing_data_from_topk(
++        topk_weights,
++        topk_ids.to(torch.int32),
++        n_expts_tot,
++        block_m,
++    )
++    routing_data = RoutingData(
++        block_m,
++        gate_scal,
++        hist,
++        n_expts_tot,
++        n_expts_act,
++        ExptData(hist, token_offs_raw, token_offs_pad, block_pid_map),
++    )
++    ref_pack = _sort_and_build_torch(
++        topk_weights,
++        topk_ids,
++        n_expts_tot,
++        block_m,
++    )
++    _check_routing_data_bucket(
++        ref_pack,
++        routing_data,
++        gather,
++        scatter,
++        topk_weights,
++        topk_ids,
++    )
++
++
+ # --------------------------
+ # routing score mode
+ # --------------------------
+--
+2.43.0

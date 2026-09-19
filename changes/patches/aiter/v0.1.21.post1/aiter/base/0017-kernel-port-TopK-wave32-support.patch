@@ -1,0 +1,523 @@
+From a3329d92c2284642f544869c967bbf1c632e7915 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 02:39:10 -0700
+Subject: [PATCH 17/22] TopK wave32 support
+
+- Add wave32 bitonic sort and merge paths
+- Use runtime wave size for host launch math
+- Keep values and indices paired in shuffles
+- Cover sort, merge, dtype, and direction cases
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/kernels/topk_plain_kernels.cu | 312 ++++++++++++++++++++---------
+ op_tests/test_jit_module_archs.py  |   8 +
+ op_tests/test_topk_plain.py        |  18 ++
+ 3 files changed, 248 insertions(+), 90 deletions(-)
+
+diff --git a/csrc/kernels/topk_plain_kernels.cu b/csrc/kernels/topk_plain_kernels.cu
+index 206c6204..a24fe4a0 100644
+--- a/csrc/kernels/topk_plain_kernels.cu
++++ b/csrc/kernels/topk_plain_kernels.cu
+@@ -313,6 +313,16 @@ inline void hip_check_(hipError_t val, const char* file, int line)
+     }
+ }
+
++inline int get_runtime_warp_size()
++{
++    int device = 0;
++    HIP_CHECK(hipGetDevice(&device));
++    hipDeviceProp_t properties{};
++    HIP_CHECK(hipGetDeviceProperties(&properties, device));
++    int ret = properties.warpSize;
++    return ret;
++}
++
+ /**
+  * @brief Rounds a value up to the nearest multiple of a given number.
+  *
+@@ -794,15 +804,23 @@ sort_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+
+     const auto val = *val_arr;
+     const auto idx = *idx_arr;
+-    T other        = mov_dpp<T, stride>(val);
+-    idxT other_idx = mov_dpp<idxT, stride>(idx);
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(reverse != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    *val_arr = selected_val;
+-    *idx_arr = selected_idx;
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const T other        = shfl_xor(val, stride);
++        const idxT other_idx = shfl_xor(idx, stride);
++        const bool select_other =
++            (reverse != is_second) ? (other < val) : (other > val);
++        *val_arr = select_other ? other : val;
++        *idx_arr = select_other ? other_idx : idx;
++    }
++    else
++    {
++        const T other        = mov_dpp<T, stride>(val);
++        const idxT other_idx = mov_dpp<idxT, stride>(idx);
++        const T selected_val = opus::med3(val, other, get_guard<T>(reverse != is_second));
++        *val_arr             = selected_val;
++        *idx_arr             = select_idx(idx, other_idx, val, other, selected_val);
++    }
+ }
+
+ // Optimized sort step using DPP for small strides
+@@ -816,22 +834,30 @@ sort_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+
+     const auto val = *val_arr;
+     const auto idx = *idx_arr;
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const T other        = shfl_xor(val, stride);
++        const idxT other_idx = shfl_xor(idx, stride);
++        const bool select_other =
++            (reverse != is_second) ? (other < val) : (other > val);
++        *val_arr = select_other ? other : val;
++        *idx_arr = select_other ? other_idx : idx;
++    }
++    else
++    {
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wuninitialized"
+-    T other;
+-    other = upd_dpp<T, stride, true>(other, val);
+-    other = upd_dpp<T, stride, false>(other, val);
+-    idxT other_idx;
+-    other_idx = upd_dpp<idxT, stride, true>(other_idx, idx);
+-    other_idx = upd_dpp<idxT, stride, false>(other_idx, idx);
++        T other;
++        other = upd_dpp<T, stride, true>(other, val);
++        other = upd_dpp<T, stride, false>(other, val);
++        idxT other_idx;
++        other_idx = upd_dpp<idxT, stride, true>(other_idx, idx);
++        other_idx = upd_dpp<idxT, stride, false>(other_idx, idx);
+ #pragma clang diagnostic pop
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(reverse != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    *val_arr = selected_val;
+-    *idx_arr = selected_idx;
++        const T selected_val = opus::med3(val, other, get_guard<T>(reverse != is_second));
++        *val_arr             = selected_val;
++        *idx_arr             = select_idx(idx, other_idx, val, other, selected_val);
++    }
+ }
+
+ // Fallback to shuffle for larger strides
+@@ -845,48 +871,86 @@ sort_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+
+     const auto val = *val_arr;
+     const auto idx = *idx_arr;
+-    T other        = shfl_xor(val, stride);
+-    idxT other_idx = shfl_xor(idx, stride);
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(reverse != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    *val_arr = selected_val;
+-    *idx_arr = selected_idx;
++    const T other        = shfl_xor(val, stride);
++    const idxT other_idx = shfl_xor(idx, stride);
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const bool select_other =
++            (reverse != is_second) ? (other < val) : (other > val);
++        *val_arr = select_other ? other : val;
++        *idx_arr = select_other ? other_idx : idx;
++    }
++    else
++    {
++        const T selected_val = opus::med3(val, other, get_guard<T>(reverse != is_second));
++        *val_arr             = selected_val;
++        *idx_arr             = select_idx(idx, other_idx, val, other, selected_val);
++    }
+ }
+
+ template <bool ascending, typename T, typename idxT>
+-struct BitonicSort<64, ascending, T, idxT>
++struct BitonicSort<32, ascending, T, idxT>
+ {
+     __device__ static void sort(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+     {
+-        // Stage 0: stride = 1 (DPP optimized)
+         sort_step<T, idxT, 0, 1>(val_arr, idx_arr);
+
+-        // Stage 1: stride = 2, 1 (DPP optimized)
+         sort_step<T, idxT, 1, 2>(val_arr, idx_arr);
+         sort_step<T, idxT, 1, 1>(val_arr, idx_arr);
+
+-        // Stage 2: stride = 4, 2, 1 (DPP optimized)
+         sort_step<T, idxT, 2, 4>(val_arr, idx_arr);
+         sort_step<T, idxT, 2, 2>(val_arr, idx_arr);
+         sort_step<T, idxT, 2, 1>(val_arr, idx_arr);
+
+-        // Stage 3: stride = 8, 4, 2, 1 (DPP optimized)
+         sort_step<T, idxT, 3, 8>(val_arr, idx_arr);
+         sort_step<T, idxT, 3, 4>(val_arr, idx_arr);
+         sort_step<T, idxT, 3, 2>(val_arr, idx_arr);
+         sort_step<T, idxT, 3, 1>(val_arr, idx_arr);
+
+-        // Stage 4: stride = 16, 8, 4, 2, 1
+-        sort_step<T, idxT, 4, 16>(val_arr, idx_arr); // Uses shuffle
+-        sort_step<T, idxT, 4, 8>(val_arr, idx_arr);  // Uses DPP
+-        sort_step<T, idxT, 4, 4>(val_arr, idx_arr);  // Uses DPP
+-        sort_step<T, idxT, 4, 2>(val_arr, idx_arr);  // Uses DPP
+-        sort_step<T, idxT, 4, 1>(val_arr, idx_arr);  // Uses DPP
++        BitonicMerge<32, ascending, T, idxT>::merge(val_arr, idx_arr);
++    }
++};
+
+-        BitonicMerge<64, ascending, T, idxT>::merge(val_arr, idx_arr);
++template <bool ascending, typename T, typename idxT>
++struct BitonicSort<64, ascending, T, idxT>
++{
++    __device__ static void sort(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
++    {
++        if constexpr(opus::get_warp_size() == 32)
++        {
++            BitonicSort<32, true, T, idxT>::sort(val_arr, idx_arr);
++            BitonicSort<32, false, T, idxT>::sort(val_arr + 1, idx_arr + 1);
++            BitonicMerge<64, ascending, T, idxT>::merge(val_arr, idx_arr);
++        }
++        else
++        {
++            // Stage 0: stride = 1 (DPP optimized)
++            sort_step<T, idxT, 0, 1>(val_arr, idx_arr);
++
++            // Stage 1: stride = 2, 1 (DPP optimized)
++            sort_step<T, idxT, 1, 2>(val_arr, idx_arr);
++            sort_step<T, idxT, 1, 1>(val_arr, idx_arr);
++
++            // Stage 2: stride = 4, 2, 1 (DPP optimized)
++            sort_step<T, idxT, 2, 4>(val_arr, idx_arr);
++            sort_step<T, idxT, 2, 2>(val_arr, idx_arr);
++            sort_step<T, idxT, 2, 1>(val_arr, idx_arr);
++
++            // Stage 3: stride = 8, 4, 2, 1 (DPP optimized)
++            sort_step<T, idxT, 3, 8>(val_arr, idx_arr);
++            sort_step<T, idxT, 3, 4>(val_arr, idx_arr);
++            sort_step<T, idxT, 3, 2>(val_arr, idx_arr);
++            sort_step<T, idxT, 3, 1>(val_arr, idx_arr);
++
++            // Stage 4: stride = 16, 8, 4, 2, 1
++            sort_step<T, idxT, 4, 16>(val_arr, idx_arr);
++            sort_step<T, idxT, 4, 8>(val_arr, idx_arr);
++            sort_step<T, idxT, 4, 4>(val_arr, idx_arr);
++            sort_step<T, idxT, 4, 2>(val_arr, idx_arr);
++            sort_step<T, idxT, 4, 1>(val_arr, idx_arr);
++
++            BitonicMerge<64, ascending, T, idxT>::merge(val_arr, idx_arr);
++        }
+     }
+ };
+
+@@ -900,15 +964,26 @@ merge_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+     T& val         = *val_arr;
+     idxT& idx      = *idx_arr;
+
+-    T other        = mov_dpp<T, stride>(val);
+-    idxT other_idx = mov_dpp<idxT, stride>(idx);
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(ascending != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    val = selected_val;
+-    idx = selected_idx;
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const T other        = shfl_xor(val, stride);
++        const idxT other_idx = shfl_xor(idx, stride);
++        const bool select_other =
++            (ascending != is_second) ? (other < val) : (other > val);
++        if(select_other)
++        {
++            val = other;
++            idx = other_idx;
++        }
++    }
++    else
++    {
++        const T other        = mov_dpp<T, stride>(val);
++        const idxT other_idx = mov_dpp<idxT, stride>(idx);
++        const T selected_val = opus::med3(val, other, get_guard<T>(ascending != is_second));
++        idx                  = select_idx(idx, other_idx, val, other, selected_val);
++        val                  = selected_val;
++    }
+ }
+
+ // Optimized sort step using DPP for small strides
+@@ -921,22 +996,33 @@ merge_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+     T& val         = *val_arr;
+     idxT& idx      = *idx_arr;
+
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const T other        = shfl_xor(val, stride);
++        const idxT other_idx = shfl_xor(idx, stride);
++        const bool select_other =
++            (ascending != is_second) ? (other < val) : (other > val);
++        if(select_other)
++        {
++            val = other;
++            idx = other_idx;
++        }
++    }
++    else
++    {
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wuninitialized"
+-    T other;
+-    other = upd_dpp<T, stride, true>(other, val);
+-    other = upd_dpp<T, stride, false>(other, val);
+-    idxT other_idx;
+-    other_idx = upd_dpp<idxT, stride, true>(other_idx, idx);
+-    other_idx = upd_dpp<idxT, stride, false>(other_idx, idx);
++        T other;
++        other = upd_dpp<T, stride, true>(other, val);
++        other = upd_dpp<T, stride, false>(other, val);
++        idxT other_idx;
++        other_idx = upd_dpp<idxT, stride, true>(other_idx, idx);
++        other_idx = upd_dpp<idxT, stride, false>(other_idx, idx);
+ #pragma clang diagnostic pop
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(ascending != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    val = selected_val;
+-    idx = selected_idx;
++        const T selected_val = opus::med3(val, other, get_guard<T>(ascending != is_second));
++        idx                  = select_idx(idx, other_idx, val, other, selected_val);
++        val                  = selected_val;
++    }
+ }
+
+ // Fallback to shuffle for larger strides
+@@ -949,28 +1035,70 @@ merge_step(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+     T& val         = *val_arr;
+     idxT& idx      = *idx_arr;
+
+-    T other        = shfl_xor(val, stride);
+-    idxT other_idx = shfl_xor(idx, stride);
+-
+-    // Use median-of-3 to select the appropriate value
+-    T selected_val    = opus::med3(val, other, get_guard<T>(ascending != is_second));
+-    idxT selected_idx = select_idx(idx, other_idx, val, other, selected_val);
+-
+-    val = selected_val;
+-    idx = selected_idx;
++    const T other        = shfl_xor(val, stride);
++    const idxT other_idx = shfl_xor(idx, stride);
++    if constexpr(opus::get_warp_size() == 32)
++    {
++        const bool select_other =
++            (ascending != is_second) ? (other < val) : (other > val);
++        if(select_other)
++        {
++            val = other;
++            idx = other_idx;
++        }
++    }
++    else
++    {
++        const T selected_val = opus::med3(val, other, get_guard<T>(ascending != is_second));
++        idx                  = select_idx(idx, other_idx, val, other, selected_val);
++        val                  = selected_val;
++    }
+ }
+
++template <bool ascending, typename T, typename idxT>
++struct BitonicMerge<32, ascending, T, idxT>
++{
++    __device__ static void merge(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
++    {
++        merge_step<ascending, T, idxT, 16>(val_arr, idx_arr);
++        merge_step<ascending, T, idxT, 8>(val_arr, idx_arr);
++        merge_step<ascending, T, idxT, 4>(val_arr, idx_arr);
++        merge_step<ascending, T, idxT, 2>(val_arr, idx_arr);
++        merge_step<ascending, T, idxT, 1>(val_arr, idx_arr);
++    }
++};
++
+ template <bool ascending, typename T, typename idxT>
+ struct BitonicMerge<64, ascending, T, idxT>
+ {
+     __device__ static void merge(T* __restrict__ val_arr, idxT* __restrict__ idx_arr)
+     {
+-        merge_step<ascending, T, idxT, 32>(val_arr, idx_arr); // Shuffle
+-        merge_step<ascending, T, idxT, 16>(val_arr, idx_arr); // Shuffle
+-        merge_step<ascending, T, idxT, 8>(val_arr, idx_arr);  // DPP
+-        merge_step<ascending, T, idxT, 4>(val_arr, idx_arr);  // DPP
+-        merge_step<ascending, T, idxT, 2>(val_arr, idx_arr);  // DPP
+-        merge_step<ascending, T, idxT, 1>(val_arr, idx_arr);  // DPP
++        if constexpr(opus::get_warp_size() == 32)
++        {
++            T& val       = val_arr[0];
++            T& other_val = val_arr[1];
++            if((val > other_val && ascending) || (val < other_val && !ascending))
++            {
++                T tmp     = val;
++                val       = other_val;
++                other_val = tmp;
++
++                idxT tmp_idx = idx_arr[0];
++                idx_arr[0]   = idx_arr[1];
++                idx_arr[1]   = tmp_idx;
++            }
++            BitonicMerge<32, ascending, T, idxT>::merge(val_arr, idx_arr);
++            BitonicMerge<32, ascending, T, idxT>::merge(val_arr + 1, idx_arr + 1);
++        }
++        else
++        {
++            merge_step<ascending, T, idxT, 32>(val_arr, idx_arr);
++            merge_step<ascending, T, idxT, 16>(val_arr, idx_arr);
++            merge_step<ascending, T, idxT, 8>(val_arr, idx_arr);
++            merge_step<ascending, T, idxT, 4>(val_arr, idx_arr);
++            merge_step<ascending, T, idxT, 2>(val_arr, idx_arr);
++            merge_step<ascending, T, idxT, 1>(val_arr, idx_arr);
++        }
+     }
+ };
+ } // namespace sorting
+@@ -1295,9 +1423,10 @@ template <template <int, bool, typename, typename> class StrategyClass, typename
+ void calc_launch_parameter_by_occupancy(IdxT k, int* block_size, int* min_grid_size)
+ {
+     const int capacity = utils::calc_capacity(k);
++    const int warp_size = utils::get_runtime_warp_size();
+     auto func          = get_kernel_function_pointer<true, StrategyClass, T, IdxT>(capacity);
+-    auto calc_lds      = [k](int bs) {
+-        return calc_lds_size_for_block_wide<T, IdxT>(bs / opus::get_warp_size(), k);
++    auto calc_lds      = [k, warp_size](int bs) {
++        return calc_lds_size_for_block_wide<T, IdxT>(bs / warp_size, k);
+     };
+     HIP_CHECK(
+         hipOccupancyMaxPotentialBlockSizeVariableSMem(min_grid_size, block_size, func, calc_lds));
+@@ -1327,6 +1456,7 @@ template <template <int, bool, typename, typename> class StrategyClass, typename
+ void calc_launch_parameter(int batch_size, IdxT len, IdxT k, int* p_num_of_block, int* p_num_wave)
+ {
+     const int capacity = utils::calc_capacity(k);
++    const int warp_size = utils::get_runtime_warp_size();
+     int block_size     = 0;
+     int min_grid_size  = 0;
+     calc_launch_parameter_by_occupancy<StrategyClass, T, IdxT>(k, &block_size, &min_grid_size);
+@@ -1335,11 +1465,11 @@ void calc_launch_parameter(int batch_size, IdxT len, IdxT k, int* p_num_of_block
+     int block_per_batch;
+     if(batch_size < min_grid_size)
+     {
+-        num_wave           = block_size / opus::get_warp_size();
++        num_wave           = block_size / warp_size;
+         block_per_batch    = min_grid_size / batch_size;
+         IdxT len_per_block = (len - 1) / block_per_batch + 1;
+         IdxT len_per_wave  = (len_per_block - 1) / num_wave + 1;
+-        len_per_wave       = utils::round_up_to_multiple_of<opus::get_warp_size()>(len_per_wave);
++        len_per_wave       = utils::round_up_to_multiple_of(len_per_wave, warp_size);
+         len_per_block      = len_per_wave * num_wave;
+         block_per_batch    = (len - 1) / len_per_block + 1;
+         constexpr int len_factor = LaunchThreshold<StrategyClass>::multi_block_factor;
+@@ -1370,11 +1500,11 @@ void calc_launch_parameter(int batch_size, IdxT len, IdxT k, int* p_num_of_block
+             {
+                 block_size = 1;
+             }
+-            block_size = utils::round_up_to_multiple_of<opus::get_warp_size()>(block_size);
++            block_size = utils::round_up_to_multiple_of(block_size, warp_size);
+         }
+-        num_wave          = block_size / opus::get_warp_size();
++        num_wave          = block_size / warp_size;
+         IdxT len_per_wave = (len - 1) / num_wave + 1;
+-        len_per_wave      = utils::round_up_to_multiple_of<opus::get_warp_size()>(len_per_wave);
++        len_per_wave      = utils::round_up_to_multiple_of(len_per_wave, warp_size);
+         num_wave          = (len - 1) / len_per_wave + 1;
+         constexpr int len_factor = LaunchThreshold<StrategyClass>::single_block_factor;
+         if(len_per_wave < static_cast<IdxT>(capacity * len_factor))
+@@ -1393,8 +1523,9 @@ void calc_launch_parameter_for_merge(IdxT len, IdxT k, int* block_per_batch, int
+     *block_per_batch  = 1;
+     int block_size    = 0;
+     int min_grid_size = 0;
++    const int warp_size = utils::get_runtime_warp_size();
+     calc_launch_parameter_by_occupancy<BlockTopkMerge, T, IdxT>(k, &block_size, &min_grid_size);
+-    *num_wave         = block_size / opus::get_warp_size();
++    *num_wave         = block_size / warp_size;
+     IdxT len_per_wave = (len - 1) / (*num_wave) + 1;
+     len_per_wave      = ((len_per_wave - 1) / k + 1) * k;
+     *num_wave         = (len - 1) / len_per_wave + 1;
+@@ -2285,7 +2416,8 @@ void topk_kernel_launcher(int block_per_batch,
+     ComputeT sentinel = numeric::get_sentinel_value<greater, ComputeT>();
+     DataT* result_val = (block_per_batch == 1) ? out : tmp_val;
+     IdxT* result_idx  = (block_per_batch == 1) ? out_idx : tmp_idx;
+-    int block_dim     = wave_per_block * opus::get_warp_size();
++    const int warp_size = utils::get_runtime_warp_size();
++    int block_dim       = wave_per_block * warp_size;
+
+     int lds_size = calc_lds_size_for_block_wide<DataT, IdxT>(wave_per_block, k);
+
+@@ -2332,7 +2464,7 @@ void topk_kernel_launcher(int block_per_batch,
+         int merge_wave_per_block  = 0;
+         calc_launch_parameter_for_merge<DataT, IdxT>(
+             merge_len, k, &merge_block_per_batch, &merge_wave_per_block);
+-        block_dim = merge_wave_per_block * opus::get_warp_size();
++        block_dim = merge_wave_per_block * warp_size;
+         lds_size  = calc_lds_size_for_block_wide<DataT, IdxT>(merge_wave_per_block, k);
+
+         // Merge kernel reads DataT (converts to ComputeT internally), outputs DataT
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+index 55792ab7..d885afd1 100644
+--- a/op_tests/test_jit_module_archs.py
++++ b/op_tests/test_jit_module_archs.py
+@@ -153,3 +153,11 @@ def test_fused_qk_group_quant_keeps_gfx1100(monkeypatch):
+     args = core.get_args_of_build("module_fused_qk_rmsnorm_group_quant")
+
+     assert args["gpu_archs"] == ["gfx1100", "gfx90a"]
++
++
++def test_topk_plain_keeps_gfx1100(monkeypatch):
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100", "gfx90a"])
++
++    args = core.get_args_of_build("module_topk_plain")
++
++    assert args["gpu_archs"] == ["gfx1100", "gfx90a"]
+diff --git a/op_tests/test_topk_plain.py b/op_tests/test_topk_plain.py
+index b04d5738..b4ec0432 100644
+--- a/op_tests/test_topk_plain.py
++++ b/op_tests/test_topk_plain.py
+@@ -94,7 +94,25 @@ TOPKS = [2048, 1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1]
+ largest = True
+
+
++def test_wave32_regression_cases():
++    cases = [
++        (8, 32, 1, True, dtypes.fp32),
++        (8, 64, 16, True, dtypes.fp32),
++        (8, 128, 16, True, dtypes.fp32),
++        (8, 4096, 16, True, dtypes.fp32),
++        (8, 4096, 64, True, dtypes.fp32),
++        (8, 4096, 128, True, dtypes.fp32),
++        (8, 128, 16, False, dtypes.fp32),
++        (8, 128, 16, True, dtypes.fp16),
++        (8, 128, 16, True, dtypes.bf16),
++    ]
++    for case in cases:
++        run_topk_case(*case)
++
++
+ def main():
++    test_wave32_regression_cases()
++
+     rows = []
+     for batch_size in BATCH_SIZES:
+         for hiddensize in HIDDENSIZES:
+--
+2.43.0

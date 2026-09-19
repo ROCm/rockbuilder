@@ -1,0 +1,165 @@
+From 80462ea0feb1b31a494650e55381b906aaf83dc2 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 9 Sep 2026 14:58:24 -0700
+Subject: [PATCH 22/22] Classify gfx90a FP8 as FNUZ
+
+- Centralize target FP8 format properties.
+- Classify gfx90a and gfx942 as FNUZ.
+- Reuse HIP's FNUZ FP8x2 software conversion.
+- Preserve OCP conversion for RDNA targets.
+- Fix fused QK RMSNorm quantization on gfx90a.
+- Validate all eight gfx90a comparison cases.
+
+This fixes a format mismatch in the fused QK
+RMSNorm group-quant kernel on gfx90a. Opus
+classified only gfx942 as FNUZ, so gfx90a used
+the OCP maximum of 448 and OCP software
+conversion even though its output contract uses
+FNUZ with a maximum of 240. The Q output then
+used incompatible scale and FP8 encoding, causing
+all fused Q cases to fail with NRMSE near 0.5.
+
+The standalone test ran on an MI210 gfx90a.
+All eight shape and residual cases passed with zero
+invalid outputs after the fix. Q NRMSE ranged
+from 3.856e-07 to 1.773e-04. K and residual
+outputs remained within their existing tolerance.
+The RDNA3 and RDNA3.5 OCP fallback remains
+unchanged.
+
+Tools used:
+- GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/include/aiter_opus_plus.h | 13 ++++---
+ csrc/include/opus/opus.hpp     | 64 ++++++++++++++++++++++------------
+ 2 files changed, 50 insertions(+), 27 deletions(-)
+
+diff --git a/csrc/include/aiter_opus_plus.h b/csrc/include/aiter_opus_plus.h
+index 455371bc..f1cb2013 100644
+--- a/csrc/include/aiter_opus_plus.h
++++ b/csrc/include/aiter_opus_plus.h
+@@ -44,12 +44,10 @@ OPUS_D fp32x2_t pk_mul_f32(fp32x2_t a, fp32x2_t b)
+ template <typename S, std::enable_if_t<std::is_same_v<S, fp32x2_t>, bool> = true>
+ OPUS_D decltype(auto) fp32_to_fp8_scaled_x2(const S& s, float inverted_scale)
+ {
++    using fp8_traits = opus::fp8_format_traits<opus::fp8_t>;
+     fp32x2_t tmp = pk_mul_f32(s, fp32x2_t{inverted_scale, inverted_scale});
+-#if defined(__gfx942__)
+-    constexpr float hi = 240.0f, lo = -240.0f;
+-#else
+-    constexpr float hi = 448.0f, lo = -448.0f;
+-#endif
++    constexpr float hi = fp8_traits::max_value;
++    constexpr float lo = fp8_traits::min_value;
+     float a = tmp[0], b = tmp[1];
+ #if defined(__gfx942__) || defined(__gfx950__) || defined(__gfx1200__) || \
+     defined(__gfx1201__) || defined(__gfx1250__)
+@@ -61,6 +59,11 @@ OPUS_D decltype(auto) fp32_to_fp8_scaled_x2(const S& s, float inverted_scale)
+                  : "v"(lo), "v"(hi));
+     return __builtin_bit_cast(fp8x2_t, static_cast<int16_t>(w));
+ #else
++    if constexpr(fp8_traits::is_fnuz)
++    {
++        const __hip_fp8x2_e4m3_fnuz packed{float2{a, b}};
++        return __builtin_bit_cast(fp8x2_t, packed.__x);
++    }
+     // HIP provides a software OCP E4M3 conversion when the target has no
+     // packed FP8 conversion instruction, including RDNA3 and RDNA3.5.
+     const auto packed =
+diff --git a/csrc/include/opus/opus.hpp b/csrc/include/opus/opus.hpp
+index afdde53c..836cf76b 100644
+--- a/csrc/include/opus/opus.hpp
++++ b/csrc/include/opus/opus.hpp
+@@ -1031,6 +1031,27 @@ REGISTER_DTYPE(u8  , unsigned char)
+ REGISTER_DTYPE(i64 , long long)
+ REGISTER_DTYPE(u64 , unsigned long long)
+
++enum class fp8_format { ocp, fnuz };
++
++template<typename T> struct fp8_format_traits;
++
++template<> struct fp8_format_traits<fp8_t> {
++#if defined(__gfx90a__) || defined(__gfx942__)
++    static constexpr fp8_format format = fp8_format::fnuz;
++#else
++    static constexpr fp8_format format = fp8_format::ocp;
++#endif
++    static constexpr bool is_fnuz = format == fp8_format::fnuz;
++    static constexpr unsigned char bin_min = 0x08;
++    static constexpr unsigned char bin_max = is_fnuz ? 0x7F : 0x7E;
++    static constexpr unsigned char bin_lowest = is_fnuz ? 0xFF : 0xFE;
++    static constexpr unsigned char bin_qnan = is_fnuz ? 0x80 : 0x7F;
++    static constexpr unsigned char bin_inf = 0x00;
++    static constexpr float max_value = is_fnuz ? 240.0f : 448.0f;
++    static constexpr float min_value = -max_value;
++    static constexpr float tiny_value = is_fnuz ? 0.0078125f : 0.015625f;
++};
++
+ ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+ // numeric_limits -- returns min/max/lowest/quiet_nan/infinity in the *original* dtype (see finfo below for float-valued properties like eps/max/min/tiny)
+ template<typename T> struct numeric_limits;
+@@ -1059,19 +1080,23 @@ template<> struct numeric_limits<bf16_t> {
+     OPUS_H_D static constexpr bf16_t quiet_nan() { return __builtin_bit_cast(bf16_t, bin_qnan); }
+     OPUS_H_D static constexpr bf16_t infinity()  { return __builtin_bit_cast(bf16_t, bin_inf); }
+ };
+-// fp8 E4M3: gfx950=OCP(ieee-like, NaN=0x7F), gfx942=fnuz(NaN=0x80). No infinity in either format.
++// fp8 E4M3 has no infinity in either OCP or FNUZ format.
+ // NOTE: __builtin_bit_cast with _BitInt(8) is not yet constexpr in clang, so use static_cast via signed char.
+ template<> struct numeric_limits<fp8_t> {
+-#if defined(__gfx942__)
+-    static constexpr unsigned char bin_min = 0x08, bin_max = 0x7F, bin_lowest = 0xFF, bin_qnan = 0x80, bin_inf = 0x00;
+-#else
+-    static constexpr unsigned char bin_min = 0x08, bin_max = 0x7E, bin_lowest = 0xFE, bin_qnan = 0x7F, bin_inf = 0x00;
+-#endif
+-    OPUS_H_D static constexpr fp8_t min()       { return static_cast<fp8_t>(static_cast<signed char>(bin_min)); }
+-    OPUS_H_D static constexpr fp8_t max()       { return static_cast<fp8_t>(static_cast<signed char>(bin_max)); }
+-    OPUS_H_D static constexpr fp8_t lowest()    { return static_cast<fp8_t>(static_cast<signed char>(bin_lowest)); }
+-    OPUS_H_D static constexpr fp8_t quiet_nan() { return static_cast<fp8_t>(static_cast<signed char>(bin_qnan)); }
+-    OPUS_H_D static constexpr fp8_t infinity()  { return static_cast<fp8_t>(static_cast<signed char>(bin_inf)); }
++    using traits = fp8_format_traits<fp8_t>;
++    static constexpr unsigned char bin_min = traits::bin_min;
++    static constexpr unsigned char bin_max = traits::bin_max;
++    static constexpr unsigned char bin_lowest = traits::bin_lowest;
++    static constexpr unsigned char bin_qnan = traits::bin_qnan;
++    static constexpr unsigned char bin_inf = traits::bin_inf;
++    OPUS_H_D static constexpr fp8_t from_bits(unsigned char value) {
++        return static_cast<fp8_t>(static_cast<signed char>(value));
++    }
++    OPUS_H_D static constexpr fp8_t min()       { return from_bits(bin_min); }
++    OPUS_H_D static constexpr fp8_t max()       { return from_bits(bin_max); }
++    OPUS_H_D static constexpr fp8_t lowest()    { return from_bits(bin_lowest); }
++    OPUS_H_D static constexpr fp8_t quiet_nan() { return from_bits(bin_qnan); }
++    OPUS_H_D static constexpr fp8_t infinity()  { return from_bits(bin_inf); }
+ };
+ // bf8 E5M2: gfx950=OCP(ieee, has inf=0x7C, NaN=0x7E), gfx942=fnuz(no inf, NaN=0x80)
+ template<> struct numeric_limits<bf8_t> {
+@@ -1156,19 +1181,14 @@ template<> struct finfo<bf16_t> {
+     OPUS_H_D static constexpr float min()  { return __builtin_bit_cast(float, 0xFF7F0000u); }  // -3.389531e+38
+     OPUS_H_D static constexpr float tiny() { return __builtin_bit_cast(float, 0x00800000u); }  // 2^-126
+ };
+-// fp8 E4M3: gfx950=OCP(float8_e4m3fn, bias=7), gfx942=fnuz(float8_e4m3fnuz, bias=8)
++// fp8 E4M3 properties are selected by the target architecture's FP8 format.
+ template<> struct finfo<fp8_t> {
++    using traits = fp8_format_traits<fp8_t>;
+     static constexpr int bits = 8;
+-    OPUS_H_D static constexpr float eps()  { return __builtin_bit_cast(float, 0x3E000000u); }  // 2^-3 = 0.125
+-#if defined(__gfx942__)
+-    OPUS_H_D static constexpr float max()  { return __builtin_bit_cast(float, 0x43700000u); }  // 240.0
+-    OPUS_H_D static constexpr float min()  { return __builtin_bit_cast(float, 0xC3700000u); }  // -240.0
+-    OPUS_H_D static constexpr float tiny() { return __builtin_bit_cast(float, 0x3C000000u); }  // 2^-7 = 0.0078125
+-#else
+-    OPUS_H_D static constexpr float max()  { return __builtin_bit_cast(float, 0x43E00000u); }  // 448.0
+-    OPUS_H_D static constexpr float min()  { return __builtin_bit_cast(float, 0xC3E00000u); }  // -448.0
+-    OPUS_H_D static constexpr float tiny() { return __builtin_bit_cast(float, 0x3C800000u); }  // 2^-6 = 0.015625
+-#endif
++    OPUS_H_D static constexpr float eps()  { return 0.125f; }
++    OPUS_H_D static constexpr float max()  { return traits::max_value; }
++    OPUS_H_D static constexpr float min()  { return traits::min_value; }
++    OPUS_H_D static constexpr float tiny() { return traits::tiny_value; }
+ };
+ // bf8 E5M2: gfx950=OCP(float8_e5m2, bias=15), gfx942=fnuz(float8_e5m2fnuz, bias=16)
+ template<> struct finfo<bf8_t> {
+--
+2.43.0
