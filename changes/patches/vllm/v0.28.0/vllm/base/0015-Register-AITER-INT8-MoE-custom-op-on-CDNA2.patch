@@ -1,0 +1,100 @@
+From 650cdc73c4ddb6e51a1658ca18bdbc9d6e02640b Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 18 Sep 2026 17:56:14 -0700
+Subject: [PATCH] Register AITER INT8 MoE custom op on CDNA2
+
+Explicit AITER INT8 MoE failed during engine profiling
+on an Instinct MI210 gfx90a system.
+
+Reason:
+- The INT8 oracle selected the AITER experts backend.
+- CDNA2 followed the limited AITER registration path.
+- That path registered W8A8 GEMM but returned before
+  registering the fused MoE custom op.
+- The first model profile call failed because
+  torch.ops.vllm.rocm_aiter_fused_moe was missing.
+
+Fix:
+- Register the AITER fused MoE implementation and fake
+  implementation in the CDNA2 and wave32 INT8 path.
+- Add a CDNA2 registration regression test.
+
+Testing
+- Pass 14 INT8 MoE oracle tests.
+- Generate with explicit AITER tiny-Qwen INT8 MoE on
+  gfx90a, gfx1100, and gfx1201.
+- Preserve the Triton INT8 linear-kernel selection.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/quantization/test_int8_moe_oracle.py | 33 ++++++++++++++++++++++
+ vllm/_aiter_ops.py                         |  7 +++++
+ 2 files changed, 40 insertions(+)
+
+diff --git a/tests/quantization/test_int8_moe_oracle.py b/tests/quantization/test_int8_moe_oracle.py
+index f2944cb..907fb34 100644
+--- a/tests/quantization/test_int8_moe_oracle.py
++++ b/tests/quantization/test_int8_moe_oracle.py
+@@ -161,6 +161,39 @@ def test_aiter_int8_experts_support_dynamic_int8():
+     )
+
+
++def test_cdna2_registers_aiter_fused_moe_op(monkeypatch):
++    import vllm._aiter_ops as aiter_ops
++
++    registered_ops = []
++    monkeypatch.setattr(aiter_ops, "_OPS_REGISTERED", False)
++    monkeypatch.setattr(
++        aiter_ops,
++        "is_aiter_found_and_supported",
++        lambda: False,
++    )
++    monkeypatch.setattr(
++        aiter_ops,
++        "is_aiter_found_and_supported_on_rdna4",
++        lambda: False,
++    )
++    monkeypatch.setattr(
++        aiter_ops,
++        "is_aiter_found_and_supported_on_cdna2",
++        lambda: True,
++    )
++    monkeypatch.setattr(aiter_ops.current_platform, "is_rocm", lambda: True)
++    monkeypatch.setattr(
++        aiter_ops,
++        "direct_register_custom_op",
++        lambda **kwargs: registered_ops.append(kwargs["op_name"]),
++    )
++    monkeypatch.setattr("vllm.platforms.rocm.on_gfx11", lambda: False)
++
++    aiter_ops.rocm_aiter_ops.register_ops_once()
++
++    assert "rocm_aiter_fused_moe" in registered_ops
++
++
+ @pytest.mark.parametrize(("policy", "expected"), [(None, 0), (3, 3)])
+ def test_aiter_moe_dispatch_policy_is_always_integer(
+     monkeypatch,
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 72f3218..f7836a7 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -2131,6 +2131,13 @@ class rocm_aiter_ops:
+                         op_func=_rocm_aiter_w8a8_gemm_impl,
+                         fake_impl=_rocm_aiter_w8a8_gemm_fake,
+                     )
++                    direct_register_custom_op(
++                        op_name="rocm_aiter_fused_moe",
++                        op_func=_rocm_aiter_fused_moe_impl,
++                        mutates_args=[],
++                        fake_impl=_rocm_aiter_fused_moe_fake,
++                        dispatch_key=current_platform.dispatch_key,
++                    )
+                     if cdna2_supported:
+                         direct_register_custom_op(
+                             op_name="rocm_aiter_gemm_a8w8_blockscale",
+--
+2.43.0
