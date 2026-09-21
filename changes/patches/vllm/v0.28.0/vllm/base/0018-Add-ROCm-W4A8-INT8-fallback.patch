@@ -1,0 +1,1297 @@
+From 4839931247cc8910e1edcfb69ad18ebef544e3a1 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 20 Sep 2026 20:46:44 -0700
+Subject: [PATCH] Add ROCm W4A8 INT8 fallback and
+ native kernels
+
+INT4-weight and dynamic INT8-activation checkpoints
+could not run on ROCm. The first ROCm W4A8 path used
+a dequant fallback.
+
+Reason:
+- W4A8 INT8 MoE exposed only a CPU backend.
+- Dense ROCm kernels require biased uint4 packing.
+- SM90 W4A8 detection ignored activation type.
+- Unpacked INT4 checkpoints exceeded gfx1201 memory.
+- Fallback dequant wasted ROCm INT8 matrix cores.
+
+Fix:
+- Distinguish INT8 and FP8 W4A8 activation formats.
+- The interim path quantized and dequantized per token.
+- Reuse packed W4A16 Triton dense and MoE kernels.
+- Support unpacked and post-packed checkpoints.
+- Preserve packed weights through model loading.
+- Add native INT8xINT4 GEMM and dynamic quantization.
+- Plumb INT8 scales through MoE Triton expert kernels.
+- Extend tests for GEMM accuracy and W4A8 routing.
+
+Testing
+- Pass seven W4A8 routing and packing tests.
+- Pass 14 Triton INT4 GEMM cases on each GPU.
+- Load DeepSeek MoE 16B in 8.54 GiB on gfx90a,
+  gfx1100, and gfx1201.
+- Generate coherent output on all three targets.
+- Initial native-kernel sandbox run skipped: uv
+  was unavailable.
+- Original two-patch series passed 14 focused
+  tests on each benchmark host.
+- Validate native GEMM on gfx90a and gfx1201.
+- Rebuild that series on Felippe and Nicki.
+- Run the complete fitting-model matrix with it.
+- DeepSeek W4A8 throughput rose 9.2% on gfx1100,
+  15.9% on gfx90a, and 29.5% on gfx1201.
+- Repeated gfx1201 Qwen3.5 W8A8 A/B favored AITER:
+  123.05 versus Triton's 120.57/120.61 tok/s.
+- Omit the gfx1201 W8A8 routing change.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+- Codex: GPT-6
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+
+---
+ tests/kernels/quantization/test_triton_w4a16.py    |   33 +++
+ tests/quantization/test_w4a8_rocm_fallback.py      |  164 +++++++++++++++
+ .../kernels/linear/mixed_precision/triton_w4a16.py |  134 ++++++++++++
+ .../layers/fused_moe/experts/triton_moe.py         |   55 ++++-
+ vllm/model_executor/layers/fused_moe/fused_moe.py  |   58 ++++-
+ .../layers/fused_moe/oracle/int_wna16.py           |    2
+ .../compressed_tensors/compressed_tensors.py       |   15 +
+ .../compressed_tensors_moe.py                      |   18 ++
+ .../compressed_tensors_moe_w4a8_int8_rocm.py       |  226 ++++++++++++++++++++
+ .../compressed_tensors/schemes/__init__.py         |    6 -
+ .../schemes/compressed_tensors_w4a8_int.py         |  157 ++++++++++++++
+ 11 files changed, 846 insertions(+), 22 deletions(-)
+ create mode 100644 tests/quantization/test_w4a8_rocm_fallback.py
+ create mode 100644 vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a8_int8_rocm.py
+
+diff --git a/tests/kernels/quantization/test_triton_w4a16.py b/tests/kernels/quantization/test_triton_w4a16.py
+index 42f163dea4..da41adb9b0 100644
+--- a/tests/kernels/quantization/test_triton_w4a16.py
++++ b/tests/kernels/quantization/test_triton_w4a16.py
+@@ -27,6 +27,7 @@ triton_w4a16_module = importlib.import_module(
+     "vllm.model_executor.kernels.linear.mixed_precision.triton_w4a16"
+ )
+ triton_w4a16_gemm = triton_w4a16_module.triton_w4a16_gemm
++triton_w4a8_gemm = triton_w4a16_module.triton_w4a8_gemm
+ TritonW4A16LinearKernel = triton_w4a16_module.TritonW4A16LinearKernel
+ 
+ 
+@@ -162,6 +163,38 @@ def test_triton_w4a16_gemm_matches_reference(dtype, M, K, N, G, has_zp):
+     torch.testing.assert_close(out, ref, rtol=1e-2, atol=1e-2)
+ 
+ 
++@pytest.mark.skipif(not current_platform.is_rocm(), reason="ROCm only")
++@pytest.mark.parametrize("M,K,N,G", [(1, 256, 256, 128), (17, 512, 512, 128)])
++def test_triton_w4a8_gemm_matches_reference(M, K, N, G):
++    set_random_seed(0)
++    x = torch.randn((M, K), device=device, dtype=torch.bfloat16)
++    x_fp32 = x.float()
++    x_scale = torch.clamp(
++        x_fp32.abs().amax(dim=-1, keepdim=True) / 127.0,
++        min=torch.finfo(torch.float32).tiny,
++    )
++    x_quantized = torch.round(x_fp32 / x_scale).clamp(-127, 127).to(torch.int8)
++    weight = torch.randint(0, 16, (K, N), device=device, dtype=torch.int32)
++    weight_packed = _pack_int4_along_n(weight)
++    weight_scale = (
++        0.05 * torch.rand((K // G, N), device=device, dtype=torch.float32)
++    ).to(torch.bfloat16)
++
++    actual = triton_w4a8_gemm(
++        x_quantized,
++        x_scale,
++        weight_packed,
++        weight_scale,
++        G,
++        output_dtype=torch.bfloat16,
++    )
++    scale_full = weight_scale.float().repeat_interleave(G, dim=0)
++    weight_dequant = (weight - 8).float() * scale_full
++    expected = ((x_quantized.float() * x_scale) @ weight_dequant).to(torch.bfloat16)
++
++    torch.testing.assert_close(actual, expected, rtol=1e-2, atol=1e-2)
++
++
+ @pytest.mark.skipif(not current_platform.is_rocm(), reason="ROCm only")
+ def test_triton_w4a16_gemm_requires_contiguous_inputs():
+     if not torch.cuda.is_available():
+diff --git a/tests/quantization/test_w4a8_rocm_fallback.py b/tests/quantization/test_w4a8_rocm_fallback.py
+new file mode 100644
+index 0000000000..a75830ebc2
+--- /dev/null
++++ b/tests/quantization/test_w4a8_rocm_fallback.py
+@@ -0,0 +1,164 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++from types import SimpleNamespace
++
++import pytest
++import torch
++from compressed_tensors.quantization import QuantizationType
++
++from vllm.model_executor.layers.quantization.compressed_tensors import (
++    compressed_tensors as compressed_tensors_module,
++)
++from vllm.model_executor.layers.quantization.compressed_tensors.compressed_tensors_moe import (
++    compressed_tensors_moe_w4a8_int8_rocm as rocm_module,
++)
++from vllm.model_executor.layers.fused_moe.experts.triton_moe import (
++    TritonW4A8IntExperts,
++)
++from vllm.model_executor.layers.quantization.compressed_tensors.schemes import (
++    compressed_tensors_w4a8_int as w4a8_scheme,
++)
++from vllm.scalar_type import scalar_types
++
++pytestmark = pytest.mark.cpu_test
++
++CompressedTensorsW4A8Int8RocmMoEMethod = (
++    rocm_module.CompressedTensorsW4A8Int8RocmMoEMethod
++)
++CompressedTensorsW4A8Int8PackedRocmMoEMethod = (
++    rocm_module.CompressedTensorsW4A8Int8PackedRocmMoEMethod
++)
++CompressedTensorsWNA16MoEMethod = rocm_module.CompressedTensorsWNA16MoEMethod
++dynamic_per_token_int8_quant = w4a8_scheme.dynamic_per_token_int8_quant
++dynamic_per_token_int8_roundtrip = w4a8_scheme.dynamic_per_token_int8_roundtrip
++pack_signed_int4_along_input = w4a8_scheme.pack_signed_int4_along_input
++
++
++def test_fp8_w4a8_detection_rejects_int8_activations():
++    weight = SimpleNamespace(
++        num_bits=4,
++        strategy="group",
++        dynamic=False,
++        symmetric=True,
++    )
++    activation = SimpleNamespace(
++        num_bits=8,
++        strategy="token",
++        dynamic=True,
++        symmetric=True,
++        type=QuantizationType.INT,
++    )
++
++    assert not compressed_tensors_module.CompressedTensorsConfig._is_fp8_w4a8(
++        weight,
++        activation,
++    )
++    assert compressed_tensors_module.CompressedTensorsConfig._is_dynamic_token_w4a8_int(
++        weight,
++        activation,
++    )
++
++
++def test_rocm_w4a8_uses_biased_uint4_kernel_format(monkeypatch):
++    monkeypatch.setattr(w4a8_scheme.current_platform, "is_rocm", lambda: True)
++    scheme = w4a8_scheme.CompressedTensorsW4A8Int(
++        strategy="group",
++        num_bits=4,
++        group_size=128,
++        is_static_input_scheme=False,
++        input_symmetric=True,
++    )
++
++    assert scheme.quant_type == scalar_types.uint4b8
++    packed_scheme = w4a8_scheme.CompressedTensorsW4A8IntPackedRocm(
++        strategy="group",
++        num_bits=4,
++        group_size=128,
++    )
++    assert packed_scheme.quant_type == scalar_types.uint4b8
++
++
++def test_dynamic_per_token_int8_roundtrip():
++    x = torch.tensor(
++        [[-3.0, -0.25, 0.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
++        dtype=torch.bfloat16,
++    )
++
++    actual = dynamic_per_token_int8_roundtrip(x)
++    x_fp32 = x.float()
++    scale = torch.clamp(
++        x_fp32.abs().amax(dim=-1, keepdim=True) / 127.0,
++        min=torch.finfo(torch.float32).tiny,
++    )
++    expected = (torch.round(x_fp32 / scale).clamp(-127, 127) * scale).to(x.dtype)
++
++    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
++    assert actual.dtype == x.dtype
++
++
++def test_dynamic_per_token_int8_quant():
++    x = torch.tensor([[-3.0, -0.25, 0.0, 1.0]], dtype=torch.bfloat16)
++
++    quantized, scale = dynamic_per_token_int8_quant(x)
++
++    assert quantized.dtype == torch.int8
++    assert scale.dtype == torch.float32
++    assert quantized.shape == x.shape
++    assert scale.shape == (1, 1)
++    assert int(quantized.abs().max()) == 127
++
++
++def test_pack_signed_int4_along_input():
++    weight = torch.tensor(
++        [[-8, -7, -1, 0, 1, 2, 6, 7]],
++        dtype=torch.int8,
++    )
++
++    actual = pack_signed_int4_along_input(weight)
++    expected = sum((int(value) + 8) << (index * 4) for index, value in enumerate(weight[0]))
++
++    assert actual.dtype == torch.int32
++    assert actual.shape == (1, 1)
++    assert int(actual[0, 0].to(torch.int64) & 0xFFFFFFFF) == expected
++
++
++def test_pack_signed_int4_moe_weight():
++    weight = torch.tensor(
++        [[[-8, -7, -1, 0, 1, 2, 6, 7], [7, 6, 2, 1, 0, -1, -7, -8]]],
++        dtype=torch.int8,
++    )
++
++    actual = CompressedTensorsW4A8Int8RocmMoEMethod._pack_moe_weight(weight)
++
++    assert actual.dtype == torch.int32
++    assert actual.shape == (1, 1, 2)
++    for output_index in range(2):
++        expected = sum(
++            (int(value) + 8) << (index * 4)
++            for index, value in enumerate(weight[0, output_index])
++        )
++        assert (
++            int(actual[0, 0, output_index].to(torch.int64) & 0xFFFFFFFF)
++            == expected
++        )
++
++
++@pytest.mark.parametrize(
++    "method_cls",
++    [
++        CompressedTensorsW4A8Int8RocmMoEMethod,
++        CompressedTensorsW4A8Int8PackedRocmMoEMethod,
++    ],
++)
++def test_rocm_moe_uses_native_w4a8_experts(monkeypatch, method_cls):
++    monkeypatch.setattr(
++        CompressedTensorsWNA16MoEMethod,
++        "__init__",
++        lambda *_args, **_kwargs: None,
++    )
++    input_quant = SimpleNamespace(dynamic=True, symmetric=True, num_bits=8)
++
++    method = method_cls(None, input_quant, None)
++
++    assert method.experts_cls is TritonW4A8IntExperts
+diff --git a/vllm/model_executor/kernels/linear/mixed_precision/triton_w4a16.py b/vllm/model_executor/kernels/linear/mixed_precision/triton_w4a16.py
+index bc0a587b67..e4ed0ed278 100644
+--- a/vllm/model_executor/kernels/linear/mixed_precision/triton_w4a16.py
++++ b/vllm/model_executor/kernels/linear/mixed_precision/triton_w4a16.py
+@@ -270,6 +270,140 @@ def triton_w4a16_gemm(
+     return c
+ 
+ 
++@triton.jit
++def triton_w4a8_gemm_kernel(
++    a_ptr,
++    a_scale_ptr,
++    b_ptr,
++    scales_ptr,
++    c_ptr,
++    M,
++    N,
++    K,
++    stride_am,
++    stride_ak,
++    stride_asm,
++    stride_bk,
++    stride_bn,
++    stride_cm,
++    stride_cn,
++    group_size,
++    ZP_BIAS: tl.constexpr,
++    BLOCK_M: tl.constexpr,
++    BLOCK_N: tl.constexpr,
++    BLOCK_K: tl.constexpr,
++):
++    """INT8 activation x packed INT4 weight GEMM with per-token/group scales."""
++    pid_m = tl.program_id(0)
++    pid_n = tl.program_id(1)
++    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
++    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
++    offs_bn = pid_n * (BLOCK_N // 8) + tl.arange(0, BLOCK_N // 8)
++    shifts_row = tl.arange(0, 8) * 4
++    shifts_2d = tl.broadcast_to(shifts_row[None, :], (BLOCK_N // 8, 8))
++    shifts = tl.reshape(shifts_2d, (BLOCK_N,))
++    a_scale = tl.load(
++        a_scale_ptr + offs_m * stride_asm,
++        mask=offs_m < M,
++        other=0.0,
++    ).to(tl.float32)
++    accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
++
++    for k_start in range(0, tl.cdiv(K, BLOCK_K)):
++        offs_k = k_start * BLOCK_K + tl.arange(0, BLOCK_K)
++        mask_k = offs_k < K
++        a_ptrs = a_ptr + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
++        a = tl.load(
++            a_ptrs,
++            mask=(offs_m[:, None] < M) & mask_k[None, :],
++            other=0,
++        )
++        b_ptrs = b_ptr + offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
++        b_packed = tl.load(
++            b_ptrs,
++            mask=mask_k[:, None] & (offs_bn[None, :] < N // 8),
++            other=0,
++        )
++        b = tl.interleave(b_packed, b_packed)
++        b = tl.interleave(b, b)
++        b = tl.interleave(b, b)
++        b = ((b >> shifts[None, :]) & 0xF) - ZP_BIAS
++        b = b.to(tl.int8)
++
++        partial = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
++        partial = tl.dot(a, b, partial, out_dtype=tl.int32)
++        scale_group = (k_start * BLOCK_K) // group_size
++        b_scale = tl.load(
++            scales_ptr + scale_group * N + offs_n,
++            mask=offs_n < N,
++            other=0.0,
++        ).to(tl.float32)
++        accumulator += partial.to(tl.float32) * a_scale[:, None] * b_scale[None, :]
++
++    c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
++    mask_c = (offs_m[:, None] < M) & (offs_n[None, :] < N)
++    tl.store(c_ptrs, accumulator.to(c_ptr.type.element_ty), mask=mask_c)
++
++
++def triton_w4a8_gemm(
++    a: torch.Tensor,
++    a_scale: torch.Tensor,
++    b_q: torch.Tensor,
++    scales: torch.Tensor,
++    group_size: int,
++    zp_bias: int = 8,
++    output_dtype: torch.dtype = torch.bfloat16,
++) -> torch.Tensor:
++    """Native INT8 x packed INT4 GEMM for ROCm matrix instructions."""
++    assert a.dtype == torch.int8
++    assert a.is_contiguous()
++    assert a_scale.dtype == torch.float32
++    assert a_scale.is_contiguous()
++    assert b_q.is_contiguous()
++    assert scales.is_contiguous()
++    M, K = a.shape
++    N = b_q.shape[1] * 8
++    assert a_scale.shape == (M, 1)
++    assert b_q.shape == (K, N // 8)
++    assert scales.shape == (K // group_size, N)
++
++    output = torch.empty((M, N), dtype=output_dtype, device=a.device)
++    if current_platform.is_rocm():
++        from vllm.platforms.rocm import on_gfx1x
++
++        if on_gfx1x():
++            BLOCK_M, BLOCK_N, BLOCK_K = 32, 32, 64
++        else:
++            BLOCK_M, BLOCK_N, BLOCK_K = 32, 64, 32
++    else:
++        BLOCK_M, BLOCK_N, BLOCK_K = 32, 64, 32
++    BLOCK_K = min(BLOCK_K, group_size)
++    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
++    triton_w4a8_gemm_kernel[grid](
++        a,
++        a_scale,
++        b_q,
++        scales,
++        output,
++        M,
++        N,
++        K,
++        a.stride(0),
++        a.stride(1),
++        a_scale.stride(0),
++        b_q.stride(0),
++        b_q.stride(1),
++        output.stride(0),
++        output.stride(1),
++        group_size=group_size,
++        ZP_BIAS=zp_bias,
++        BLOCK_M=BLOCK_M,
++        BLOCK_N=BLOCK_N,
++        BLOCK_K=BLOCK_K,
++    )
++    return output
++
++
+ class TritonW4A16LinearKernel(MPLinearKernel):
+     """
+     Triton-based W4A16 GEMM kernel for ROCm (MI300 and newer).
+diff --git a/vllm/model_executor/layers/fused_moe/experts/triton_moe.py b/vllm/model_executor/layers/fused_moe/experts/triton_moe.py
+index 7d600dea69..8e9e30cce5 100644
+--- a/vllm/model_executor/layers/fused_moe/experts/triton_moe.py
++++ b/vllm/model_executor/layers/fused_moe/experts/triton_moe.py
+@@ -563,6 +563,8 @@ class TritonExperts(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
+ 
+ 
+ class TritonWNA16Experts(TritonExperts):
++    use_native_w4a8 = False
++
+     @staticmethod
+     def _supports_current_device() -> bool:
+         return current_platform.is_cuda_alike() or current_platform.is_xpu()
+@@ -643,8 +645,19 @@ class TritonWNA16Experts(TritonExperts):
+             torch.bfloat16,
+             torch.float8_e4m3fn,
+             torch.float8_e4m3fnuz,
++            torch.int8,
+         ]
+ 
++        a1q_scale = None
++        if self.use_native_w4a8:
++            hidden_states, a1q_scale = moe_kernel_quantize_input(
++                hidden_states,
++                None,
++                torch.int8,
++                True,
++                None,
++            )
++
+         E, num_tokens, N, K, top_k_num = self.moe_problem_size(
+             hidden_states, w1, w2, topk_ids
+         )
+@@ -670,6 +683,7 @@ class TritonWNA16Experts(TritonExperts):
+         elif (
+             hidden_states.dtype == torch.float8_e4m3fn
+             or hidden_states.dtype == torch.float8_e4m3fnuz
++            or hidden_states.dtype == torch.int8
+         ):
+             compute_type = tl.bfloat16
+         else:
+@@ -689,6 +703,7 @@ class TritonWNA16Experts(TritonExperts):
+ 
+         invoke_fused_moe_wna16_triton_kernel(
+             hidden_states,
++            a1q_scale,
+             w1,
+             intermediate_cache1,
+             self.w1_scale,
+@@ -703,6 +718,7 @@ class TritonWNA16Experts(TritonExperts):
+             compute_type=compute_type,
+             use_int8_w8a16=self.quant_config.use_int8_w8a16,
+             use_int4_w4a16=self.quant_config.use_int4_w4a16,
++            use_int4_w4a8=self.use_native_w4a8,
+             block_shape=self.block_shape,
+         )
+ 
+@@ -712,16 +728,26 @@ class TritonWNA16Experts(TritonExperts):
+ 
+         a2q_scale: torch.Tensor | None = None
+ 
+-        qintermediate_cache2, a2q_scale = moe_kernel_quantize_input(
+-            intermediate_cache2,
+-            a2_scale,
+-            self.quant_dtype,
+-            self.per_act_token_quant,
+-            self.block_shape,
+-        )
++        if self.use_native_w4a8:
++            qintermediate_cache2, a2q_scale = moe_kernel_quantize_input(
++                intermediate_cache2,
++                None,
++                torch.int8,
++                True,
++                None,
++            )
++        else:
++            qintermediate_cache2, a2q_scale = moe_kernel_quantize_input(
++                intermediate_cache2,
++                a2_scale,
++                self.quant_dtype,
++                self.per_act_token_quant,
++                self.block_shape,
++            )
+ 
+         invoke_fused_moe_wna16_triton_kernel(
+             qintermediate_cache2,
++            a2q_scale,
+             w2,
+             intermediate_cache3,
+             self.w2_scale,
+@@ -736,8 +762,23 @@ class TritonWNA16Experts(TritonExperts):
+             compute_type=compute_type,
+             use_int8_w8a16=self.quant_config.use_int8_w8a16,
+             use_int4_w4a16=self.quant_config.use_int4_w4a16,
++            use_int4_w4a8=self.use_native_w4a8,
+             block_shape=self.block_shape,
+         )
+ 
+         # separate function is required for MoE + LoRA
+         self.moe_sum(intermediate_cache3, output)
++
++
++class TritonW4A8IntExperts(TritonWNA16Experts):
++    use_native_w4a8 = True
++
++    @staticmethod
++    def _supports_quant_scheme(
++        weight_key: QuantKey | None,
++        activation_key: QuantKey | None,
++    ) -> bool:
++        return (weight_key, activation_key) == (
++            kInt4Static,
++            kInt8DynamicTokenSym,
++        )
+diff --git a/vllm/model_executor/layers/fused_moe/fused_moe.py b/vllm/model_executor/layers/fused_moe/fused_moe.py
+index be4930052a..5cef66c70a 100644
+--- a/vllm/model_executor/layers/fused_moe/fused_moe.py
++++ b/vllm/model_executor/layers/fused_moe/fused_moe.py
+@@ -67,6 +67,7 @@ def fused_moe_kernel_gptq_awq(
+     a_ptr,
+     b_ptr,
+     c_ptr,
++    a_scale_ptr,
+     b_scale_ptr,
+     b_zp_ptr,
+     topk_weights_ptr,
+@@ -89,6 +90,7 @@ def fused_moe_kernel_gptq_awq(
+     stride_bn,
+     stride_cm,
+     stride_cn,
++    stride_asm,
+     stride_bse,
+     stride_bsk,
+     stride_bsn,
+@@ -108,6 +110,7 @@ def fused_moe_kernel_gptq_awq(
+     compute_type: tl.constexpr,
+     has_zp: tl.constexpr,
+     use_int4_w4a16: tl.constexpr,
++    use_int4_w4a8: tl.constexpr,
+     use_int8_w8a16: tl.constexpr,
+ ):
+     """
+@@ -217,6 +220,12 @@ def fused_moe_kernel_gptq_awq(
+     # of fp32 values for higher accuracy.
+     # `accumulator` will be converted back to fp16 after the loop.
+     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
++    if use_int4_w4a8:
++        a_scale = tl.load(
++            a_scale_ptr + (offs_token // top_k) * stride_asm,
++            mask=token_mask,
++            other=0.0,
++        ).to(tl.float32)
+     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+         # Load the next block of A and B, generate a mask by checking the
+         # K dimension.
+@@ -237,14 +246,24 @@ def fused_moe_kernel_gptq_awq(
+         if use_int4_w4a16:
+             b = (b >> b_shifter) & 0xF
+ 
+-        b_scale_ptrs = (
+-            b_scale_ptr
+-            + off_experts * stride_bse
+-            + offs_bn[None, :] * stride_bsn
+-            + ((offs_k[:, None] + BLOCK_SIZE_K * k) // group_size) * stride_bsk
+-        )
+-        b_scale = tl.load(b_scale_ptrs, mask=k_mask, other=k_other)
+-        b_scale = b_scale.to(tl.float32)
++        if use_int4_w4a8:
++            scale_group = (BLOCK_SIZE_K * k) // group_size
++            b_scale_ptrs = (
++                b_scale_ptr
++                + off_experts * stride_bse
++                + offs_bn * stride_bsn
++                + scale_group * stride_bsk
++            )
++            b_scale = tl.load(b_scale_ptrs).to(tl.float32)
++        else:
++            b_scale_ptrs = (
++                b_scale_ptr
++                + off_experts * stride_bse
++                + offs_bn[None, :] * stride_bsn
++                + ((offs_k[:, None] + BLOCK_SIZE_K * k) // group_size) * stride_bsk
++            )
++            b_scale = tl.load(b_scale_ptrs, mask=k_mask, other=k_other)
++            b_scale = b_scale.to(tl.float32)
+ 
+         if has_zp and use_int4_w4a16:
+             offs_k_true = (offs_k[:, None] + BLOCK_SIZE_K * k) // group_size
+@@ -269,11 +288,19 @@ def fused_moe_kernel_gptq_awq(
+             b_zp = b_zp.to(tl.float32)
+ 
+         # We accumulate along the K dimension.
+-        if has_zp:
++        if use_int4_w4a8:
++            b = (b - b_zp_num).to(tl.int8)
++            partial = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.int32)
++            partial = tl.dot(a, b, partial, out_dtype=tl.int32)
++            accumulator += (
++                partial.to(tl.float32) * a_scale[:, None] * b_scale[None, :]
++            )
++        elif has_zp:
+             b = ((b.to(tl.float32) - b_zp) * b_scale).to(compute_type)
++            accumulator = tl.dot(a, b, acc=accumulator)
+         else:
+             b = ((b.to(tl.float32) - b_zp_num) * b_scale).to(compute_type)
+-        accumulator = tl.dot(a, b, acc=accumulator)
++            accumulator = tl.dot(a, b, acc=accumulator)
+ 
+         # Advance the ptrs to the next K block.
+         a_ptrs += BLOCK_SIZE_K * stride_ak
+@@ -672,6 +699,7 @@ def invoke_fused_moe_wna16_cuda_kernel(
+ # once we drop off sm75 support
+ def invoke_fused_moe_wna16_triton_kernel(
+     A: torch.Tensor,
++    A_scale: torch.Tensor | None,
+     B: torch.Tensor,
+     C: torch.Tensor,
+     B_scale: torch.Tensor | None,
+@@ -686,11 +714,14 @@ def invoke_fused_moe_wna16_triton_kernel(
+     compute_type: tl.dtype,
+     use_int8_w8a16: bool,
+     use_int4_w4a16: bool,
++    use_int4_w4a8: bool,
+     block_shape: list[int] | None,
+ ):
+     assert B_scale is not None and B_scale.ndim == 3
+     assert B_zp is None or B_zp.ndim == 3
+     assert block_shape is not None and block_shape[0] == 0
++    assert not use_int4_w4a8 or A_scale is not None
++    assert not use_int4_w4a8 or B_zp is None
+ 
+     M = A.size(0)
+     num_tokens = M * top_k
+@@ -720,11 +751,14 @@ def invoke_fused_moe_wna16_triton_kernel(
+             block_size_m=config["BLOCK_SIZE_M"],
+         )
+     )
++    if use_int4_w4a8:
++        config["BLOCK_SIZE_K"] = min(config["BLOCK_SIZE_K"], block_shape[1])
+ 
+     fused_moe_kernel_gptq_awq[grid](
+         A,
+         B,
+         C,
++        A_scale,
+         B_scale,
+         B_zp,
+         topk_weights,
+@@ -742,6 +776,7 @@ def invoke_fused_moe_wna16_triton_kernel(
+         B.stride(1),
+         C.stride(1),
+         C.stride(2),
++        A_scale.stride(0) if A_scale is not None else 0,
+         B_scale.stride(0),
+         B_scale.stride(2),
+         B_scale.stride(1),
+@@ -755,6 +790,7 @@ def invoke_fused_moe_wna16_triton_kernel(
+         compute_type=compute_type,
+         has_zp=B_zp is not None,
+         use_int4_w4a16=use_int4_w4a16,
++        use_int4_w4a8=use_int4_w4a8,
+         use_int8_w8a16=use_int8_w8a16,
+         **config,
+     )
+@@ -965,6 +1001,7 @@ def dispatch_fused_moe_kernel(
+             return
+         invoke_fused_moe_wna16_triton_kernel(
+             A,
++            A_scale,
+             B,
+             C,
+             B_scale,
+@@ -979,6 +1016,7 @@ def dispatch_fused_moe_kernel(
+             compute_type,
+             use_int8_w8a16,
+             use_int4_w4a16,
++            False,
+             block_shape,
+         )
+ 
+diff --git a/vllm/model_executor/layers/fused_moe/oracle/int_wna16.py b/vllm/model_executor/layers/fused_moe/oracle/int_wna16.py
+index 5ab0277afc..e57d36deb6 100644
+--- a/vllm/model_executor/layers/fused_moe/oracle/int_wna16.py
++++ b/vllm/model_executor/layers/fused_moe/oracle/int_wna16.py
+@@ -25,6 +25,7 @@ from vllm.model_executor.layers.fused_moe.experts.marlin_moe import (
+     MarlinExpertsBase,
+ )
+ from vllm.model_executor.layers.fused_moe.experts.triton_moe import (
++    TritonW4A8IntExperts,
+     TritonWNA16Experts,
+ )
+ from vllm.model_executor.layers.fused_moe.experts.trtllm_mxint4_moe import (
+@@ -389,6 +390,7 @@ def make_wna16_moe_kernel(
+         XPUExpertsWNA16,
+         CPUExpertsInt4,
+         Int4EmulationTritonExperts,
++        TritonW4A8IntExperts,
+     )
+     if backend == WNA16MoEBackend.HUMMING:
+         allowed_experts += tuple(backend_to_kernel_cls(WNA16MoEBackend.HUMMING))
+diff --git a/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py
+index 9be801225a..3b8a7419db 100644
+--- a/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py
++++ b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py
+@@ -43,6 +43,7 @@ from vllm.model_executor.layers.quantization.compressed_tensors.schemes import (
+     CompressedTensorsW4A4Mxfp4,
+     CompressedTensorsW4A8Fp8,
+     CompressedTensorsW4A8Int,
++    CompressedTensorsW4A8IntPackedRocm,
+     CompressedTensorsW8A8Fp8,
+     CompressedTensorsW8A8Int8,
+     CompressedTensorsW8A8Mxfp8,
+@@ -503,6 +504,7 @@ class CompressedTensorsConfig(QuantizationConfig):
+     ) -> bool:
+         is_weight_4_bits = weight_quant.num_bits == 4
+         is_activation_8_bits = input_quant.num_bits == 8
++        is_int8_activation = input_quant.type == QuantizationType.INT
+         weight_strategy = (
+             weight_quant.strategy == QuantizationStrategy.GROUP.value
+             or weight_quant.strategy == QuantizationStrategy.CHANNEL.value
+@@ -517,6 +519,7 @@ class CompressedTensorsConfig(QuantizationConfig):
+         return (
+             is_weight_4_bits
+             and is_activation_8_bits
++            and is_int8_activation
+             and is_token
+             and weight_quant.symmetric
+             and is_dynamic
+@@ -567,6 +570,7 @@ class CompressedTensorsConfig(QuantizationConfig):
+             return False
+         is_weight_4_bits = weight_quant.num_bits == 4
+         is_activation_8_bits = input_quant.num_bits == 8
++        is_fp8_activation = input_quant.type == QuantizationType.FLOAT
+         weight_strategy = weight_quant.strategy == QuantizationStrategy.GROUP.value
+         is_token = (
+             weight_strategy and input_quant.strategy == QuantizationStrategy.TOKEN.value
+@@ -578,6 +582,7 @@ class CompressedTensorsConfig(QuantizationConfig):
+         return (
+             is_weight_4_bits
+             and is_activation_8_bits
++            and is_fp8_activation
+             and is_token
+             and is_symmetric
+             and is_dynamic
+@@ -868,6 +873,16 @@ class CompressedTensorsConfig(QuantizationConfig):
+                 )
+ 
+             if self._is_dynamic_token_w4a8_int(weight_quant, input_quant):
++                if (
++                    current_platform.is_rocm()
++                    and format == CompressionFormat.pack_quantized.value
++                ):
++                    return CompressedTensorsW4A8IntPackedRocm(
++                        num_bits=weight_quant.num_bits,
++                        strategy=weight_quant.strategy,
++                        group_size=weight_quant.group_size,
++                        layer_name=layer_name,
++                    )
+                 is_static_input_scheme = input_quant and not input_quant.dynamic
+                 return CompressedTensorsW4A8Int(
+                     num_bits=weight_quant.num_bits,
+diff --git a/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py
+index 78d70d492d..00e5f59ee5 100644
+--- a/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py
++++ b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py
+@@ -181,6 +181,24 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
+                 weight_quant, input_quant, layer.moe_config
+             )
+         elif quant_config._is_dynamic_token_w4a8_int(weight_quant, input_quant):
++            if current_platform.is_rocm():
++                from .compressed_tensors_moe_w4a8_int8_rocm import (
++                    CompressedTensorsW4A8Int8PackedRocmMoEMethod,
++                    CompressedTensorsW4A8Int8RocmMoEMethod,
++                )
++
++                method_cls = (
++                    CompressedTensorsW4A8Int8PackedRocmMoEMethod
++                    if format == CompressionFormat.pack_quantized.value
++                    else CompressedTensorsW4A8Int8RocmMoEMethod
++                )
++                logger.info_once(
++                    "Using %s",
++                    method_cls.__name__,
++                )
++                return method_cls(
++                    weight_quant, input_quant, layer.moe_config
++                )
+             from .compressed_tensors_moe_w4a8_int8 import (
+                 CompressedTensorsW4A8Int8MoEMethod,
+             )
+diff --git a/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a8_int8_rocm.py b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a8_int8_rocm.py
+new file mode 100644
+index 0000000000..122d520e22
+--- /dev/null
++++ b/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe_w4a8_int8_rocm.py
+@@ -0,0 +1,226 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++import torch
++from compressed_tensors.quantization import QuantizationArgs
++
++from vllm.model_executor.layers.fused_moe.config import FusedMoEConfig
++from vllm.model_executor.layers.fused_moe.experts.triton_moe import (
++    TritonW4A8IntExperts,
++)
++from vllm.model_executor.utils import replace_parameter, set_weight_attrs
++
++from .compressed_tensors_moe_wna16 import (
++    CompressedTensorsWNA16MoEMethod,
++)
++
++
++def _validate_w4a8_input(input_quant: QuantizationArgs) -> None:
++    if not input_quant.dynamic:
++        raise ValueError("ROCm W4A8 requires dynamic input quantization.")
++    if not input_quant.symmetric:
++        raise ValueError("ROCm W4A8 requires symmetric input quantization.")
++    if input_quant.num_bits != 8:
++        raise ValueError("ROCm W4A8 requires 8-bit input quantization.")
++
++
++class CompressedTensorsW4A8Int8PackedRocmMoEMethod(
++    CompressedTensorsWNA16MoEMethod
++):
++    """Packed-checkpoint ROCm W4A8 using native INT8 matrix compute."""
++
++    def __init__(
++        self,
++        weight_quant: QuantizationArgs,
++        input_quant: QuantizationArgs,
++        moe: FusedMoEConfig,
++        layer_name: str | None = None,
++    ):
++        _validate_w4a8_input(input_quant)
++        super().__init__(weight_quant, None, moe, layer_name)
++        self.experts_cls = TritonW4A8IntExperts
++
++    def create_weights(
++        self,
++        layer: torch.nn.Module,
++        num_experts: int,
++        hidden_size: int,
++        intermediate_size_per_partition: int,
++        params_dtype: torch.dtype,
++        **extra_weight_attrs,
++    ):
++        extra_weight_attrs.setdefault(
++            "intermediate_size_full",
++            intermediate_size_per_partition,
++        )
++        super().create_weights(
++            layer,
++            num_experts,
++            hidden_size,
++            intermediate_size_per_partition,
++            params_dtype,
++            **extra_weight_attrs,
++        )
++
++class CompressedTensorsW4A8Int8RocmMoEMethod(CompressedTensorsWNA16MoEMethod):
++    """Unpacked-checkpoint ROCm W4A8 using native INT8 matrix compute."""
++
++    def __init__(
++        self,
++        weight_quant: QuantizationArgs,
++        input_quant: QuantizationArgs,
++        moe: FusedMoEConfig,
++        layer_name: str | None = None,
++    ):
++        _validate_w4a8_input(input_quant)
++        super().__init__(weight_quant, None, moe, layer_name)
++        self.experts_cls = TritonW4A8IntExperts
++
++    def create_weights(
++        self,
++        layer: torch.nn.Module,
++        num_experts: int,
++        hidden_size: int,
++        intermediate_size_per_partition: int,
++        params_dtype: torch.dtype,
++        **extra_weight_attrs,
++    ):
++        if self.moe.has_bias:
++            raise ValueError("ROCm W4A8 fallback does not support expert bias.")
++
++        experts = num_experts
++        inter = intermediate_size_per_partition
++        group_size = self.group_size
++        num_groups_w13 = hidden_size // group_size
++        num_groups_w2 = inter // group_size
++        layer.num_groups_w13 = num_groups_w13
++        layer.num_groups_w2 = num_groups_w2
++
++        w13 = torch.nn.Parameter(
++            torch.empty(experts, 2 * inter, hidden_size, dtype=torch.int8),
++            requires_grad=False,
++        )
++        set_weight_attrs(w13, extra_weight_attrs)
++        layer.register_parameter("w13_weight", w13)
++
++        w2 = torch.nn.Parameter(
++            torch.empty(experts, hidden_size, inter, dtype=torch.int8),
++            requires_grad=False,
++        )
++        set_weight_attrs(w2, extra_weight_attrs)
++        layer.register_parameter("w2_weight", w2)
++
++        w13_scale = torch.nn.Parameter(
++            torch.ones(
++                experts,
++                2 * inter,
++                num_groups_w13,
++                dtype=params_dtype,
++            ),
++            requires_grad=False,
++        )
++        set_weight_attrs(
++            w13_scale,
++            {"quant_method": "group", **extra_weight_attrs},
++        )
++        layer.register_parameter("w13_weight_scale", w13_scale)
++
++        w2_scale = torch.nn.Parameter(
++            torch.ones(
++                experts,
++                hidden_size,
++                num_groups_w2,
++                dtype=params_dtype,
++            ),
++            requires_grad=False,
++        )
++        set_weight_attrs(
++            w2_scale,
++            {"quant_method": "group", **extra_weight_attrs},
++        )
++        set_weight_attrs(w2_scale, {"load_full_w2": False})
++        layer.register_parameter("w2_weight_scale", w2_scale)
++
++        for name in ("w13_weight_packed", "w2_weight_packed"):
++            parameter = torch.nn.Parameter(torch.empty(0), requires_grad=False)
++            set_weight_attrs(parameter, extra_weight_attrs)
++            layer.register_parameter(name, parameter)
++
++        for name in ("w13_weight_shape", "w2_weight_shape"):
++            parameter = torch.nn.Parameter(torch.empty(2), requires_grad=False)
++            set_weight_attrs(parameter, extra_weight_attrs)
++            layer.register_parameter(name, parameter)
++
++        for name, size in (
++            ("w13_weight_g_idx", hidden_size),
++            ("w2_weight_g_idx", inter),
++            ("w13_g_idx_sort_indices", hidden_size),
++            ("w2_g_idx_sort_indices", inter),
++        ):
++            parameter = torch.nn.Parameter(
++                torch.empty(experts, size, dtype=torch.int32),
++                requires_grad=False,
++            )
++            set_weight_attrs(parameter, extra_weight_attrs)
++            layer.register_parameter(name, parameter)
++
++        layer.a13_scale = None
++        layer.a2_scale = None
++        self.is_k_full = True
++
++    @staticmethod
++    def _pack_moe_weight(weight: torch.Tensor) -> torch.Tensor:
++        if weight.dtype != torch.int8:
++            raise ValueError(f"Expected INT4 values in int8, got {weight.dtype}.")
++        if weight.shape[-1] % 8 != 0:
++            raise ValueError(
++                f"INT4 input dimension must be divisible by 8, got {weight.shape[-1]}."
++            )
++        values = (weight.to(torch.int32) + 8) & 0xF
++        shifts = torch.arange(8, device=weight.device, dtype=torch.int32) * 4
++        packed = torch.sum(
++            values.view(*weight.shape[:-1], weight.shape[-1] // 8, 8) << shifts,
++            dim=-1,
++            dtype=torch.int32,
++        )
++        ret = packed.transpose(1, 2).contiguous()
++        return ret
++
++    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
++        w13_packed = self._pack_moe_weight(layer.w13_weight.data)
++        w2_packed = self._pack_moe_weight(layer.w2_weight.data)
++        w13_scale = layer.w13_weight_scale.data.transpose(1, 2).contiguous()
++        w2_scale = layer.w2_weight_scale.data.transpose(1, 2).contiguous()
++
++        replace_parameter(
++            layer,
++            "w13_weight_packed",
++            torch.nn.Parameter(w13_packed, requires_grad=False),
++        )
++        replace_parameter(
++            layer,
++            "w2_weight_packed",
++            torch.nn.Parameter(w2_packed, requires_grad=False),
++        )
++        replace_parameter(
++            layer,
++            "w13_weight_scale",
++            torch.nn.Parameter(w13_scale, requires_grad=False),
++        )
++        replace_parameter(
++            layer,
++            "w2_weight_scale",
++            torch.nn.Parameter(w2_scale, requires_grad=False),
++        )
++        replace_parameter(
++            layer,
++            "w13_weight",
++            torch.nn.Parameter(torch.empty(0), requires_grad=False),
++        )
++        replace_parameter(
++            layer,
++            "w2_weight",
++            torch.nn.Parameter(torch.empty(0), requires_grad=False),
++        )
++        super().process_weights_after_loading(layer)
++
+diff --git a/vllm/model_executor/layers/quantization/compressed_tensors/schemes/__init__.py b/vllm/model_executor/layers/quantization/compressed_tensors/schemes/__init__.py
+index 0f46d581f0..988464691d 100644
+--- a/vllm/model_executor/layers/quantization/compressed_tensors/schemes/__init__.py
++++ b/vllm/model_executor/layers/quantization/compressed_tensors/schemes/__init__.py
+@@ -5,7 +5,10 @@ from .compressed_tensors_scheme import CompressedTensorsScheme
+ from .compressed_tensors_w4a4_mxfp4 import CompressedTensorsW4A4Mxfp4
+ from .compressed_tensors_w4a4_nvfp4 import CompressedTensorsW4A4Fp4
+ from .compressed_tensors_w4a8_fp8 import CompressedTensorsW4A8Fp8
+-from .compressed_tensors_w4a8_int import CompressedTensorsW4A8Int
++from .compressed_tensors_w4a8_int import (
++    CompressedTensorsW4A8Int,
++    CompressedTensorsW4A8IntPackedRocm,
++)
+ from .compressed_tensors_w8a8_fp8 import CompressedTensorsW8A8Fp8
+ from .compressed_tensors_w8a8_int8 import CompressedTensorsW8A8Int8
+ from .compressed_tensors_w8a8_mxfp8 import CompressedTensorsW8A8Mxfp8
+@@ -25,6 +28,7 @@ __all__ = [
+     "CompressedTensorsW4A4Mxfp4",
+     "CompressedTensorsW4A4Fp4",
+     "CompressedTensorsW4A8Int",
++    "CompressedTensorsW4A8IntPackedRocm",
+     "CompressedTensorsW4A8Fp8",
+     "CompressedTensorsW8A8Mxfp8",
+     "CompressedTensorsWNA4Int",
+diff --git a/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w4a8_int.py b/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w4a8_int.py
+index a26a35f4e3..f73d2b5799 100644
+--- a/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w4a8_int.py
++++ b/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w4a8_int.py
+@@ -9,8 +9,12 @@ from vllm.distributed.utils import verify_group_size_divides_partition
+ from vllm.logger import init_logger
+ from vllm.model_executor.kernels.linear import (
+     MPLinearLayerConfig,
++    TritonW4A16LinearKernel,
+     choose_mp_linear_kernel,
+ )
++from vllm.model_executor.kernels.linear.mixed_precision.triton_w4a16 import (
++    triton_w4a8_gemm,
++)
+ from vllm.model_executor.layers.quantization.compressed_tensors.schemes import (
+     CompressedTensorsScheme,
+ )
+@@ -19,16 +23,84 @@ from vllm.model_executor.parameter import (
+     GroupQuantScaleParameter,
+     ModelWeightParameter,
+ )
++from vllm.platforms import current_platform
+ from vllm.scalar_type import scalar_types
+ 
++from .compressed_tensors_wNa16 import CompressedTensorsWNA16
++
+ logger = init_logger(__name__)
+ 
+-__all__ = ["CompressedTensorsW4A8Int"]
++__all__ = [
++    "CompressedTensorsW4A8Int",
++    "CompressedTensorsW4A8IntPackedRocm",
++]
+ W4A8_SUPPORTED_TYPES_MAP = {
+     4: scalar_types.int4,
+ }
+ 
+ 
++def dynamic_per_token_int8_roundtrip(x: torch.Tensor) -> torch.Tensor:
++    quantized, scale = dynamic_per_token_int8_quant(x)
++    ret = (quantized.to(torch.float32) * scale).to(x.dtype)
++    return ret
++
++
++def dynamic_per_token_int8_quant(
++    x: torch.Tensor,
++) -> tuple[torch.Tensor, torch.Tensor]:
++    x_fp32 = x.to(torch.float32)
++    absmax = x_fp32.abs().amax(dim=-1, keepdim=True)
++    scale = torch.clamp(absmax / 127.0, min=torch.finfo(torch.float32).tiny)
++    quantized = torch.round(x_fp32 / scale).clamp(-127, 127).to(torch.int8)
++    ret = (quantized.contiguous(), scale.contiguous())
++    return ret
++
++
++def pack_signed_int4_along_input(weight: torch.Tensor) -> torch.Tensor:
++    if weight.dtype != torch.int8:
++        raise ValueError(f"Expected unpacked INT4 values in int8, got {weight.dtype}.")
++    if weight.shape[1] % 8 != 0:
++        raise ValueError(
++            f"INT4 input dimension must be divisible by 8, got {weight.shape[1]}."
++        )
++    values = (weight.to(torch.int32) + 8) & 0xF
++    shifts = torch.arange(8, device=weight.device, dtype=torch.int32) * 4
++    ret = torch.sum(
++        values.view(weight.shape[0], weight.shape[1] // 8, 8) << shifts,
++        dim=2,
++        dtype=torch.int32,
++    ).contiguous()
++    return ret
++
++
++def apply_native_w4a8(
++    kernel: TritonW4A16LinearKernel,
++    layer: torch.nn.Module,
++    x: torch.Tensor,
++    bias: torch.Tensor | None,
++) -> torch.Tensor:
++    config = kernel.config
++    weight, weight_scale, _, _ = kernel._get_weight_params(layer)
++    x_2d = x.reshape(-1, x.shape[-1]).contiguous()
++    x_quantized, x_scale = dynamic_per_token_int8_quant(x_2d)
++    input_size = config.partition_weight_shape[0]
++    group_size = config.group_size if config.group_size != -1 else input_size
++    zp_bias = config.weight_type.bias if config.weight_type.has_bias() else 0
++    output = triton_w4a8_gemm(
++        a=x_quantized,
++        a_scale=x_scale,
++        b_q=weight,
++        scales=weight_scale,
++        group_size=group_size,
++        zp_bias=zp_bias,
++        output_dtype=x.dtype,
++    )
++    if bias is not None:
++        output.add_(bias)
++    ret = output.reshape(x.shape[:-1] + (config.partition_weight_shape[1],))
++    return ret
++
++
+ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
+     _kernel_backends_being_used: set[str] = set()
+ 
+@@ -50,7 +122,11 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
+                 f"Unsupported num_bits = {num_bits}."
+                 f"Supported num_bits = {W4A8_SUPPORTED_TYPES_MAP.keys()}"
+             )
+-        self.quant_type = W4A8_SUPPORTED_TYPES_MAP[num_bits]
++        self.quant_type = (
++            scalar_types.uint4b8
++            if current_platform.is_rocm()
++            else W4A8_SUPPORTED_TYPES_MAP[num_bits]
++        )
+ 
+     @classmethod
+     def get_min_capability(cls) -> int:
+@@ -77,6 +153,7 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
+             )
+         else:
+             effective_group_size = self.group_size
++        self.rocm_w4a16_fallback = current_platform.is_rocm()
+ 
+         # Ensure group_size divides input_size_per_partition
+         verify_group_size_divides_partition(
+@@ -101,7 +178,11 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
+             has_g_idx=False,
+         )
+ 
+-        kernel_type = choose_mp_linear_kernel(mp_linear_kernel_config)
++        kernel_type = (
++            TritonW4A16LinearKernel
++            if self.rocm_w4a16_fallback
++            else choose_mp_linear_kernel(mp_linear_kernel_config)
++        )
+         if kernel_type.__name__ not in self._kernel_backends_being_used:
+             logger.info("Using %s for CompressedTensorsW4A8Int", kernel_type.__name__)
+             self._kernel_backends_being_used.add(kernel_type.__name__)
+@@ -144,9 +225,77 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
+         )
+ 
+     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
++        weight = getattr(layer, "weight_packed")
++        if self.rocm_w4a16_fallback and not hasattr(weight, "packed_dim"):
++            weight.data = pack_signed_int4_along_input(weight.data)
++            weight.packed_dim = 1
++            weight.packed_factor = 8
+         self.kernel.process_weights_after_loading(layer)
+ 
+     def apply_weights(
+         self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
+     ) -> torch.Tensor:
+-        return self.kernel.apply_weights(layer, x, bias)
++        if self.rocm_w4a16_fallback:
++            ret = apply_native_w4a8(self.kernel, layer, x, bias)
++        else:
++            ret = self.kernel.apply_weights(layer, x, bias)
++        return ret
++
++
++class CompressedTensorsW4A8IntPackedRocm(CompressedTensorsWNA16):
++    """Packed-checkpoint ROCm W4A8 using native INT8 matrix compute."""
++
++    def __init__(
++        self,
++        strategy: str,
++        num_bits: int,
++        group_size: int | None = None,
++        layer_name: str | None = None,
++    ):
++        super().__init__(
++            strategy=strategy,
++            num_bits=num_bits,
++            group_size=group_size,
++            symmetric=True,
++            actorder=None,
++            layer_name=layer_name,
++        )
++
++    def create_weights(
++        self,
++        layer: torch.nn.Module,
++        output_size: int,
++        input_size: int,
++        output_partition_sizes: list[int],
++        input_size_per_partition: int,
++        params_dtype: torch.dtype,
++        weight_loader: Callable,
++        **kwargs,
++    ):
++        super().create_weights(
++            layer,
++            output_size,
++            input_size,
++            output_partition_sizes,
++            input_size_per_partition,
++            params_dtype,
++            weight_loader,
++            **kwargs,
++        )
++        old_kernel = self.kernel
++        self.kernel = TritonW4A16LinearKernel(
++            old_kernel.config,
++            w_q_param_name=old_kernel.w_q_name,
++            w_s_param_name=old_kernel.w_s_name,
++            w_zp_param_name=old_kernel.w_zp_name,
++            w_gidx_param_name=old_kernel.w_gidx_name,
++        )
++
++    def apply_weights(
++        self,
++        layer: torch.nn.Module,
++        x: torch.Tensor,
++        bias: torch.Tensor | None,
++    ) -> torch.Tensor:
++        ret = apply_native_w4a8(self.kernel, layer, x, bias)
++        return ret
