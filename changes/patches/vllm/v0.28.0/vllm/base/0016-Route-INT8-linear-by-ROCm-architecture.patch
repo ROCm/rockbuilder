@@ -1,0 +1,146 @@
+From 5e41c4c5641487024c7eb475308c532f84ff713f Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 19 Sep 2026 16:22:29 -0700
+Subject: [PATCH 16/17] Route INT8 linear by ROCm architecture
+
+One automatic INT8 linear backend was not optimal
+across the tested ROCm architectures.
+
+Reason:
+- Triton was faster than AITER on gfx90a and gfx1100.
+- AITER was slightly faster than Triton on gfx1201.
+- Explicit AITER overrides must remain available.
+
+Fix:
+- Prefer Triton automatically on gfx90a and gfx1100.
+- Continue selecting AITER automatically on gfx1201.
+- Preserve explicit `--linear-backend=aiter` requests.
+
+Testing
+- Pass 12 scaled-MM kernel-selection tests.
+- gfx90a: Triton 101.27, AITER 97.91 tokens/s.
+- gfx1100: Triton 97.29, AITER 85.33 tokens/s.
+- gfx1201: Triton 120.63, AITER 123.23 tokens/s.
+- Final gfx1201 matrix reached 123.08 tokens/s.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../test_scaled_mm_kernel_selection.py        | 60 +++++++++++++++++++
+ .../kernels/linear/scaled_mm/aiter.py         | 14 +++++
+ 2 files changed, 74 insertions(+)
+
+diff --git a/tests/kernels/quantization/test_scaled_mm_kernel_selection.py b/tests/kernels/quantization/test_scaled_mm_kernel_selection.py
+index bedebdb..5ccdd33 100644
+--- a/tests/kernels/quantization/test_scaled_mm_kernel_selection.py
++++ b/tests/kernels/quantization/test_scaled_mm_kernel_selection.py
+@@ -6,6 +6,8 @@ Run `pytest tests/kernels/quantization/test_scaled_mm_kernel_selection.py`.
+ """
+
+ import inspect
++import sys
++import types
+ from abc import ABC
+ from unittest.mock import patch
+
+@@ -71,6 +73,64 @@ def test_aiter_kernel_implements_is_supported():
+     # This validates the method works correctly even on non-ROCm platforms
+
+
++@pytest.mark.parametrize(
++    ("gfx90a", "gfx1100", "linear_backend", "expected"),
++    [
++        (True, False, "auto", True),
++        (False, True, "auto", True),
++        (False, False, "auto", False),
++        (True, False, "aiter", False),
++        (False, True, "triton", False),
++    ],
++)
++def test_auto_prefers_triton_int8_on_gfx90a_gfx1100(
++    gfx90a,
++    gfx1100,
++    linear_backend,
++    expected,
++):
++    from vllm.model_executor.kernels.linear.scaled_mm import aiter as aiter_kernel
++
++    with (
++        patch("vllm.platforms.rocm.on_gfx90a", return_value=gfx90a),
++        patch("vllm.platforms.rocm.on_gfx1100", return_value=gfx1100),
++        patch(
++            "vllm.model_executor.kernels.linear._get_linear_backend",
++            return_value=linear_backend,
++        ),
++    ):
++        assert aiter_kernel._prefer_triton_int8_on_gfx90a_or_gfx1100() is expected
++
++
++@pytest.mark.parametrize(
++    ("prefer_triton", "expected"),
++    [(True, False), (False, True)],
++)
++def test_aiter_int8_support_respects_rocm_auto_policy(
++    prefer_triton,
++    expected,
++):
++    from vllm.model_executor.kernels.linear.scaled_mm import aiter as aiter_kernel
++
++    with (
++        patch.dict(sys.modules, {"aiter": types.ModuleType("aiter")}),
++        patch.object(aiter_kernel.current_platform, "is_rocm", return_value=True),
++        patch.object(
++            aiter_kernel.rocm_aiter_ops,
++            "is_int8_linear_enabled",
++            return_value=True,
++        ),
++        patch.object(
++            aiter_kernel,
++            "_prefer_triton_int8_on_gfx90a_or_gfx1100",
++            return_value=prefer_triton,
++        ),
++    ):
++        supported, _ = AiterInt8ScaledMMLinearKernel.is_supported()
++
++    assert supported is expected
++
++
+ def test_cpu_kernel_accepts_all_configs():
+     """Test that CPUInt8ScaledMMLinearKernel accepts all config combinations."""
+     configs = [
+diff --git a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+index 2c38819..105dd90 100644
+--- a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
++++ b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+@@ -32,6 +32,14 @@ from .ScaledMMLinearKernel import (
+ logger = init_logger(__name__)
+
+
++def _prefer_triton_int8_on_gfx90a_or_gfx1100() -> bool:
++    from vllm.model_executor.kernels.linear import _get_linear_backend
++    from vllm.platforms.rocm import on_gfx1100, on_gfx90a
++
++    ret = (on_gfx90a() or on_gfx1100()) and _get_linear_backend() == "auto"
++    return ret
++
++
+ class AiterInt8ScaledMMLinearKernel(CutlassInt8ScaledMMLinearKernel):
+     @classmethod
+     def is_supported(
+@@ -55,6 +63,12 @@ class AiterInt8ScaledMMLinearKernel(CutlassInt8ScaledMMLinearKernel):
+                 "and `VLLM_ROCM_USE_AITER_LINEAR=1`. "
+                 "`VLLM_ROCM_USE_AITER_LINEAR` default is True.",
+             )
++        if _prefer_triton_int8_on_gfx90a_or_gfx1100():
++            return (
++                False,
++                "Triton INT8 linear is faster on gfx90a/gfx1100 in automatic mode. "
++                "Use --linear-backend=aiter to override.",
++            )
+         return True, None
+
+     @classmethod
+--
+2.43.0
