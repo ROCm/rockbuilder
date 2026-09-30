@@ -1,0 +1,105 @@
+From ebeb0d3e72290d3a2f9183434511dedb27d4d856 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 19 Sep 2026 15:23:27 -0700
+Subject: [PATCH 17/17] Tune Qwen3 block FP8 on gfx1100
+
+Qwen3 4B block FP8 decode was extremely slow on a
+Radeon Pro W7900 gfx1100 system.
+
+Reason:
+- Four Qwen3 GEMM shapes lacked tuned configuration.
+- vLLM used a default 64-row tile for M=2 decode.
+- The model reached only 5.88 output tokens/s.
+
+Fix:
+- Add M=2 Triton configurations for all four shapes.
+- Use 16-row tiles and gfx1100-validated N/K tiles.
+- Keep configuration selection device-specific.
+
+Testing
+- Compare all four kernels against torch references.
+- Confirm vLLM loads every new configuration file.
+- Improve median model throughput from 5.88 to 38.18
+  output tokens/s, a 6.49x speedup.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ ...Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json | 10 ++++++++++
+ ...Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json | 10 ++++++++++
+ ...Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json | 10 ++++++++++
+ ...Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json | 10 ++++++++++
+ 4 files changed, 40 insertions(+)
+ create mode 100644 vllm/model_executor/layers/quantization/utils/configs/N=19456,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+ create mode 100644 vllm/model_executor/layers/quantization/utils/configs/N=2560,K=4096,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+ create mode 100644 vllm/model_executor/layers/quantization/utils/configs/N=2560,K=9728,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+ create mode 100644 vllm/model_executor/layers/quantization/utils/configs/N=6144,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+
+diff --git a/vllm/model_executor/layers/quantization/utils/configs/N=19456,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json b/vllm/model_executor/layers/quantization/utils/configs/N=19456,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+new file mode 100644
+index 0000000..a78f7ce
+--- /dev/null
++++ b/vllm/model_executor/layers/quantization/utils/configs/N=19456,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+@@ -0,0 +1,10 @@
++{
++    "2": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2
++    }
++}
+diff --git a/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=4096,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json b/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=4096,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+new file mode 100644
+index 0000000..a78f7ce
+--- /dev/null
++++ b/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=4096,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+@@ -0,0 +1,10 @@
++{
++    "2": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2
++    }
++}
+diff --git a/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=9728,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json b/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=9728,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+new file mode 100644
+index 0000000..a78f7ce
+--- /dev/null
++++ b/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=9728,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+@@ -0,0 +1,10 @@
++{
++    "2": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2
++    }
++}
+diff --git a/vllm/model_executor/layers/quantization/utils/configs/N=6144,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json b/vllm/model_executor/layers/quantization/utils/configs/N=6144,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+new file mode 100644
+index 0000000..75f14ef
+--- /dev/null
++++ b/vllm/model_executor/layers/quantization/utils/configs/N=6144,K=2560,device_name=AMD_Radeon_Pro_W7900_Dual_Slot,dtype=fp8_w8a8,block_shape=[128,128].json
+@@ -0,0 +1,10 @@
++{
++    "2": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2
++    }
++}
+--
+2.43.0

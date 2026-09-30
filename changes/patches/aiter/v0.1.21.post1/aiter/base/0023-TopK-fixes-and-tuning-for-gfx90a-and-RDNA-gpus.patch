@@ -1,0 +1,242 @@
+From 27df11bfc69d0dfb08d4ce6e1215db9cc0156465 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Wed, 9 Sep 2026 23:58:28 -0700
+Subject: [PATCH 23/23] TopK fixes and tuning for gfx90a and RDNA gpus
+
+1) Fix TopK buffer descriptors when RDNA GPUs are used
+  a) BufferResource defaults to the gfx9 resource
+     word, corrupting TopK filter loads on RDNA gpus
+     on some workloads.
+  b) New test added to test_topk_plain.py to cover the
+     failing 1024 by 4096 filter path
+  c) Fix the failure by ensuring that
+     src_buffer.config = CK_TILE_BUFFER_RESOURCE_3RD_DWORD;
+     is always set, not only when changing kernel.
+  d) Validate gfx1100 and gfx1201 output
+2)  TopK tuning for gfx90a, gfx1100 and gfx1201
+  a) add topk model tuning for gfx90a, gfx1100
+     and gfx1200/gfx1201. Do not change the existing
+     topk tuning for other existing gpus.
+  b)  Tune dispatch and filter waves
+    - Select radix for measured small-batch
+      4096-column workloads by wave size
+    - Cap Wave64 filter workgroups at four waves
+    - Cache runtime wave size per host thread
+  c) Limit TopK wave cap to tuned width
+    - Keep the measured 4096-column improvement
+    - Avoid changing unmeasured wider filter cases
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ csrc/kernels/topk_plain_kernels.cu | 109 ++++++++++++++++++++++++-----
+ op_tests/test_topk_plain.py        |   1 +
+ 2 files changed, 91 insertions(+), 19 deletions(-)
+
+diff --git a/csrc/kernels/topk_plain_kernels.cu b/csrc/kernels/topk_plain_kernels.cu
+index a24fe4a0..cb4ee689 100644
+--- a/csrc/kernels/topk_plain_kernels.cu
++++ b/csrc/kernels/topk_plain_kernels.cu
+@@ -33,6 +33,8 @@
+
+ #include <hip/hip_runtime.h>
+
++#include <cstring>
++
+ #include "topk_plain.h"
+
+ #include "aiter_stream.h"
+@@ -112,26 +114,33 @@ void topk_per_row_kernel_launcher(const float* in,
+ // radix sort because the denominator becomes very small; does that
+ // still yield the best performance?
+ template <typename IdxT>
+-__forceinline__ __host__ bool should_use_topk_radix(IdxT len, IdxT k)
++__forceinline__ __host__
++bool should_use_topk_radix(
++    int batch_size, IdxT len, IdxT k, int warp_size, bool use_arch_tuning)
+ {
+     const double n = static_cast<double>(len);
+     const double K = static_cast<double>(k);
++    bool ret       = false;
+
+-    if(K <= 1.0)
++    if(K > 1.0)
+     {
+-        return false;
+-    }
+-
+-    const double log_n = std::log2(n);
+-
+-    const double denom = std::max(0.0001, log_n - 9.5);
++        const double log_n = std::log2(n);
++        const double denom = std::max(0.0001, log_n - 9.5);
++        const double rhs   = (4.8 * n) / denom;
+
+-    const double rhs = (4.8 * n) / denom;
++        const double log_k = std::log2(K);
++        const double lhs   = K * log_k * log_k;
++        ret                = lhs >= rhs;
+
+-    const double log_k = std::log2(K);
+-    const double lhs   = K * log_k * log_k;
+-
+-    return lhs >= rhs;
++        // This measured crossover is allowlisted for gfx90a, gfx1100,
++        // gfx1200, and gfx1201. Other GPUs retain the original cost model
++        // because this tuning has not been benchmarked on them.
++        const int small_batch_limit = warp_size == 64 ? 128 : 64;
++        const bool use_small_batch_radix =
++            use_arch_tuning && len == 4096 && k <= 128 && batch_size <= small_batch_limit;
++        ret = ret || use_small_batch_radix;
++    }
++    return ret;
+ }
+
+ // Gather kernel to extract values based on indices (uniform length)
+@@ -313,13 +322,53 @@ inline void hip_check_(hipError_t val, const char* file, int line)
+     }
+ }
+
+-inline int get_runtime_warp_size()
++// Restrict measured TopK policy changes to these exact targets. gfx942,
++// gfx950, gfx1250, and unknown architectures intentionally remain untuned.
++struct RuntimeGpuInfo
++{
++    int warp_size;
++    bool use_topk_tuning;
++    bool is_gfx90a;
++};
++
++inline bool gpu_arch_matches(const char* arch_name, const char* expected)
++{
++    const size_t expected_length = std::strlen(expected);
++    bool ret = std::strncmp(arch_name, expected, expected_length) == 0 &&
++               (arch_name[expected_length] == '\0' || arch_name[expected_length] == ':');
++    return ret;
++}
++
++inline RuntimeGpuInfo get_runtime_gpu_info()
+ {
+     int device = 0;
+     HIP_CHECK(hipGetDevice(&device));
+-    hipDeviceProp_t properties{};
+-    HIP_CHECK(hipGetDeviceProperties(&properties, device));
+-    int ret = properties.warpSize;
++
++    // The dispatcher needs both wave size and architecture. Cache the
++    // properties per host thread so tuning checks do not add a property
++    // query to every TopK launch.
++    static thread_local int cached_device = -1;
++    static thread_local RuntimeGpuInfo cached_info{};
++    if(device != cached_device)
++    {
++        hipDeviceProp_t properties{};
++        HIP_CHECK(hipGetDeviceProperties(&properties, device));
++        const bool is_gfx90a = gpu_arch_matches(properties.gcnArchName, "gfx90a");
++        const bool is_rdna_tuned = gpu_arch_matches(properties.gcnArchName, "gfx1100") ||
++                                   gpu_arch_matches(properties.gcnArchName, "gfx1200") ||
++                                   gpu_arch_matches(properties.gcnArchName, "gfx1201");
++        cached_device          = device;
++        cached_info.warp_size  = properties.warpSize;
++        cached_info.is_gfx90a  = is_gfx90a;
++        cached_info.use_topk_tuning = is_gfx90a || is_rdna_tuned;
++    }
++    RuntimeGpuInfo ret = cached_info;
++    return ret;
++}
++
++inline int get_runtime_warp_size()
++{
++    int ret = get_runtime_gpu_info().warp_size;
+     return ret;
+ }
+
+@@ -1857,6 +1906,7 @@ struct WaveTopkFilter
+
+             const auto buffer_size = total_len * sizeof(DataT);
+             aiter::BufferResource src_buffer(const_cast<DataT*>(in), buffer_size);
++            src_buffer.config = CK_TILE_BUFFER_RESOURCE_3RD_DWORD;
+             uint32_t src_offset = (batch_start + start) * sizeof(DataT) + tid * sizeof(VecType);
+
+             VecType arr[2];
+@@ -1895,6 +1945,7 @@ struct WaveTopkFilter
+                                                buffer_load_helpers::int32x4_t>;
+
+             aiter::BufferResource src_buffer(const_cast<DataT*>(in), total_len * sizeof(DataT));
++            src_buffer.config = CK_TILE_BUFFER_RESOURCE_3RD_DWORD;
+             uint32_t src_offset = (batch_start + start) * sizeof(DataT) + tid * sizeof(VecType);
+
+             VecType arr[2];
+@@ -2491,13 +2542,19 @@ void AdaptiveTopK(int batch_size,
+ {
+     assert(k <= buffer_load_helpers::MAX_CAPACITY);
+
++    // Architecture-specific tuning is deliberately restricted to GPUs
++    // benchmarked for this policy. All other GPUs use the original path.
++    const utils::RuntimeGpuInfo gpu_info = utils::get_runtime_gpu_info();
++
+     constexpr bool is_float = std::is_same_v<T, float>;
+     if constexpr(is_float)
+     {
+         // Use topk_per_row kernel when:
+         // n + K log²K ≥ 3 × Factor(n) × n
+         // where Factor(n) = 1/3 + 1.6/(log₂(n) - 9.5)
+-        if(should_use_topk_radix(len, k) && greater)
++        if(should_use_topk_radix(
++               batch_size, len, k, gpu_info.warp_size, gpu_info.use_topk_tuning) &&
++           greater)
+         {
+             topk_per_row_kernel_launcher<IdxT>(in,
+                                                nullptr,
+@@ -2535,6 +2592,14 @@ void AdaptiveTopK(int batch_size,
+     {
+         calc_launch_parameter<BlockTopkFilter, T, IdxT>(
+             batch_size, len, k, &block_per_batch, &wave_per_block);
++
++        // Only gfx90a's 4096-column filter improved with four waves.
++        // Other architectures keep the occupancy-derived wave count
++        // because the override has not been benchmarked on them.
++        if(gpu_info.is_gfx90a && len == 4096)
++        {
++            wave_per_block = std::min(wave_per_block, 4);
++        }
+         topk_kernel_launcher<greater, BlockTopkFilter, T, IdxT>(
+             block_per_batch, wave_per_block, in, batch_size, len, k, out, out_idx, stream);
+     }
+@@ -2557,13 +2622,19 @@ void AdaptiveTopK(int batch_size,
+ {
+     assert(k <= buffer_load_helpers::MAX_CAPACITY);
+
++    // Apply the measured radix crossover only to the explicit GPU
++    // allowlist; untested architectures retain the original cost model.
++    const utils::RuntimeGpuInfo gpu_info = utils::get_runtime_gpu_info();
++
+     // Use topk_per_row kernel when: n + K log²K ≥ 3 × Factor(n) × n
+     // where Factor(n) = 1/3 + 1.6/(log₂(n) - 9.5)
+     constexpr bool is_float = std::is_same_v<T, float>;
+     if constexpr(is_float)
+     {
+         // Note: topk_per_row only supports descending (largest)
+-        if(should_use_topk_radix(max_len, k) && greater)
++        if(should_use_topk_radix(
++               batch_size, max_len, k, gpu_info.warp_size, gpu_info.use_topk_tuning) &&
++           greater)
+         {
+             topk_per_row_kernel_launcher<IdxT>(in,
+                                                rowStarts,
+diff --git a/op_tests/test_topk_plain.py b/op_tests/test_topk_plain.py
+index b4ec0432..8db0009c 100644
+--- a/op_tests/test_topk_plain.py
++++ b/op_tests/test_topk_plain.py
+@@ -102,6 +102,7 @@ def test_wave32_regression_cases():
+         (8, 4096, 16, True, dtypes.fp32),
+         (8, 4096, 64, True, dtypes.fp32),
+         (8, 4096, 128, True, dtypes.fp32),
++        (1024, 4096, 128, True, dtypes.fp32),
+         (8, 128, 16, False, dtypes.fp32),
+         (8, 128, 16, True, dtypes.fp16),
+         (8, 128, 16, True, dtypes.bf16),
+--
+2.43.0

@@ -1,0 +1,132 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 15 Sep 2026 22:58:44 -0700
+Subject: [PATCH] Prefer vLLM block FP8 on gfx90a
+ and gfx1201
+
+- Controlled Qwen tests kept the AITER runtime
+  enabled while switching block-FP8 kernels.
+- vLLM reached 41.92 versus 33.79 tokens per
+  second on gfx90a and 155.79 versus 114.06 on
+  gfx1201.
+- Prefer the vLLM Triton kernel automatically
+  on gfx90a and RDNA4.
+- Preserve explicit AITER linear selection for
+  testing and user overrides.
+- Add architecture and override priority tests.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ vllm/model_executor/kernels/linear/__init__.py |   19 ++++++++
+ tests/rocm/aiter/test_gfx90a_int8_linear.py    |   56 ++++++++++++++++++++++++
+ 2 files changed, 74 insertions(+), 1 deletion(-)
+
+diff --git a/vllm/model_executor/kernels/linear/__init__.py b/vllm/model_executor/kernels/linear/__init__.py
+index 3413d4a69f..0e268c5a06 100644
+--- a/vllm/model_executor/kernels/linear/__init__.py
++++ b/vllm/model_executor/kernels/linear/__init__.py
+@@ -454,6 +454,23 @@
+     ],
+ }
+
++
++def _get_fp8_block_kernels() -> dict[
++    PlatformEnum, list[type[Fp8BlockScaledMMLinearKernel | FP8ScaledMMLinearKernel]]
++]:
++    ret = _POSSIBLE_FP8_BLOCK_KERNELS
++    if current_platform.is_rocm():
++        from vllm.platforms.rocm import on_gfx90a, on_rdna4
++
++        if on_gfx90a() or on_rdna4():
++            ret = ret.copy()
++            ret[PlatformEnum.ROCM] = [
++                TritonFp8BlockScaledMMKernel,
++                AiterFp8BlockScaledMMKernel,
++            ]
++    return ret
++
++
+ _POSSIBLE_WFP8A16_KERNELS: dict[PlatformEnum, list[type[FP8ScaledMMLinearKernel]]] = {
+     PlatformEnum.CUDA: [
+         HummingFP8ScaledMMLinearKernel,
+@@ -682,7 +699,7 @@
+     if activation_quant_key.scale.group_shape.is_per_group():
+         kernel_type = choose_scaled_mm_linear_kernel(
+             config=scaled_mm_linear_kernel_config,
+-            possible_kernels=_POSSIBLE_FP8_BLOCK_KERNELS,  # type: ignore[misc]
++            possible_kernels=_get_fp8_block_kernels(),  # type: ignore[misc]
+             force_kernel=force_kernel,
+         )
+         if module_name:
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index 7856786bd2..72742b8d3f 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -114,6 +114,62 @@
+         ),
+     ):
+         assert AiterFp8BlockScaledMMKernel.is_supported() == (True, None)
++
++
++@pytest.mark.parametrize(
++    ("gfx90a", "rdna4", "expected"),
++    [
++        (True, False, ["TritonFp8BlockScaledMMKernel", "AiterFp8BlockScaledMMKernel"]),
++        (False, True, ["TritonFp8BlockScaledMMKernel", "AiterFp8BlockScaledMMKernel"]),
++        (False, False, ["AiterFp8BlockScaledMMKernel", "TritonFp8BlockScaledMMKernel"]),
++    ],
++)
++def test_rocm_block_fp8_kernel_priority(
++    gfx90a: bool,
++    rdna4: bool,
++    expected: list[str],
++) -> None:
++    from vllm.model_executor.kernels.linear import _get_fp8_block_kernels
++    from vllm.platforms import PlatformEnum
++
++    with (
++        patch(
++            "vllm.model_executor.kernels.linear.current_platform.is_rocm",
++            return_value=True,
++        ),
++        patch("vllm.platforms.rocm.on_gfx90a", return_value=gfx90a),
++        patch("vllm.platforms.rocm.on_rdna4", return_value=rdna4),
++    ):
++        kernels = _get_fp8_block_kernels()[PlatformEnum.ROCM]
++
++    assert [kernel.__name__ for kernel in kernels] == expected
++
++
++def test_explicit_aiter_block_fp8_override_is_preserved() -> None:
++    from vllm.model_executor.kernels.linear import (
++        _get_fp8_block_kernels,
++        _resolve_backend_kernels,
++    )
++    from vllm.platforms import PlatformEnum
++
++    with (
++        patch(
++            "vllm.model_executor.kernels.linear.current_platform.is_rocm",
++            return_value=True,
++        ),
++        patch("vllm.platforms.rocm.on_gfx90a", return_value=True),
++        patch("vllm.platforms.rocm.on_rdna4", return_value=False),
++        patch(
++            "vllm.model_executor.kernels.linear._get_linear_backend",
++            return_value="aiter",
++        ),
++    ):
++        kernels = _get_fp8_block_kernels()[PlatformEnum.ROCM]
++        selected = _resolve_backend_kernels(kernels, "scaled-mm")
++
++    assert [kernel.__name__ for kernel in selected] == [
++        "AiterFp8BlockScaledMMKernel"
++    ]
+
+
+ @pytest.mark.parametrize(
+--
+2.43.0

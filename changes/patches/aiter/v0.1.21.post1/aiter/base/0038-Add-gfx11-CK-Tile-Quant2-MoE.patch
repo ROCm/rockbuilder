@@ -1,0 +1,1029 @@
+From 83e19c483df65e0f5c81afef7f1d6674c207541a Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 19:11:35 -0700
+Subject: [PATCH] Add gfx11 CK Tile Quant2 MoE
+
+Add native wave32 INT8 MoE execution for gfx1100.
+
+Reason:
+- Legacy CK Quant2 assumes wave64 and is unsafe.
+- The Triton fallback is correct but slower.
+
+Fix:
+- Require the exact gfx11 Quant2 kernel names.
+- Require runtime architecture gfx1100.
+- Preserve existing dispatch for every other call.
+- Add CK Tile WMMA stage-one and stage-two kernels.
+- Decode padded token and top-k route identifiers.
+- Gate dispatch with a validated problem descriptor.
+- Restrict CK to validated input and scale contracts.
+- Add validated tail-K and model-sized problems.
+- Keep unsupported gfx11 cases on Triton.
+- Skip unusable FP4 generator entries off gfx950.
+
+Testing
+- Built gfx90a, gfx1100, and gfx1151 targets.
+- Passed 21 gfx11 tests, including Mori scatter.
+- Checked partial M, tail K, last expert, and guards.
+- Repeated CK runs produced identical output.
+- Validated the 4096x14336 model-sized problem.
+- CK measured 2140 us versus Triton at 2381 us.
+- Compared CK output with Triton and Torch.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/fused_moe.py                            |  91 +++++-
+ aiter/ops/gfx11_quant2.py                     |  99 ++++++
+ .../ck_tile_gemm_moe_2stages/gen_instances.py |  21 +-
+ .../include/moe_gfx11_quant2_wmma.cuh         | 283 +++++++++++++++++
+ .../moe_cktile2stages.cu                      |  54 ++++
+ op_tests/test_gfx11_quant2_wmma.py            | 286 ++++++++++++++++++
+ 6 files changed, 823 insertions(+), 11 deletions(-)
+ create mode 100644 aiter/ops/gfx11_quant2.py
+ create mode 100644 csrc/ck_tile_gemm_moe_2stages/include/moe_gfx11_quant2_wmma.cuh
+ create mode 100644 op_tests/test_gfx11_quant2_wmma.py
+
+diff --git a/aiter/fused_moe.py b/aiter/fused_moe.py
+index 22f24262..a60debdb 100644
+--- a/aiter/fused_moe.py
++++ b/aiter/fused_moe.py
+@@ -1012,12 +1012,51 @@ def _fused_moe_impl(
+                     f"a16w4 (bf16 A x MXFP4 W) SiTUv2 is not supported: {_why}."
+                 )
+
+-    use_gfx11_int8_triton = (
+-        get_gfx().startswith("gfx11")
++    gfx = get_gfx()
++    is_gfx11_dynamic_int8 = (
++        gfx.startswith("gfx11")
+         and quant_type == QuantType.per_Token
+         and q_dtype_a == dtypes.i8
+         and q_dtype_w == dtypes.i8
+     )
++    use_gfx11_quant2 = False
++    if is_gfx11_dynamic_int8:
++        from aiter.ops.gfx11_quant2 import (
++            Gfx11Quant2Problem,
++            ck_gfx11_wmma_supports,
++        )
++
++        use_gfx11_quant2 = ck_gfx11_wmma_supports(
++            Gfx11Quant2Problem(
++                arch=gfx,
++                token_count=M,
++                model_dim=model_dim,
++                inter_dim=inter_dim,
++                expert_count=E,
++                topk=topk,
++                input_dtype=hidden_states.dtype,
++                output_dtype=dtype,
++                activation=activation.value,
++                quant_type=quant_type.value,
++                q_dtype_a=q_dtype_a,
++                q_dtype_w=q_dtype_w,
++                is_gated=isG1U1,
++                gate_mode=gate_mode.value,
++                doweight_stage1=doweight_stage1,
++                w1_preshuffled=getattr(w1, "is_shuffled", False),
++                w2_preshuffled=getattr(w2, "is_shuffled", False),
++                has_weight_scales=w1_scale is not None and w2_scale is not None,
++                has_a1_scale=a1_scale is not None,
++                has_a2_scale=a2_scale is not None,
++                has_bias=bias1 is not None or bias2 is not None,
++                expert_parallel=expert_mask is not None,
++                has_num_local_tokens=num_local_tokens is not None,
++                stage2_scatter=stage2_scatter is not None,
++                hidden_pad=hidden_pad,
++                intermediate_pad=intermediate_pad,
++            )
++        )
++    use_gfx11_int8_triton = is_gfx11_dynamic_int8 and not use_gfx11_quant2
+     if use_gfx11_int8_triton:
+         if w1_scale is None or w2_scale is None:
+             raise ValueError("gfx11 dynamic INT8 MoE requires weight scales")
+@@ -1121,6 +1160,7 @@ def _fused_moe_impl(
+         opus_weights_shuffled=getattr(w1, "is_shuffled", False)
+         and getattr(w2, "is_shuffled", False),
+         config_file=_metadata_config_file,
++        use_gfx11_quant2=use_gfx11_quant2,
+     )
+
+     if _metadata_transform is not None:
+@@ -1281,6 +1321,7 @@ def _fused_moe_impl(
+             _metadata_config_file=_metadata_config_file,
+             _stage1_extra_args=_stage1_extra_args,
+             _stage2_extra_args=_stage2_extra_args,
++            _use_gfx11_quant2=use_gfx11_quant2,
+             output=output,
+         )
+         return _return_output(ret, output)
+@@ -2353,6 +2394,7 @@ def get_2stage_cfgs(
+     has_stage2_bias=False,
+     opus_weights_shuffled=None,
+     config_file=None,
++    use_gfx11_quant2=False,
+ ):
+     gate_mode = GateMode(gate_mode)
+     # Configs are keyed on (gfx, cu_num, ...) so archs that share a cu_num
+@@ -2756,6 +2798,32 @@ def get_2stage_cfgs(
+             flat=cfg_flat,
+             **route_bucket_metadata,
+         )
++
++    if use_gfx11_quant2:
++        from aiter.ops.gfx11_quant2 import (
++            GFX11_QUANT2_STAGE1_KERNEL,
++            GFX11_QUANT2_STAGE2_KERNEL,
++        )
++
++        return MOEMetadata(
++            functools.partial(
++                cktile_moe_stage1,
++                activation=activation,
++                split_k=1,
++                dtype=dtype,
++                kernel_name=GFX11_QUANT2_STAGE1_KERNEL,
++                post_activation_layout="standard",
++            ),
++            functools.partial(
++                cktile_moe_stage2,
++                activation=activation,
++                kernel_name=GFX11_QUANT2_STAGE2_KERNEL,
++            ),
++            16,
++            1,
++            False,
++        )
++
+     is_flydsl1 = isinstance(kernelName1, str) and kernelName1.startswith("flydsl_")
+     is_flydsl2 = isinstance(kernelName2, str) and kernelName2.startswith("flydsl_")
+     is_flydsl2_layout = isinstance(kernelName2, str) and kernelName2.startswith(
+@@ -3272,6 +3340,7 @@ def fused_moe_2stages(
+     _metadata_config_file: str | None = None,
+     _stage1_extra_args: dict | None = None,
+     _stage2_extra_args: dict | None = None,
++    _use_gfx11_quant2=False,
+     output=None,
+ ):
+     quant_func = get_quant(quant_type)
+@@ -3312,6 +3381,7 @@ def fused_moe_2stages(
+         opus_weights_shuffled=getattr(w1, "is_shuffled", False)
+         and getattr(w2, "is_shuffled", False),
+         config_file=_metadata_config_file,
++        use_gfx11_quant2=_use_gfx11_quant2,
+     )
+     if _metadata_transform is not None:
+         metadata = _metadata_transform(metadata)
+@@ -4236,7 +4306,6 @@ def cktile_moe_stage1(
+         split_k,
+         kernel_name,
+     )
+-
+     if needs_post_activation:
+         valid_out = tmp_out[: token_num * topk, :]
+         if post_activation_layout == "auto":
+@@ -4342,11 +4411,23 @@ def cktile_moe_stage2(
+     kernel_name="",
+ ):
+     bias2 = _normalize_bias_for_kernel(bias2)
++    from aiter.ops.gfx11_quant2 import GFX11_QUANT2_STAGE2_KERNEL
++
++    is_gfx11_quant2 = kernel_name == GFX11_QUANT2_STAGE2_KERNEL
++    kernel_output = (
++        torch.zeros(
++            (a2.shape[0] * topk, w2.shape[1]),
++            dtype=out.dtype,
++            device=out.device,
++        )
++        if is_gfx11_quant2
++        else out
++    )
+     # print("Run cktile_moe_stage2: M=%d, N=%d, K=%d, topk=%d, expert=%d"%(a2.shape[0]*a2.shape[1], w2.shape[1], a2.shape[2], topk, w2.shape[0]))
+     aiter.moe_cktile2stages_gemm2(
+         a2,
+         w2,
+-        out,
++        kernel_output,
+         sorted_token_ids,
+         sorted_expert_ids,
+         num_valid_ids,
+@@ -4361,6 +4442,8 @@ def cktile_moe_stage2(
+         block_m,
+         kernel_name=kernel_name,
+     )
++    if is_gfx11_quant2:
++        out.copy_(kernel_output.view(a2.shape[0], topk, w2.shape[1]).sum(dim=1))
+     return out
+
+
+diff --git a/aiter/ops/gfx11_quant2.py b/aiter/ops/gfx11_quant2.py
+new file mode 100644
+index 00000000..7bbb6828
+--- /dev/null
++++ b/aiter/ops/gfx11_quant2.py
+@@ -0,0 +1,99 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import os
++from dataclasses import dataclass
++
++import torch
++
++
++GFX11_QUANT2_STAGE1_KERNEL = (
++    "moe_cktile2stages_gemm1_128x16x128x64_1x4_"
++    "16x16x16_1perCU_per_token_silu"
++)
++GFX11_QUANT2_STAGE2_KERNEL = (
++    "moe_cktile2stages_gemm2_128x16x128x64_1x4_"
++    "16x16x16_1perCU_per_token_MulRoutedWeight"
++)
++
++_DISABLE_VALUES = ("1", "true", "True", "yes", "YES")
++_VALIDATED_GFX1100_PROBLEMS = frozenset(
++    {
++        (1, 256, 512, 4, 1),
++        (7, 256, 512, 4, 1),
++        (16, 256, 512, 4, 2),
++        (16, 288, 544, 4, 2),
++        (16, 4096, 14336, 8, 2),
++        (17, 256, 512, 4, 1),
++        (33, 256, 512, 4, 1),
++    }
++)
++
++
++@dataclass(frozen=True)
++class Gfx11Quant2Problem:
++    arch: str
++    token_count: int
++    model_dim: int
++    inter_dim: int
++    expert_count: int
++    topk: int
++    input_dtype: torch.dtype
++    output_dtype: torch.dtype
++    activation: int
++    quant_type: int
++    q_dtype_a: torch.dtype
++    q_dtype_w: torch.dtype
++    is_gated: bool
++    gate_mode: str
++    doweight_stage1: bool
++    w1_preshuffled: bool
++    w2_preshuffled: bool
++    has_weight_scales: bool
++    has_a1_scale: bool
++    has_a2_scale: bool
++    has_bias: bool
++    expert_parallel: bool
++    has_num_local_tokens: bool
++    stage2_scatter: bool
++    hidden_pad: int
++    intermediate_pad: int
++
++
++def ck_gfx11_wmma_supports(problem: Gfx11Quant2Problem) -> bool:
++    disabled = os.environ.get("AITER_DISABLE_GFX11_CK_QUANT2", "") in _DISABLE_VALUES
++    ret = (
++        not disabled
++        and problem.arch == "gfx1100"
++        and (
++            problem.token_count,
++            problem.model_dim,
++            problem.inter_dim,
++            problem.expert_count,
++            problem.topk,
++        )
++        in _VALIDATED_GFX1100_PROBLEMS
++        and problem.model_dim % 32 == 0
++        and problem.inter_dim % 32 == 0
++        and problem.input_dtype == torch.bfloat16
++        and problem.output_dtype == torch.bfloat16
++        and problem.activation == 0
++        and problem.quant_type == 2
++        and problem.q_dtype_a == torch.int8
++        and problem.q_dtype_w == torch.int8
++        and problem.is_gated
++        and problem.gate_mode == "separated"
++        and not problem.doweight_stage1
++        and problem.w1_preshuffled
++        and problem.w2_preshuffled
++        and problem.has_weight_scales
++        and not problem.has_a1_scale
++        and not problem.has_a2_scale
++        and not problem.has_bias
++        and not problem.expert_parallel
++        and not problem.has_num_local_tokens
++        and not problem.stage2_scatter
++        and problem.hidden_pad == 0
++        and problem.intermediate_pad == 0
++    )
++    return ret
+diff --git a/csrc/ck_tile_gemm_moe_2stages/gen_instances.py b/csrc/ck_tile_gemm_moe_2stages/gen_instances.py
+index 429119b8..298b8a42 100644
+--- a/csrc/ck_tile_gemm_moe_2stages/gen_instances.py
++++ b/csrc/ck_tile_gemm_moe_2stages/gen_instances.py
+@@ -647,9 +647,12 @@ if __name__ == "__main__":
+     # for name-based dispatch header generation
+     name_lookup_entries = []
+
+-    for a_type, c_dtype, act_type, is_split_k in itertools.product(
+-        a_types, c_dtypes, act_types, is_split_k_l
+-    ):
++    legacy_specs = (
++        itertools.product(a_types, c_dtypes, act_types, is_split_k_l)
++        if "gfx950" in get_gfx_list()
++        else ()
++    )
++    for a_type, c_dtype, act_type, is_split_k in legacy_specs:
+         has_bias = act_type == "swiglu"
+
+         # a8w8 do not support
+@@ -695,12 +698,16 @@ if __name__ == "__main__":
+         gen_manifest_files.append(manifest_file)
+
+         # Collect kernel names with their C++ type arguments for name dispatch
+-        for k in kernel_dict_merge.values():
+-            name_lookup_entries.append(
+-                (k.name, codegen.a_dtype, "pk_fp4", codegen.acc_dtype, codegen.c_dtype)
+-            )
++        if "gfx950" in get_gfx_list():
++            for k in kernel_dict_merge.values():
++                name_lookup_entries.append(
++                    (k.name, codegen.a_dtype, "pk_fp4", codegen.acc_dtype, codegen.c_dtype)
++                )
+
+     generate_common_header(args.working_path, gen_dispatch_files, gen_manifest_files)
++    lookup_path = os.path.join(args.working_path, "moe_cktile2stages_lookup.h")
++    if not os.path.exists(lookup_path):
++        Path(lookup_path).write_text("#pragma once\n")
+
+     # Generate name-based dispatch header
+     seen_names = set()
+diff --git a/csrc/ck_tile_gemm_moe_2stages/include/moe_gfx11_quant2_wmma.cuh b/csrc/ck_tile_gemm_moe_2stages/include/moe_gfx11_quant2_wmma.cuh
+new file mode 100644
+index 00000000..ebfcf882
+--- /dev/null
++++ b/csrc/ck_tile_gemm_moe_2stages/include/moe_gfx11_quant2_wmma.cuh
+@@ -0,0 +1,283 @@
++#pragma once
++// SPDX-License-Identifier: MIT
++// Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++#include "ck_tile/core.hpp"
++#include "ck_tile/ops/gemm/warp/warp_gemm_attribute_wmma_impl_8bit_traits.hpp"
++#include <ATen/hip/HIPContext.h>
++#include <hip/hip_runtime.h>
++#include <torch/extension.h>
++
++namespace gfx11_quant2 {
++
++inline constexpr char kStage1KernelName[] =
++    "moe_cktile2stages_gemm1_128x16x128x64_1x4_"
++    "16x16x16_1perCU_per_token_silu";
++inline constexpr char kStage2KernelName[] =
++    "moe_cktile2stages_gemm2_128x16x128x64_1x4_"
++    "16x16x16_1perCU_per_token_MulRoutedWeight";
++
++using index_t = ck_tile::index_t;
++using WmmaTraits =
++    ck_tile::WmmaTraits<ck_tile::gfx11_t, int8_t, int8_t, int32_t, 16, 16, 16>;
++using AVec = WmmaTraits::AVecType;
++using BVec = WmmaTraits::BVecType;
++using CVec = WmmaTraits::CVecType;
++
++CK_TILE_DEVICE index_t swizzled_a_row(index_t lane)
++{
++    const index_t lane16 = lane & 15;
++    return ((lane16 & 1) << 3) | (lane16 >> 1);
++}
++
++CK_TILE_DEVICE index_t shuffled_weight_offset(
++    index_t expert, index_t output, index_t k_chunk, index_t output_size, index_t K)
++{
++    const index_t expert_offset = expert * output_size * K;
++    const index_t tile_offset   = ((output / 16) * (K / 16) + k_chunk) * 16 * 16;
++    return expert_offset + tile_offset + (output & 15) * 16;
++}
++
++CK_TILE_DEVICE index_t route_token(index_t sorted_id) { return sorted_id & 0x00ffffff; }
++
++CK_TILE_DEVICE index_t route_slot(index_t sorted_id) { return (sorted_id >> 24) & 0xff; }
++
++__global__ void stage1_kernel(const int8_t* input,
++                              const int8_t* weight,
++                              const float* input_scale,
++                              const float* weight_scale,
++                              const int32_t* sorted_ids,
++                              const int32_t* sorted_expert_ids,
++                              const int32_t* num_valid_ids,
++                              ck_tile::bf16_t* output,
++                              index_t token_count,
++                              index_t topk,
++                              index_t inter_dim,
++                              index_t K)
++{
++    const index_t lane         = threadIdx.x;
++    const index_t input_row    = swizzled_a_row(lane);
++    const index_t output_row   = (lane >> 4) * 8;
++    const index_t sorted_block = blockIdx.y * 16;
++    const index_t output_col   = blockIdx.x * 16 + (lane & 15);
++    const index_t max_routes   = num_valid_ids[0];
++
++    if(sorted_block >= max_routes || output_col >= inter_dim)
++        return;
++
++    const index_t expert = sorted_expert_ids[blockIdx.y];
++    CVec gate_acc{};
++    CVec up_acc{};
++    for(index_t k = 0; k < K; k += 16)
++    {
++        const index_t sorted_pos = sorted_block + input_row;
++        AVec a_vec{};
++        if(sorted_pos < max_routes)
++        {
++            const index_t sorted_id = sorted_ids[sorted_pos];
++            const index_t token     = route_token(sorted_id);
++            if(token < token_count)
++                a_vec = *reinterpret_cast<const AVec*>(input + token * K + k);
++        }
++
++        const index_t k_chunk = k / 16;
++        const index_t gate_offset =
++            shuffled_weight_offset(expert, output_col, k_chunk, inter_dim * 2, K);
++        const index_t up_offset =
++            shuffled_weight_offset(expert, output_col + inter_dim, k_chunk, inter_dim * 2, K);
++        const BVec gate_vec = *reinterpret_cast<const BVec*>(weight + gate_offset);
++        const BVec up_vec   = *reinterpret_cast<const BVec*>(weight + up_offset);
++        gate_acc = WmmaTraits::wmma_intrinsic(a_vec, gate_vec, gate_acc);
++        up_acc   = WmmaTraits::wmma_intrinsic(a_vec, up_vec, up_acc);
++    }
++
++    for(index_t i = 0; i < 8; ++i)
++    {
++        const index_t sorted_pos = sorted_block + output_row + i;
++        if(sorted_pos < max_routes)
++        {
++            const index_t sorted_id = sorted_ids[sorted_pos];
++            const index_t token     = route_token(sorted_id);
++            const index_t slot      = route_slot(sorted_id);
++            if(token < token_count && slot < topk)
++            {
++                const index_t route = token * topk + slot;
++                const float scale_a = input_scale[token];
++                const float gate_scale =
++                    weight_scale[expert * inter_dim * 2 + output_col];
++                const float up_scale =
++                    weight_scale[expert * inter_dim * 2 + output_col + inter_dim];
++                float gate = static_cast<float>(gate_acc[i]) * scale_a * gate_scale;
++                const float up = static_cast<float>(up_acc[i]) * scale_a * up_scale;
++                gate = gate / (1.0f + ck_tile::exp(-gate));
++                output[route * inter_dim + output_col] =
++                    ck_tile::type_convert<ck_tile::bf16_t>(gate * up);
++            }
++        }
++    }
++}
++
++__global__ void stage2_kernel(const int8_t* input,
++                              const int8_t* weight,
++                              const float* input_scale,
++                              const float* weight_scale,
++                              const float* sorted_weights,
++                              const int32_t* sorted_ids,
++                              const int32_t* sorted_expert_ids,
++                              const int32_t* num_valid_ids,
++                              ck_tile::bf16_t* output,
++                              index_t token_count,
++                              index_t topk,
++                              index_t output_dim,
++                              index_t K)
++{
++    const index_t lane         = threadIdx.x;
++    const index_t input_row    = swizzled_a_row(lane);
++    const index_t output_row   = (lane >> 4) * 8;
++    const index_t sorted_block = blockIdx.y * 16;
++    const index_t output_col   = blockIdx.x * 16 + (lane & 15);
++    const index_t max_routes   = num_valid_ids[0];
++
++    if(sorted_block >= max_routes || output_col >= output_dim)
++        return;
++
++    const index_t expert = sorted_expert_ids[blockIdx.y];
++    CVec acc{};
++    for(index_t k = 0; k < K; k += 16)
++    {
++        const index_t sorted_pos = sorted_block + input_row;
++        AVec a_vec{};
++        if(sorted_pos < max_routes)
++        {
++            const index_t sorted_id = sorted_ids[sorted_pos];
++            const index_t token     = route_token(sorted_id);
++            const index_t slot      = route_slot(sorted_id);
++            if(token < token_count && slot < topk)
++            {
++                const index_t route = token * topk + slot;
++                a_vec = *reinterpret_cast<const AVec*>(input + route * K + k);
++            }
++        }
++
++        const index_t weight_offset =
++            shuffled_weight_offset(expert, output_col, k / 16, output_dim, K);
++        const BVec b_vec = *reinterpret_cast<const BVec*>(weight + weight_offset);
++        acc = WmmaTraits::wmma_intrinsic(a_vec, b_vec, acc);
++    }
++
++    for(index_t i = 0; i < 8; ++i)
++    {
++        const index_t sorted_pos = sorted_block + output_row + i;
++        if(sorted_pos < max_routes)
++        {
++            const index_t sorted_id = sorted_ids[sorted_pos];
++            const index_t token     = route_token(sorted_id);
++            const index_t slot      = route_slot(sorted_id);
++            if(token < token_count && slot < topk)
++            {
++                const index_t route = token * topk + slot;
++                const float value = static_cast<float>(acc[i]) * input_scale[route] *
++                                    weight_scale[expert * output_dim + output_col] *
++                                    sorted_weights[sorted_pos];
++                output[route * output_dim + output_col] =
++                    ck_tile::type_convert<ck_tile::bf16_t>(value);
++            }
++        }
++    }
++}
++
++inline torch::Tensor stage1(torch::Tensor& input,
++                            torch::Tensor& weight,
++                            torch::Tensor& output,
++                            torch::Tensor& sorted_ids,
++                            torch::Tensor& sorted_expert_ids,
++                            torch::Tensor& num_valid_ids,
++                            int topk,
++                            torch::Tensor& input_scale,
++                            torch::Tensor& weight_scale)
++{
++    TORCH_CHECK(input.is_contiguous() && weight.is_contiguous() && output.is_contiguous(),
++                "gfx11 Quant2 stage1 requires contiguous tensors");
++    TORCH_CHECK(input_scale.scalar_type() == at::ScalarType::Float &&
++                    weight_scale.scalar_type() == at::ScalarType::Float,
++                "gfx11 Quant2 stage1 scales must be fp32");
++    const index_t token_count = input.size(0);
++    const index_t inter_dim   = output.size(-1);
++    const index_t K           = input.size(-1);
++    TORCH_CHECK(K % 16 == 0 && inter_dim % 16 == 0,
++                "gfx11 Quant2 stage1 dimensions must be divisible by 16");
++    const dim3 grid((inter_dim + 15) / 16, sorted_expert_ids.numel(), 1);
++    const dim3 block(32, 1, 1);
++    hipLaunchKernelGGL(stage1_kernel,
++                       grid,
++                       block,
++                       0,
++                       at::hip::getCurrentHIPStreamMasqueradingAsCUDA().stream(),
++                       static_cast<const int8_t*>(input.data_ptr()),
++                       static_cast<const int8_t*>(weight.data_ptr()),
++                       static_cast<const float*>(input_scale.data_ptr()),
++                       static_cast<const float*>(weight_scale.data_ptr()),
++                       static_cast<const int32_t*>(sorted_ids.data_ptr()),
++                       static_cast<const int32_t*>(sorted_expert_ids.data_ptr()),
++                       static_cast<const int32_t*>(num_valid_ids.data_ptr()),
++                       static_cast<ck_tile::bf16_t*>(output.data_ptr()),
++                       token_count,
++                       topk,
++                       inter_dim,
++                       K);
++    const hipError_t error = hipGetLastError();
++    TORCH_CHECK(error == hipSuccess,
++                "gfx11 Quant2 stage1 launch failed: ",
++                hipGetErrorString(error));
++    return output;
++}
++
++inline torch::Tensor stage2(torch::Tensor& input,
++                            torch::Tensor& weight,
++                            torch::Tensor& output,
++                            torch::Tensor& sorted_ids,
++                            torch::Tensor& sorted_expert_ids,
++                            torch::Tensor& num_valid_ids,
++                            int topk,
++                            torch::Tensor& sorted_weights,
++                            torch::Tensor& input_scale,
++                            torch::Tensor& weight_scale)
++{
++    TORCH_CHECK(input.is_contiguous() && weight.is_contiguous() && output.is_contiguous(),
++                "gfx11 Quant2 stage2 requires contiguous tensors");
++    TORCH_CHECK(input_scale.scalar_type() == at::ScalarType::Float &&
++                    weight_scale.scalar_type() == at::ScalarType::Float,
++                "gfx11 Quant2 stage2 scales must be fp32");
++    const index_t token_count = input.size(0);
++    const index_t output_dim  = output.size(-1);
++    const index_t K           = input.size(-1);
++    TORCH_CHECK(K % 16 == 0 && output_dim % 16 == 0,
++                "gfx11 Quant2 stage2 dimensions must be divisible by 16");
++    const dim3 grid((output_dim + 15) / 16, sorted_expert_ids.numel(), 1);
++    const dim3 block(32, 1, 1);
++    hipLaunchKernelGGL(stage2_kernel,
++                       grid,
++                       block,
++                       0,
++                       at::hip::getCurrentHIPStreamMasqueradingAsCUDA().stream(),
++                       static_cast<const int8_t*>(input.data_ptr()),
++                       static_cast<const int8_t*>(weight.data_ptr()),
++                       static_cast<const float*>(input_scale.data_ptr()),
++                       static_cast<const float*>(weight_scale.data_ptr()),
++                       static_cast<const float*>(sorted_weights.data_ptr()),
++                       static_cast<const int32_t*>(sorted_ids.data_ptr()),
++                       static_cast<const int32_t*>(sorted_expert_ids.data_ptr()),
++                       static_cast<const int32_t*>(num_valid_ids.data_ptr()),
++                       static_cast<ck_tile::bf16_t*>(output.data_ptr()),
++                       token_count,
++                       topk,
++                       output_dim,
++                       K);
++    const hipError_t error = hipGetLastError();
++    TORCH_CHECK(error == hipSuccess,
++                "gfx11 Quant2 stage2 launch failed: ",
++                hipGetErrorString(error));
++    return output;
++}
++
++} // namespace gfx11_quant2
+diff --git a/csrc/ck_tile_gemm_moe_2stages/moe_cktile2stages.cu b/csrc/ck_tile_gemm_moe_2stages/moe_cktile2stages.cu
+index 8135639d..9f403890 100644
+--- a/csrc/ck_tile_gemm_moe_2stages/moe_cktile2stages.cu
++++ b/csrc/ck_tile_gemm_moe_2stages/moe_cktile2stages.cu
+@@ -1,6 +1,8 @@
+ // SPDX-License-Identifier: MIT
+ // Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+ #include "moe_cktile2stages_common.cuh"
++#include "moe_gfx11_quant2_wmma.cuh"
++#include "gemm_dispatch_utils.h"
+ #include "moe_cktile2stages_lookup.h"
+ #include "moe_cktile2stages_manifest_common.h"
+ #include "moe_cktile2stages_name_dispatch.h"
+@@ -287,6 +289,32 @@ torch::Tensor cktile_moe_gemm1(torch::Tensor& XQ,
+
+     const at::hip::OptionalHIPGuardMasqueradingAsCUDA device_guard(device_of(Y));
+
++    if(kernel_name == gfx11_quant2::kStage1KernelName)
++    {
++        const std::string_view gfx = get_device_gfx();
++        TORCH_CHECK(gfx == "gfx1100",
++                    "gfx11 Quant2 stage1 requires gfx1100, got ",
++                    gfx);
++        TORCH_CHECK(XQ.dtype() == at::ScalarType::Char &&
++                        WQ.dtype() == at::ScalarType::Char &&
++                        Y.dtype() == at::ScalarType::BFloat16,
++                    "gfx11 Quant2 stage1 requires INT8 inputs and BF16 output");
++        TORCH_CHECK(x_scale.has_value() && w_scale.has_value(),
++                    "gfx11 Quant2 stage1 requires activation and weight scales");
++        TORCH_CHECK(!has_bias, "gfx11 Quant2 stage1 does not support bias");
++        TORCH_CHECK(act_op == 0, "gfx11 Quant2 stage1 supports SiLU only");
++        TORCH_CHECK(k_batch == 1, "gfx11 Quant2 stage1 does not support split-k");
++        return gfx11_quant2::stage1(XQ,
++                                    WQ,
++                                    Y,
++                                    sorted_ids,
++                                    sorted_expert_ids,
++                                    max_token_ids,
++                                    topk,
++                                    x_scale.value(),
++                                    w_scale.value());
++    }
++
+     // Name-based dispatch: look up kernel by name directly
+     if(!kernel_name.empty())
+     {
+@@ -422,6 +450,32 @@ torch::Tensor cktile_moe_gemm2(torch::Tensor& XQ,
+
+     const at::hip::OptionalHIPGuardMasqueradingAsCUDA device_guard(device_of(Y));
+
++    if(kernel_name == gfx11_quant2::kStage2KernelName)
++    {
++        const std::string_view gfx = get_device_gfx();
++        TORCH_CHECK(gfx == "gfx1100",
++                    "gfx11 Quant2 stage2 requires gfx1100, got ",
++                    gfx);
++        TORCH_CHECK(XQ.dtype() == at::ScalarType::Char &&
++                        WQ.dtype() == at::ScalarType::Char &&
++                        Y.dtype() == at::ScalarType::BFloat16,
++                    "gfx11 Quant2 stage2 requires INT8 inputs and BF16 output");
++        TORCH_CHECK(x_scale.has_value() && w_scale.has_value() && topk_weight.has_value(),
++                    "gfx11 Quant2 stage2 requires activation, weight, and routing scales");
++        TORCH_CHECK(!has_bias, "gfx11 Quant2 stage2 does not support bias");
++        TORCH_CHECK(k_batch == 1, "gfx11 Quant2 stage2 does not support split-k");
++        return gfx11_quant2::stage2(XQ,
++                                    WQ,
++                                    Y,
++                                    sorted_ids,
++                                    sorted_expert_ids,
++                                    max_token_ids,
++                                    topk,
++                                    topk_weight.value(),
++                                    x_scale.value(),
++                                    w_scale.value());
++    }
++
+     // Name-based dispatch: look up kernel by name directly
+     if(!kernel_name.empty())
+     {
+diff --git a/op_tests/test_gfx11_quant2_wmma.py b/op_tests/test_gfx11_quant2_wmma.py
+new file mode 100644
+index 00000000..591021a8
+--- /dev/null
++++ b/op_tests/test_gfx11_quant2_wmma.py
+@@ -0,0 +1,286 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++from dataclasses import replace
++
++import pytest
++import torch
++
++import aiter
++from aiter.fused_moe import fused_moe
++from aiter.jit.utils.chip_info import get_gfx
++from aiter.ops.flydsl.moe_common import GateMode
++from aiter.ops.gfx11_quant2 import (
++    GFX11_QUANT2_STAGE1_KERNEL,
++    GFX11_QUANT2_STAGE2_KERNEL,
++    Gfx11Quant2Problem,
++    ck_gfx11_wmma_supports,
++)
++from aiter.ops.moe_op import (
++    moe_cktile2stages_gemm1,
++    moe_cktile2stages_gemm2,
++)
++from aiter.ops.shuffle import shuffle_weight
++
++
++def _quantize_rows(tensor):
++    scale = tensor.float().abs().amax(dim=-1, keepdim=True) / 127
++    scale = torch.where(scale == 0, 1, scale)
++    quantized = torch.round(tensor.float() / scale).to(torch.int8)
++    return quantized, scale
++
++
++def _base_problem():
++    return Gfx11Quant2Problem(
++        arch="gfx1100",
++        token_count=16,
++        model_dim=256,
++        inter_dim=512,
++        expert_count=4,
++        topk=2,
++        input_dtype=torch.bfloat16,
++        output_dtype=torch.bfloat16,
++        activation=aiter.ActivationType.Silu.value,
++        quant_type=aiter.QuantType.per_Token.value,
++        q_dtype_a=torch.int8,
++        q_dtype_w=torch.int8,
++        is_gated=True,
++        gate_mode=GateMode.SEPARATED.value,
++        doweight_stage1=False,
++        w1_preshuffled=True,
++        w2_preshuffled=True,
++        has_weight_scales=True,
++        has_a1_scale=False,
++        has_a2_scale=False,
++        has_bias=False,
++        expert_parallel=False,
++        has_num_local_tokens=False,
++        stage2_scatter=False,
++        hidden_pad=0,
++        intermediate_pad=0,
++    )
++
++
++def test_gfx11_quant2_capability_is_fail_closed(monkeypatch):
++    problem = _base_problem()
++    monkeypatch.delenv("AITER_DISABLE_GFX11_CK_QUANT2", raising=False)
++    assert ck_gfx11_wmma_supports(problem)
++    assert ck_gfx11_wmma_supports(
++        replace(problem, model_dim=288, inter_dim=544)
++    )
++    assert ck_gfx11_wmma_supports(
++        replace(
++            problem,
++            model_dim=4096,
++            inter_dim=14336,
++            expert_count=8,
++        )
++    )
++
++    unsupported = (
++        replace(problem, arch="gfx1151"),
++        replace(problem, token_count=32),
++        replace(problem, expert_count=8),
++        replace(problem, topk=1),
++        replace(problem, model_dim=272),
++        replace(problem, inter_dim=528),
++        replace(problem, output_dtype=torch.float16),
++        replace(problem, activation=aiter.ActivationType.Gelu.value),
++        replace(problem, is_gated=False),
++        replace(problem, gate_mode=GateMode.INTERLEAVE.value),
++        replace(problem, doweight_stage1=True),
++        replace(problem, input_dtype=torch.int8),
++        replace(problem, w1_preshuffled=False),
++        replace(problem, w2_preshuffled=False),
++        replace(problem, has_weight_scales=False),
++        replace(problem, has_a1_scale=True),
++        replace(problem, has_a2_scale=True),
++        replace(problem, has_bias=True),
++        replace(problem, expert_parallel=True),
++        replace(problem, has_num_local_tokens=True),
++        replace(problem, stage2_scatter=True),
++        replace(problem, hidden_pad=16),
++        replace(problem, intermediate_pad=16),
++    )
++    assert all(not ck_gfx11_wmma_supports(candidate) for candidate in unsupported)
++
++    monkeypatch.setenv("AITER_DISABLE_GFX11_CK_QUANT2", "1")
++    assert not ck_gfx11_wmma_supports(problem)
++
++
++@pytest.mark.parametrize(
++    ("launcher", "kernel_name"),
++    [
++        (moe_cktile2stages_gemm1, GFX11_QUANT2_STAGE1_KERNEL),
++        (moe_cktile2stages_gemm2, GFX11_QUANT2_STAGE2_KERNEL),
++    ],
++)
++def test_gfx11_quant2_launcher_rejects_other_architectures(
++    launcher,
++    kernel_name,
++):
++    gfx = get_gfx()
++    if gfx == "gfx1100":
++        pytest.skip("requires a non-gfx1100 runtime")
++
++    x = torch.zeros((1, 32), device="cuda", dtype=torch.int8)
++    weight = torch.zeros((1, 64, 32), device="cuda", dtype=torch.int8)
++    output = torch.zeros((1, 32), device="cuda", dtype=torch.bfloat16)
++    sorted_ids = torch.zeros(1, device="cuda", dtype=torch.int32)
++    sorted_expert_ids = torch.zeros(1, device="cuda", dtype=torch.int32)
++    max_token_ids = torch.ones(2, device="cuda", dtype=torch.int32)
++    scales = torch.ones((1, 1), device="cuda", dtype=torch.float32)
++
++    with pytest.raises(RuntimeError, match=rf"requires gfx1100, got {gfx}"):
++        launcher(
++            x,
++            weight,
++            output,
++            sorted_ids,
++            sorted_expert_ids,
++            max_token_ids,
++            1,
++            topk_weight=scales,
++            x_scale=scales,
++            w_scale=scales,
++            block_m=16,
++            kernel_name=kernel_name,
++        )
++
++
++def _make_runtime_case(
++    token_count,
++    topk,
++    last_expert,
++    model_dim=256,
++    inter_dim=512,
++    expert_count=4,
++):
++    torch.manual_seed(31 + token_count + topk + model_dim + inter_dim)
++    experts = expert_count
++    hidden = torch.randn(
++        (token_count, model_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    w1 = torch.randn(
++        (experts, inter_dim * 2, model_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    w2 = torch.randn(
++        (experts, model_dim, inter_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    w1_q, w1_scale = _quantize_rows(w1)
++    w2_q, w2_scale = _quantize_rows(w2)
++    w1_q = shuffle_weight(w1_q, layout=(16, 16))
++    w2_q = shuffle_weight(w2_q, layout=(16, 16))
++    if last_expert:
++        topk_ids = torch.full(
++            (token_count, topk),
++            experts - 1,
++            device="cuda",
++            dtype=torch.int32,
++        )
++    else:
++        token_ids = torch.arange(token_count, device="cuda", dtype=torch.int32)
++        topk_ids = torch.stack(
++            tuple((token_ids + slot) % experts for slot in range(topk)),
++            dim=1,
++        )
++    topk_weights = torch.rand(
++        (token_count, topk),
++        device="cuda",
++        dtype=torch.float32,
++    )
++    topk_weights /= topk_weights.sum(dim=1, keepdim=True)
++    return hidden, w1_q, w2_q, w1_scale, w2_scale, topk_weights, topk_ids
++
++
++def _run_case(case, output=None):
++    hidden, w1, w2, w1_scale, w2_scale, topk_weights, topk_ids = case
++    return fused_moe(
++        hidden,
++        w1,
++        w2,
++        topk_weights,
++        topk_ids,
++        quant_type=aiter.QuantType.per_Token,
++        w1_scale=w1_scale,
++        w2_scale=w2_scale,
++        dtype=torch.bfloat16,
++        output=output,
++    )
++
++
++def _with_guard(tensor, elements=4096):
++    flat = tensor.flatten()
++    guarded = torch.empty(
++        flat.numel() + elements,
++        dtype=tensor.dtype,
++        device=tensor.device,
++    )
++    guarded[: flat.numel()].copy_(flat)
++    ret = guarded[: flat.numel()].view_as(tensor)
++    ret.is_shuffled = True
++    return ret
++
++
++@pytest.mark.parametrize(
++    "token_count,topk,last_expert,model_dim,inter_dim,expert_count",
++    [
++        (1, 1, True, 256, 512, 4),
++        (7, 1, True, 256, 512, 4),
++        (16, 2, False, 256, 512, 4),
++        (17, 1, True, 256, 512, 4),
++        (33, 1, True, 256, 512, 4),
++        (16, 2, False, 288, 544, 4),
++        (16, 2, False, 4096, 14336, 8),
++    ],
++)
++def test_gfx11_quant2_matches_triton_and_is_deterministic(
++    monkeypatch,
++    token_count,
++    topk,
++    last_expert,
++    model_dim,
++    inter_dim,
++    expert_count,
++):
++    if get_gfx() != "gfx1100":
++        pytest.skip("gfx1100-only CK Quant2 validation")
++
++    case = list(
++        _make_runtime_case(
++            token_count,
++            topk,
++            last_expert,
++            model_dim,
++            inter_dim,
++            expert_count,
++        )
++    )
++    case[1] = _with_guard(case[1])
++    case[2] = _with_guard(case[2])
++    case = tuple(case)
++
++    monkeypatch.delenv("AITER_DISABLE_GFX11_CK_QUANT2", raising=False)
++    ck_output = _run_case(case)
++    repeated = _run_case(case)
++    torch.testing.assert_close(repeated, ck_output, rtol=0, atol=0)
++
++    output = torch.empty_like(ck_output)
++    returned = _run_case(case, output=output)
++    assert returned is output
++    torch.testing.assert_close(output, ck_output, rtol=0, atol=0)
++
++    monkeypatch.setenv("AITER_DISABLE_GFX11_CK_QUANT2", "1")
++    triton_output = _run_case(case)
++    similarity = torch.nn.functional.cosine_similarity(
++        ck_output.float().flatten(),
++        triton_output.float().flatten(),
++        dim=0,
++    )
++    assert 1 - similarity < 0.01
+--
+2.52.0

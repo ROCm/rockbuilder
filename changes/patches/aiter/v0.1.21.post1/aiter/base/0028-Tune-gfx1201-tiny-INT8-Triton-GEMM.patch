@@ -1,0 +1,59 @@
+From 7ad924d39353fd1fea954ce5c32a87d9d9abcc1c Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sun, 13 Sep 2026 20:24:00 -0700
+Subject: [PATCH] Tune gfx1201 tiny INT8 Triton GEMM
+
+- Tune N=11008, K=4096 for M up to 8.
+- Use a 32x64 tile with eight wave32 warps.
+- Use two waves per EU and global cache loads.
+- Improve direct hot-cache runtime by 18 to 22
+  percent in repeated synthetic measurements.
+- Improve the vLLM-routed M=8 case by 16.8
+  percent, from 39.944 us to 33.253 us.
+- Keep the existing default for larger M values.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../gemm_a8w8/GEMM-A8W8-N=11008-K=4096.json | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+ create mode 100644 aiter/ops/triton/configs/gfx1201/triton/gemm/gemm_a8w8/GEMM-A8W8-N=11008-K=4096.json
+
+diff --git a/aiter/ops/triton/configs/gfx1201/triton/gemm/gemm_a8w8/GEMM-A8W8-N=11008-K=4096.json b/aiter/ops/triton/configs/gfx1201/triton/gemm/gemm_a8w8/GEMM-A8W8-N=11008-K=4096.json
+new file mode 100644
+index 00000000..f0774d15
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1201/triton/gemm/gemm_a8w8/GEMM-A8W8-N=11008-K=4096.json
+@@ -0,0 +1,28 @@
++{
++    "M_LEQ_8": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+--
+2.43.0

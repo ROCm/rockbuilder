@@ -1,0 +1,2179 @@
+From 814554d1bf781c41f19fac4edfcff3f298d924c1 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 09:19:52 -0700
+Subject: [PATCH] Add gfx90a and gfx1100 Triton defaults
+
+- Add validated gfx942 defaults for gfx90a.
+- Add safe defaults for gfx1100.
+- Enable corrected gfx1100 MLA defaults.
+- Use a smaller A16W8 tile to fit LDS.
+- Cover 33 shared families on both GPUs.
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../attention/chunk_delta_attn/DEFAULT.json   |   8 +
+ .../attention/extend_attention/DEFAULT.json   |  18 ++
+ .../attention/hstu_attn_bwd/DEFAULT.json      |  25 +++
+ .../attention/hstu_attn_fwd/DEFAULT.json      |  31 +++
+ .../gfx1100/triton/attention/mha/DEFAULT.json |  92 +++++++++
+ .../attention/mla_decode_rope/DEFAULT.json    |  26 +++
+ .../fusions/fused_clamp_act_mul/DEFAULT.json  |  11 +
+ .../gemm/batched_gemm_a16w16/DEFAULT.json     |  24 +++
+ .../gemm/batched_gemm_a8w8/DEFAULT.json       |  22 ++
+ .../DEFAULT.json                              |  68 ++++++
+ .../triton/gemm/ff_a16w16_fused/DEFAULT.json  |  50 +++++
+ .../DEFAULT.json                              |  14 ++
+ .../triton/gemm/gemm_a16w16/DEFAULT.json      |  80 +++++++
+ .../gemm/gemm_a16w16_atomic/DEFAULT.json      |  15 ++
+ .../gemm/gemm_a16w16_gated/DEFAULT.json       |  74 +++++++
+ .../gemm/gemm_a16w8_blockscale/DEFAULT.json   |  14 ++
+ .../DEFAULT.json                              |  14 ++
+ .../gemm/gemm_a8w8_blockscale/DEFAULT.json    |  15 ++
+ .../DEFAULT.json                              |  14 ++
+ .../gemm_a8w8_per_token_scale/DEFAULT.json    |  15 ++
+ .../gfx1100/triton/gmm/gmm/DEFAULT.json       |  51 +++++
+ .../mhc/mhc_fused_sinkhorn/DEFAULT.json       |  29 +++
+ .../gfx1100/triton/mhc/mhc_post/DEFAULT.json  |   9 +
+ .../attention/chunk_delta_attn/DEFAULT.json   |   8 +
+ .../attention/extend_attention/DEFAULT.json   |  18 ++
+ .../attention/hstu_attn_bwd/DEFAULT.json      |  25 +++
+ .../attention/hstu_attn_fwd/DEFAULT.json      |  31 +++
+ .../gfx90a/triton/attention/mha/DEFAULT.json  |  92 +++++++++
+ .../attention/mla_decode_rope/DEFAULT.json    |  16 ++
+ .../attention/unified_attention/DEFAULT.json  | 195 ++++++++++++++++++
+ .../gfx90a/triton/conv/conv_1x1/DEFAULT.json  |  10 +
+ .../conv/conv_3x3_cblocked/DEFAULT.json       |  10 +
+ .../triton/conv/conv_3x3_nhwc/DEFAULT.json    |  10 +
+ .../triton/conv/conv_general/DEFAULT.json     |  10 +
+ .../triton/conv/conv_prepack/DEFAULT.json     |  41 ++++
+ .../conv/conv_wino_f4x3_gemm/DEFAULT.json     |  10 +
+ .../conv/conv_wino_f4x3_input/DEFAULT.json    |   7 +
+ .../conv/conv_wino_f4x3_output/DEFAULT.json   |   7 +
+ .../fusions/fused_clamp_act_mul/DEFAULT.json  |  11 +
+ .../gemm/batched_gemm_a16w16/DEFAULT.json     |  24 +++
+ .../gemm/batched_gemm_a8w8/DEFAULT.json       |  22 ++
+ .../DEFAULT.json                              |  68 ++++++
+ .../triton/gemm/ff_a16w16_fused/DEFAULT.json  |  50 +++++
+ .../DEFAULT.json                              |  14 ++
+ .../triton/gemm/gemm_a16w16/DEFAULT.json      |  80 +++++++
+ .../gemm/gemm_a16w16_atomic/DEFAULT.json      |  15 ++
+ .../gemm/gemm_a16w16_gated/DEFAULT.json       |  74 +++++++
+ .../gemm/gemm_a16w8_blockscale/DEFAULT.json   |  14 ++
+ .../DEFAULT.json                              |  14 ++
+ .../DEFAULT.json                              |  14 ++
+ .../gemm_a8w8_per_token_scale/DEFAULT.json    |  15 ++
+ .../gfx90a/triton/gmm/gmm/DEFAULT.json        |  51 +++++
+ .../mhc/mhc_fused_sinkhorn/DEFAULT.json       |  29 +++
+ .../gfx90a/triton/mhc/mhc_post/DEFAULT.json   |   9 +
+ op_tests/triton_tests/conv/_helpers.py        |   2 +-
+ 55 files changed, 1714 insertions(+), 1 deletion(-)
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/chunk_delta_attn/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/extend_attention/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_bwd/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_fwd/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/mha/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/attention/mla_decode_rope/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/ff_a16w16_fused/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gmm/gmm/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_post/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/chunk_delta_attn/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/extend_attention/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_bwd/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_fwd/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/mha/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/mla_decode_rope/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/attention/unified_attention/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_1x1/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_cblocked/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_nhwc/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_general/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_prepack/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_gemm/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_input/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_output/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/ff_a16w16_fused/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gmm/gmm/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_post/DEFAULT.json
+
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/chunk_delta_attn/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/chunk_delta_attn/DEFAULT.json
+new file mode 100644
+index 000000000..98fba7eab
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/chunk_delta_attn/DEFAULT.json
+@@ -0,0 +1,8 @@
++{
++    "chunk_gla_fwd_kernel_o": {
++        "BK": 32,
++        "BV": 128,
++        "num_warps": 4,
++        "num_stages": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/extend_attention/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/extend_attention/DEFAULT.json
+new file mode 100644
+index 000000000..73fe57c33
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/extend_attention/DEFAULT.json
+@@ -0,0 +1,18 @@
++{
++  "default": {
++      "BLOCK_M": 64,
++      "BLOCK_N": 64,
++      "waves_per_eu": 1,
++      "num_warps": 4,
++      "matrix_instr_nonkdim": 16,
++      "kpack": 2
++  },
++  "large_head_or_fp32": {
++      "BLOCK_M": 32,
++      "BLOCK_N": 32,
++      "waves_per_eu": 0,
++      "num_warps": 4,
++      "matrix_instr_nonkdim": 16,
++      "kpack": 2
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_bwd/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_bwd/DEFAULT.json
+new file mode 100644
+index 000000000..0e03d3c0d
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_bwd/DEFAULT.json
+@@ -0,0 +1,25 @@
++{
++  "small_batch": {
++    "BLOCK_M": 32,
++    "BLOCK_N": 64,
++    "num_warps": 4,
++    "num_stages": 2,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 32,
++    "kpack": 2,
++    "SEQUENCE_PARALLEL": true,
++    "UNROLL": 1
++  },
++
++  "large_batch": {
++    "BLOCK_M": 32,
++    "BLOCK_N": 64,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2,
++    "SEQUENCE_PARALLEL": false,
++    "UNROLL": 1
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_fwd/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_fwd/DEFAULT.json
+new file mode 100644
+index 000000000..e1fd18467
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/hstu_attn_fwd/DEFAULT.json
+@@ -0,0 +1,31 @@
++{
++  "small_batch": {
++    "BLOCK_M": 64,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  },
++
++  "batch_512": {
++    "BLOCK_M": 128,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  },
++
++  "large_batch": {
++    "BLOCK_M": 64,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/mha/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/mha/DEFAULT.json
+new file mode 100644
+index 000000000..5537f3f80
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/mha/DEFAULT.json
+@@ -0,0 +1,92 @@
++{
++  "fwd": {
++    "dropout_or_fp32": {
++      "BLOCK_M": 32,
++      "BLOCK_N": 32,
++      "PRELOAD_V": false,
++      "waves_per_eu": 1,
++      "num_warps": 2,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "default": {
++      "BLOCK_M": 128,
++      "BLOCK_N": 64,
++      "PRELOAD_V": false,
++      "waves_per_eu": 2,
++      "num_warps": 4,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "pe": {
++      "BLOCK_M": 256,
++      "BLOCK_N": 64,
++      "PRELOAD_V": true,
++      "waves_per_eu": 1,
++      "num_warps": 8,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "pe_dropout_or_fp32": {
++      "BLOCK_M": 256,
++      "BLOCK_N": 64,
++      "PRELOAD_V": true,
++      "waves_per_eu": 1,
++      "num_warps": 8,
++      "num_ctas": 1,
++      "num_stages": 1
++    }
++  },
++  "bkwd_fused" : {
++    "preprocess_kernel": {
++      "PRE_BLOCK": 128
++    },
++    "dkdvdq_kernel_N64" : {
++        "BLOCK_M": 16,
++        "BLOCK_N": 64,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "BLK_SLICE_FACTOR": 1,
++        "matrix_instr_nonkdim": 16
++    },
++    "dkdvdq_kernel_N128" : {
++        "BLOCK_M": 16,
++        "BLOCK_N": 128,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "BLK_SLICE_FACTOR": 1,
++        "matrix_instr_nonkdim": 16
++    }
++  },
++  "bkwd_onekernel" : {
++    "preprocess_kernel": {
++      "PRE_BLOCK": 128
++    },
++    "onekernel" : {
++        "BLOCK_M1": 32,
++        "BLOCK_N1": 128,
++        "BLOCK_M2": 128,
++        "BLOCK_N2": 32,
++        "BLK_SLICE_FACTOR": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "num_warps": 4,
++        "num_ctas": 1,
++        "num_stages": 1
++    },
++    "onekernel_pe" : {
++        "BLOCK_M1": 32,
++        "BLOCK_N1": 64,
++        "BLOCK_M2": 128,
++        "BLOCK_N2": 32,
++        "BLK_SLICE_FACTOR": 2,
++        "waves_per_eu": 0,
++        "matrix_instr_nonkdim": 16,
++        "num_warps": 4,
++        "num_ctas": 1,
++        "num_stages": 2
++    }
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/attention/mla_decode_rope/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/attention/mla_decode_rope/DEFAULT.json
+new file mode 100644
+index 000000000..d9943cd24
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/attention/mla_decode_rope/DEFAULT.json
+@@ -0,0 +1,26 @@
++{
++    "fwd_grouped_kernel_stage1_rope": {
++        "BLOCK_N": 32,
++        "BLOCK_H": 16,
++        "num_stages": 1,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "FORCE_BF16_ROPE_ROUNDING": true
++    },
++    "fwd_grouped_kernel_stage1_rope_fp32": {
++        "BLOCK_N": 32,
++        "BLOCK_H": 16,
++        "num_stages": 1,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "FORCE_BF16_ROPE_ROUNDING": false
++    },
++    "fwd_kernel_stage2": {
++        "num_stages": 2,
++        "waves_per_eu": 4,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/fusions/fused_clamp_act_mul/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+new file mode 100644
+index 000000000..58402642d
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+@@ -0,0 +1,11 @@
++{
++    "N_LEQ_512": {
++        "num_warps": 1
++    },
++    "N_LEQ_2048": {
++        "num_warps": 4
++    },
++    "any": {
++        "num_warps": 8
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..e799750ef
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+@@ -0,0 +1,24 @@
++{
++    "M_GEQ_4096": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 32,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+new file mode 100644
+index 000000000..b96bf629e
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+@@ -0,0 +1,22 @@
++{
++    "M_GEQ_4096": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 32,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+new file mode 100644
+index 000000000..43f7876e1
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+@@ -0,0 +1,68 @@
++{
++    "M_LEQ_16": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_32": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/ff_a16w16_fused/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/ff_a16w16_fused/DEFAULT.json
+new file mode 100644
+index 000000000..35b925cce
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/ff_a16w16_fused/DEFAULT.json
+@@ -0,0 +1,50 @@
++{
++    "M_LEQ_4": {
++        "BLOCK_SIZE_M": 4,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 3,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_8": {
++        "BLOCK_SIZE_M": 8,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..9fb4bf4ec
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..e76bd5925
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16/DEFAULT.json
+@@ -0,0 +1,80 @@
++{
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_512": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_2048": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_atomic/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+new file mode 100644
+index 000000000..578bb6ab2
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+@@ -0,0 +1,15 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "NUM_KSPLIT": 1,
++        "cache_modifier": null,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_gated/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+new file mode 100644
+index 000000000..a08129d6c
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+@@ -0,0 +1,74 @@
++{
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_512": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    },
++    "M_LEQ_2048": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+new file mode 100644
+index 000000000..97c355f55
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 8,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+new file mode 100644
+index 000000000..fc50fb61e
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 8,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale/DEFAULT.json
+new file mode 100644
+index 000000000..fbd1fe524
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale/DEFAULT.json
+@@ -0,0 +1,15 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+new file mode 100644
+index 000000000..31bbd2b8f
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++  "any": {
++    "BLOCK_SIZE_M": 32,
++    "BLOCK_SIZE_N": 64,
++    "BLOCK_SIZE_K": 128,
++    "GROUP_SIZE_M": 1,
++    "num_warps": 4,
++    "num_stages": 2,
++    "waves_per_eu": 2,
++    "matrix_instr_nonkdim": 16,
++    "cache_modifier": null,
++    "NUM_KSPLIT": 1
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+new file mode 100644
+index 000000000..5e181e283
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+@@ -0,0 +1,15 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gmm/gmm/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gmm/gmm/DEFAULT.json
+new file mode 100644
+index 000000000..2ccd3e3b2
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gmm/gmm/DEFAULT.json
+@@ -0,0 +1,51 @@
++{
++    "gmm": {
++        "default": {
++            "BLOCK_SIZE_M": 256,
++            "BLOCK_SIZE_K": 64,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    },
++    "ptgmm": {
++        "default": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 256,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        },
++        "accumulate": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 128,
++            "BLOCK_SIZE_N": 128,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    },
++    "nptgmm": {
++        "default": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 256,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "num_warps": 8,
++            "num_stages": 1
++        },
++        "accumulate": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 128,
++            "BLOCK_SIZE_N": 128,
++            "GROUP_SIZE": 1,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+new file mode 100644
+index 000000000..6dbe20eaf
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+@@ -0,0 +1,29 @@
++{
++    "M_LEQ_32": {
++        "BLOCK_M": 32,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    },
++    "M_LEQ_64": {
++        "BLOCK_M": 64,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    },
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_post/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_post/DEFAULT.json
+new file mode 100644
+index 000000000..864b59665
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/mhc/mhc_post/DEFAULT.json
+@@ -0,0 +1,9 @@
++{
++    "default": {
++        "BLOCK_M": 64,
++        "BLOCK_C": 256,
++        "num_warps": 4,
++        "num_stages": 1,
++        "waves_per_eu": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/chunk_delta_attn/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/chunk_delta_attn/DEFAULT.json
+new file mode 100644
+index 000000000..98fba7eab
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/chunk_delta_attn/DEFAULT.json
+@@ -0,0 +1,8 @@
++{
++    "chunk_gla_fwd_kernel_o": {
++        "BK": 32,
++        "BV": 128,
++        "num_warps": 4,
++        "num_stages": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/extend_attention/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/extend_attention/DEFAULT.json
+new file mode 100644
+index 000000000..73fe57c33
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/extend_attention/DEFAULT.json
+@@ -0,0 +1,18 @@
++{
++  "default": {
++      "BLOCK_M": 64,
++      "BLOCK_N": 64,
++      "waves_per_eu": 1,
++      "num_warps": 4,
++      "matrix_instr_nonkdim": 16,
++      "kpack": 2
++  },
++  "large_head_or_fp32": {
++      "BLOCK_M": 32,
++      "BLOCK_N": 32,
++      "waves_per_eu": 0,
++      "num_warps": 4,
++      "matrix_instr_nonkdim": 16,
++      "kpack": 2
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_bwd/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_bwd/DEFAULT.json
+new file mode 100644
+index 000000000..0e03d3c0d
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_bwd/DEFAULT.json
+@@ -0,0 +1,25 @@
++{
++  "small_batch": {
++    "BLOCK_M": 32,
++    "BLOCK_N": 64,
++    "num_warps": 4,
++    "num_stages": 2,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 32,
++    "kpack": 2,
++    "SEQUENCE_PARALLEL": true,
++    "UNROLL": 1
++  },
++
++  "large_batch": {
++    "BLOCK_M": 32,
++    "BLOCK_N": 64,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2,
++    "SEQUENCE_PARALLEL": false,
++    "UNROLL": 1
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_fwd/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_fwd/DEFAULT.json
+new file mode 100644
+index 000000000..e1fd18467
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/hstu_attn_fwd/DEFAULT.json
+@@ -0,0 +1,31 @@
++{
++  "small_batch": {
++    "BLOCK_M": 64,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  },
++
++  "batch_512": {
++    "BLOCK_M": 128,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  },
++
++  "large_batch": {
++    "BLOCK_M": 64,
++    "BLOCK_N": 32,
++    "num_warps": 4,
++    "num_stages": 1,
++    "waves_per_eu": 0,
++    "matrix_instr_nonkdim": 16,
++    "kpack": 2
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/mha/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/mha/DEFAULT.json
+new file mode 100644
+index 000000000..5537f3f80
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/mha/DEFAULT.json
+@@ -0,0 +1,92 @@
++{
++  "fwd": {
++    "dropout_or_fp32": {
++      "BLOCK_M": 32,
++      "BLOCK_N": 32,
++      "PRELOAD_V": false,
++      "waves_per_eu": 1,
++      "num_warps": 2,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "default": {
++      "BLOCK_M": 128,
++      "BLOCK_N": 64,
++      "PRELOAD_V": false,
++      "waves_per_eu": 2,
++      "num_warps": 4,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "pe": {
++      "BLOCK_M": 256,
++      "BLOCK_N": 64,
++      "PRELOAD_V": true,
++      "waves_per_eu": 1,
++      "num_warps": 8,
++      "num_ctas": 1,
++      "num_stages": 1
++    },
++    "pe_dropout_or_fp32": {
++      "BLOCK_M": 256,
++      "BLOCK_N": 64,
++      "PRELOAD_V": true,
++      "waves_per_eu": 1,
++      "num_warps": 8,
++      "num_ctas": 1,
++      "num_stages": 1
++    }
++  },
++  "bkwd_fused" : {
++    "preprocess_kernel": {
++      "PRE_BLOCK": 128
++    },
++    "dkdvdq_kernel_N64" : {
++        "BLOCK_M": 16,
++        "BLOCK_N": 64,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "BLK_SLICE_FACTOR": 1,
++        "matrix_instr_nonkdim": 16
++    },
++    "dkdvdq_kernel_N128" : {
++        "BLOCK_M": 16,
++        "BLOCK_N": 128,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "BLK_SLICE_FACTOR": 1,
++        "matrix_instr_nonkdim": 16
++    }
++  },
++  "bkwd_onekernel" : {
++    "preprocess_kernel": {
++      "PRE_BLOCK": 128
++    },
++    "onekernel" : {
++        "BLOCK_M1": 32,
++        "BLOCK_N1": 128,
++        "BLOCK_M2": 128,
++        "BLOCK_N2": 32,
++        "BLK_SLICE_FACTOR": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "num_warps": 4,
++        "num_ctas": 1,
++        "num_stages": 1
++    },
++    "onekernel_pe" : {
++        "BLOCK_M1": 32,
++        "BLOCK_N1": 64,
++        "BLOCK_M2": 128,
++        "BLOCK_N2": 32,
++        "BLK_SLICE_FACTOR": 2,
++        "waves_per_eu": 0,
++        "matrix_instr_nonkdim": 16,
++        "num_warps": 4,
++        "num_ctas": 1,
++        "num_stages": 2
++    }
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/mla_decode_rope/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/mla_decode_rope/DEFAULT.json
+new file mode 100644
+index 000000000..f1f146c6b
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/mla_decode_rope/DEFAULT.json
+@@ -0,0 +1,16 @@
++{
++    "fwd_grouped_kernel_stage1_rope": {
++        "BLOCK_N": 32,
++        "BLOCK_H": 16,
++        "num_stages": 1,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2
++    },
++    "fwd_kernel_stage2": {
++        "num_stages": 2,
++        "waves_per_eu": 4,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/attention/unified_attention/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/attention/unified_attention/DEFAULT.json
+new file mode 100644
+index 000000000..07b10cfd6
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/attention/unified_attention/DEFAULT.json
+@@ -0,0 +1,195 @@
++{
++  "schema": {
++    "attn_2d": [
++      "D",
++      "Q",
++      "DT"
++    ],
++    "attn_3d": [
++      "D"
++    ],
++    "reduce": [
++      "D"
++    ],
++    "kv_split": [
++      "D",
++      "DT"
++    ]
++  },
++  "attn_2d": {
++    "D_GEQ_256.Q_LEQ_1.DT_fp8_fp8": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_512.Q_LEQ_1.DT_fp8_fp8": {
++      "BLOCK_M": 16,
++      "num_warps": 4,
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_LEQ_128.Q_LEQ_1.DT_fp8_fp8": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 3,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_256.Q_LEQ_1": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_512.Q_LEQ_1": {
++      "BLOCK_M": 16,
++      "num_warps": 4,
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_LEQ_128.Q_LEQ_1": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 3,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_512.DT_fp8_fp8": {
++      "BLOCK_M": 16,
++      "num_warps": 4,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 32
++    },
++    "Q_LEQ_1.DT_fp8_fp8": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_256": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 32
++    },
++    "D_GEQ_512": {
++      "BLOCK_M": 16,
++      "num_warps": 4,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 16,
++      "TILE_SIZE_MAX": 16
++    },
++    "Q_GEQ_256": {
++      "BLOCK_M": 128,
++      "num_warps": 4,
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 64,
++      "TILE_SIZE_MAX": 64
++    },
++    "Q_LEQ_1": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    },
++    "any": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "TILE_SIZE_MIN": 64,
++      "TILE_SIZE_MAX": 64
++    }
++  },
++  "attn_3d": {
++    "D_GEQ_512": {
++      "BLOCK_M": 16,
++      "num_warps": 4,
++      "num_stages": 1,
++      "waves_per_eu": 2
++    },
++    "any": {
++      "BLOCK_M": 16,
++      "num_warps": 2,
++      "num_stages": 2,
++      "waves_per_eu": 2
++    }
++  },
++  "reduce": {
++    "D_GEQ_512": {
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "num_warps": 2,
++      "SMALL_SPLIT_MAX": 16,
++      "MIN_SEGMENTS": 16,
++      "SEGMENTS_PER_CU": 8,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64
++    },
++    "any": {
++      "num_stages": 1,
++      "waves_per_eu": 2,
++      "num_warps": 2,
++      "SMALL_SPLIT_MAX": 8,
++      "MIN_SEGMENTS": 8,
++      "SEGMENTS_PER_CU": 16,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64
++    }
++  },
++  "kv_split": {
++    "D_GEQ_512.DT_fp8_fp8": {
++      "MIN_SEGMENTS": 16,
++      "SEGMENTS_PER_CU": 8,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "D_GEQ_512": {
++      "MIN_SEGMENTS": 16,
++      "SEGMENTS_PER_CU": 8,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    },
++    "DT_fp8_fp8": {
++      "MIN_SEGMENTS": 8,
++      "SEGMENTS_PER_CU": 16,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64,
++      "TILE_SIZE_MIN": 32,
++      "TILE_SIZE_MAX": 64
++    },
++    "any": {
++      "MIN_SEGMENTS": 8,
++      "SEGMENTS_PER_CU": 16,
++      "MAX_SEGMENTS": 128,
++      "SEGMENT_TILE_MAX": 64,
++      "TILE_SIZE_MIN": 1,
++      "TILE_SIZE_MAX": 64
++    }
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_1x1/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_1x1/DEFAULT.json
+new file mode 100644
+index 000000000..31b23b2a5
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_1x1/DEFAULT.json
+@@ -0,0 +1,10 @@
++{
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_N": 64,
++        "BLOCK_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_cblocked/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_cblocked/DEFAULT.json
+new file mode 100644
+index 000000000..31b23b2a5
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_cblocked/DEFAULT.json
+@@ -0,0 +1,10 @@
++{
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_N": 64,
++        "BLOCK_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_nhwc/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_nhwc/DEFAULT.json
+new file mode 100644
+index 000000000..31b23b2a5
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_3x3_nhwc/DEFAULT.json
+@@ -0,0 +1,10 @@
++{
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_N": 64,
++        "BLOCK_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_general/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_general/DEFAULT.json
+new file mode 100644
+index 000000000..31b23b2a5
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_general/DEFAULT.json
+@@ -0,0 +1,10 @@
++{
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_N": 64,
++        "BLOCK_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_prepack/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_prepack/DEFAULT.json
+new file mode 100644
+index 000000000..2e1ff2f4c
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_prepack/DEFAULT.json
+@@ -0,0 +1,41 @@
++{
++    "shapes": {
++        "N=1,C=1,H=16,W=16,CB=64": {
++            "BLOCK_C": 32,
++            "BLOCK_M": 32,
++            "num_warps": 4,
++            "num_stages": 1
++        },
++        "N=1,C=3,H=7,W=7,CB=64": {
++            "BLOCK_C": 32,
++            "BLOCK_M": 32,
++            "num_warps": 4,
++            "num_stages": 1
++        },
++        "N=1,C=3,H=512,W=512,CB=64": {
++            "BLOCK_C": 32,
++            "BLOCK_M": 32,
++            "num_warps": 4,
++            "num_stages": 1
++        }
++    },
++    "M_LEQ_256": {
++        "BLOCK_C": 64,
++        "BLOCK_M": 32,
++        "num_warps": 4,
++        "num_stages": 1
++    },
++    "M_LEQ_4096": {
++        "BLOCK_C": 32,
++        "BLOCK_M": 64,
++        "num_warps": 4,
++        "num_stages": 1
++    },
++    "any": {
++        "BLOCK_C": 32,
++        "BLOCK_M": 128,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_gemm/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_gemm/DEFAULT.json
+new file mode 100644
+index 000000000..31b23b2a5
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_gemm/DEFAULT.json
+@@ -0,0 +1,10 @@
++{
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_N": 64,
++        "BLOCK_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_input/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_input/DEFAULT.json
+new file mode 100644
+index 000000000..781dfe03a
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_input/DEFAULT.json
+@@ -0,0 +1,7 @@
++{
++    "any": {
++        "BLOCK_C": 64,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_output/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_output/DEFAULT.json
+new file mode 100644
+index 000000000..d4c4ff5cd
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/conv/conv_wino_f4x3_output/DEFAULT.json
+@@ -0,0 +1,7 @@
++{
++    "any": {
++        "BLOCK_K": 64,
++        "num_warps": 4,
++        "num_stages": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/fusions/fused_clamp_act_mul/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+new file mode 100644
+index 000000000..58402642d
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/fusions/fused_clamp_act_mul/DEFAULT.json
+@@ -0,0 +1,11 @@
++{
++    "N_LEQ_512": {
++        "num_warps": 1
++    },
++    "N_LEQ_2048": {
++        "num_warps": 4
++    },
++    "any": {
++        "num_warps": 8
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..e799750ef
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a16w16/DEFAULT.json
+@@ -0,0 +1,24 @@
++{
++    "M_GEQ_4096": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 32,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+new file mode 100644
+index 000000000..b96bf629e
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8/DEFAULT.json
+@@ -0,0 +1,22 @@
++{
++    "M_GEQ_4096": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 32,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+new file mode 100644
+index 000000000..43f7876e1
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/batched_gemm_a8w8_a_per_token_group_prequant_w_per_batched_tensor_quant/DEFAULT.json
+@@ -0,0 +1,68 @@
++{
++    "M_LEQ_16": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_32": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    },
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": ".cg"
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/ff_a16w16_fused/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/ff_a16w16_fused/DEFAULT.json
+new file mode 100644
+index 000000000..35b925cce
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/ff_a16w16_fused/DEFAULT.json
+@@ -0,0 +1,50 @@
++{
++    "M_LEQ_4": {
++        "BLOCK_SIZE_M": 4,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 3,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_8": {
++        "BLOCK_SIZE_M": 8,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 1,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..9fb4bf4ec
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/fused_gemm_a8w8_blockscale_a16w16/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16/DEFAULT.json
+new file mode 100644
+index 000000000..e76bd5925
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16/DEFAULT.json
+@@ -0,0 +1,80 @@
++{
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_512": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "M_LEQ_2048": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_atomic/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+new file mode 100644
+index 000000000..578bb6ab2
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_atomic/DEFAULT.json
+@@ -0,0 +1,15 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "NUM_KSPLIT": 1,
++        "cache_modifier": null,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_gated/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+new file mode 100644
+index 000000000..a08129d6c
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w16_gated/DEFAULT.json
+@@ -0,0 +1,74 @@
++{
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": ".cg",
++        "kpack": 1
++    },
++    "M_LEQ_512": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    },
++    "M_LEQ_2048": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 256,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 64,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "kpack": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+new file mode 100644
+index 000000000..97c355f55
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 8,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+new file mode 100644
+index 000000000..97c355f55
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a16w8_blockscale_preshuffled/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 256,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 8,
++        "num_warps": 8,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+new file mode 100644
+index 000000000..31bbd2b8f
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_blockscale_preshuffled/DEFAULT.json
+@@ -0,0 +1,14 @@
++{
++  "any": {
++    "BLOCK_SIZE_M": 32,
++    "BLOCK_SIZE_N": 64,
++    "BLOCK_SIZE_K": 128,
++    "GROUP_SIZE_M": 1,
++    "num_warps": 4,
++    "num_stages": 2,
++    "waves_per_eu": 2,
++    "matrix_instr_nonkdim": 16,
++    "cache_modifier": null,
++    "NUM_KSPLIT": 1
++  }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+new file mode 100644
+index 000000000..5e181e283
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8_per_token_scale/DEFAULT.json
+@@ -0,0 +1,15 @@
++{
++    "any": {
++        "BLOCK_SIZE_M": 128,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 2,
++        "matrix_instr_nonkdim": 16,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1,
++        "kpack": 2
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gmm/gmm/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gmm/gmm/DEFAULT.json
+new file mode 100644
+index 000000000..2ccd3e3b2
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gmm/gmm/DEFAULT.json
+@@ -0,0 +1,51 @@
++{
++    "gmm": {
++        "default": {
++            "BLOCK_SIZE_M": 256,
++            "BLOCK_SIZE_K": 64,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    },
++    "ptgmm": {
++        "default": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 256,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        },
++        "accumulate": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 128,
++            "BLOCK_SIZE_N": 128,
++            "GROUP_SIZE": 1,
++            "GRID_DIM": 304,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    },
++    "nptgmm": {
++        "default": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 256,
++            "BLOCK_SIZE_N": 256,
++            "GROUP_SIZE": 1,
++            "num_warps": 8,
++            "num_stages": 1
++        },
++        "accumulate": {
++            "BLOCK_SIZE_M": 64,
++            "BLOCK_SIZE_K": 128,
++            "BLOCK_SIZE_N": 128,
++            "GROUP_SIZE": 1,
++            "num_warps": 8,
++            "num_stages": 1
++        }
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+new file mode 100644
+index 000000000..6dbe20eaf
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_fused_sinkhorn/DEFAULT.json
+@@ -0,0 +1,29 @@
++{
++    "M_LEQ_32": {
++        "BLOCK_M": 32,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    },
++    "M_LEQ_64": {
++        "BLOCK_M": 64,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    },
++    "any": {
++        "BLOCK_M": 64,
++        "BLOCK_K": 64,
++        "waves_per_eu": 2,
++        "num_stages": 1,
++        "num_warps": 4,
++        "NUM_KSPLIT": 2,
++        "BLOCK_C": 64
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_post/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_post/DEFAULT.json
+new file mode 100644
+index 000000000..864b59665
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/mhc/mhc_post/DEFAULT.json
+@@ -0,0 +1,9 @@
++{
++    "default": {
++        "BLOCK_M": 64,
++        "BLOCK_C": 256,
++        "num_warps": 4,
++        "num_stages": 1,
++        "waves_per_eu": 2
++    }
++}
+diff --git a/op_tests/triton_tests/conv/_helpers.py b/op_tests/triton_tests/conv/_helpers.py
+index 015d4a73f..03fe7adf6 100644
+--- a/op_tests/triton_tests/conv/_helpers.py
++++ b/op_tests/triton_tests/conv/_helpers.py
+@@ -105,7 +105,7 @@ def apply_activation(y: torch.Tensor, activation: str):
+ # AITER Triton CI relies on CDNA runners.
+ SUPPORTED_ARCHS = {
+     "RDNA": {"gfx1100", "gfx1151", "gfx1200", "gfx1201", "gfx1250"},
+-    "CDNA": {"gfx942", "gfx950"},
++    "CDNA": {"gfx90a", "gfx942", "gfx950"},
+ }
+
+ # Flat union for arch-check use sites.
+--
+2.43.0

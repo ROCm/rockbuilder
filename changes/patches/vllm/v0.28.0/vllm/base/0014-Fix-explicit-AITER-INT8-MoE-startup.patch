@@ -1,0 +1,87 @@
+From 45926ae464ce8547e968cd472b1470a9f4fc36ab Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 18 Sep 2026 04:34:52 -0700
+Subject: [PATCH] Fix explicit AITER INT8 MoE startup
+
+Explicit AITER INT8 MoE failed during engine
+profiling before the model could serve requests.
+
+Reason:
+- The sorting policy getter can return None.
+- The custom op requires an integer policy value.
+
+Fix:
+- Convert a missing sorting policy to zero.
+- Preserve Triton as the automatic INT8 MoE choice.
+- Add None and explicit-policy regression tests.
+
+Testing
+- Passed 13 INT8 MoE oracle tests on gfx1201.
+- Explicit AITER tiny-Qwen MoE generated correctly.
+- AITER and Triton generated the same smoke output.
+- AITER reached 24.7k versus Triton at 27.4k
+  output tokens per second after warmup.
+
+Tools used:
+- GPT-5.6 Sol: coding agent
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/quantization/test_int8_moe_oracle.py        | 15 +++++++++++++++
+ .../layers/fused_moe/experts/rocm_aiter_moe.py    |  8 +++++++-
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/tests/quantization/test_int8_moe_oracle.py b/tests/quantization/test_int8_moe_oracle.py
+index 2e3dbd9034..f2944cb7be 100644
+--- a/tests/quantization/test_int8_moe_oracle.py
++++ b/tests/quantization/test_int8_moe_oracle.py
+@@ -161,6 +161,21 @@ def test_aiter_int8_experts_support_dynamic_int8():
+     )
+
+
++@pytest.mark.parametrize(("policy", "expected"), [(None, 0), (3, 3)])
++def test_aiter_moe_dispatch_policy_is_always_integer(
++    monkeypatch,
++    policy,
++    expected,
++):
++    from vllm._aiter_ops import rocm_aiter_ops
++    from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++        _get_aiter_moe_dispatch_policy,
++    )
++
++    monkeypatch.setattr(rocm_aiter_ops, "get_moe_dispatch_policy", lambda: policy)
++    assert _get_aiter_moe_dispatch_policy() == expected
++
++
+ def test_aiter_ck_int8_weights_are_shuffled(monkeypatch):
+     from vllm._aiter_ops import rocm_aiter_ops
+     from vllm.platforms import rocm
+diff --git a/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py b/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
+index bd04d06871..77601e4f9d 100644
+--- a/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
++++ b/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
+@@ -58,6 +58,12 @@ class ActivationMethod(IntEnum):
+ aiter_topK_meta_data: tuple[torch.Tensor, torch.Tensor] | None = None
+
+
++def _get_aiter_moe_dispatch_policy() -> int:
++    policy = rocm_aiter_ops.get_moe_dispatch_policy()
++    ret = 0 if policy is None else int(policy)
++    return ret
++
++
+ @lru_cache(maxsize=1)
+ def init_aiter_topK_meta_data(
+     n_routed_experts: int,
+@@ -638,7 +644,7 @@ class AiterExperts(mk.FusedMoEExpertsModular):
+             a1q_scale=a1q_scale,
+             num_local_tokens=num_local_tokens,
+             output_dtype=output.dtype,
+-            moe_sorting_dispatch_policy=rocm_aiter_ops.get_moe_dispatch_policy(),
++            moe_sorting_dispatch_policy=_get_aiter_moe_dispatch_policy(),
+         )
+         # avoid redundant copy when output is a view of the result
+         if (
+--
+2.52.0

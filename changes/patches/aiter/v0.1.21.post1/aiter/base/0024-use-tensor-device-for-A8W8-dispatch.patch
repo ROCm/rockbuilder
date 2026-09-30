@@ -1,0 +1,163 @@
+From 25479b1e0bff09231b44508a2bd39daa32231fea Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 11 Sep 2026 22:56:24 -0700
+Subject: [PATCH] Use tensor device for A8W8 dispatch
+
+- Honor HIP-visible device mapping in mixed GPU
+  processes.
+- Resolve gfx and CU metadata from the input
+  tensor.
+- Preserve rocminfo fallback when device queries
+  fail.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/ops/gemm_op_a8w8.py                  | 36 ++++++++++----
+ op_tests/test_gemm_a8w8_device_dispatch.py | 55 ++++++++++++++++++++++
+ 2 files changed, 83 insertions(+), 8 deletions(-)
+ create mode 100644 op_tests/test_gemm_a8w8_device_dispatch.py
+
+diff --git a/aiter/ops/gemm_op_a8w8.py b/aiter/ops/gemm_op_a8w8.py
+index bfd03dcc..4dcf60c4 100644
+--- a/aiter/ops/gemm_op_a8w8.py
++++ b/aiter/ops/gemm_op_a8w8.py
+@@ -50,13 +50,24 @@ def _hip_blockscale_supported() -> bool:
+         return False
+
+
+-def _ck_a8w8_supported() -> bool:
++def _get_gpu_arch_and_cu(device: torch.device) -> tuple[str, int]:
++    properties = torch.cuda.get_device_properties(device)
++    gfx = properties.gcnArchName.split(":", 1)[0]
++    return gfx, properties.multi_processor_count
++
++
++def _ck_a8w8_supported(XQ: torch.Tensor) -> bool:
+     """The CK/asm INT8 a8w8 GEMM ships gfx9 (CDNA) code objects only; other
+-    arches (e.g. RDNA gfx11/gfx12) must fall back to the Triton kernel."""
++    arches (e.g. RDNA gfx11/gfx12) must fall back to the Triton kernel.
++
++    Inspect the input tensor rather than rocminfo so HIP_VISIBLE_DEVICES and
++    per-device dispatch in mixed-GPU processes select the correct architecture.
++    """
+     try:
+-        return get_gfx().startswith("gfx9")
++        gfx, _ = _get_gpu_arch_and_cu(XQ.device)
++        return gfx.startswith("gfx9")
+     except Exception:  # noqa: BLE001
+-        return True
++        return get_gfx().startswith("gfx9")
+
+
+ def gen_gemm_a8w8_ck_fake_tensors(
+@@ -505,6 +516,7 @@ def get_GEMM_config_with_quant_type(
+     K: int,
+     q_dtype_w: torch.dtype,
+     tuned_file=None,
++    device: torch.device | None = None,
+ ):
+     if tuned_file is None:
+         tuned_file = AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE_FILE
+@@ -528,8 +540,11 @@ def get_GEMM_config_with_quant_type(
+             ).to_dict("index")
+             _GEMM_QUANT_TYPE_HAS_GFX[tuned_file] = False
+
+-    gfx = get_gfx()
+-    cu_num = get_cu_num()
++    if device is None:
++        gfx = get_gfx()
++        cu_num = get_cu_num()
++    else:
++        gfx, cu_num = _get_gpu_arch_and_cu(device)
+     has_gfx = _GEMM_QUANT_TYPE_HAS_GFX[tuned_file]
+     padded_M = M
+     config = None
+@@ -583,7 +598,7 @@ def gemm_a8w8(
+     #     dtypes.bf16,
+     #     dtypes.fp16,
+     # ], f"Output {dtype=} is currently not supported in gemm_a8w8"
+-    if not _ck_a8w8_supported():
++    if not _ck_a8w8_supported(XQ):
+         # RDNA (gfx11/gfx12): the CK/asm a8w8 kernel is unavailable; route to the
+         # portable Triton kernel. Registered/faked via @torch_compile_guard above,
+         # so callers stay torch.compile- and graph-capture-safe.
+@@ -666,7 +681,12 @@ def gemm_a8w8_CK(
+
+     q_dtype_w = WQ.dtype if WQ.dtype in [dtypes.fp8, dtypes.i8] else dtypes.i8
+     ck_config = get_GEMM_config_with_quant_type(
+-        m, n, k, q_dtype_w, AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_FILE
++        m,
++        n,
++        k,
++        q_dtype_w,
++        AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_FILE,
++        device=XQ.device,
+     )
+     if splitK is None:
+         if ck_config is not None:
+diff --git a/op_tests/test_gemm_a8w8_device_dispatch.py b/op_tests/test_gemm_a8w8_device_dispatch.py
+new file mode 100644
+index 00000000..44cff0f6
+--- /dev/null
++++ b/op_tests/test_gemm_a8w8_device_dispatch.py
+@@ -0,0 +1,55 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
++
++from types import SimpleNamespace
++from unittest.mock import Mock
++
++import pytest
++import torch
++
++from aiter.ops import gemm_op_a8w8
++
++
++@pytest.mark.parametrize(
++    ("device_arch", "expected"),
++    [
++        ("gfx90a:sramecc+:xnack-", True),
++        ("gfx942", True),
++        ("gfx1100", False),
++        ("gfx1201", False),
++    ],
++)
++def test_ck_a8w8_uses_input_tensor_device(
++    monkeypatch: pytest.MonkeyPatch,
++    device_arch: str,
++    expected: bool,
++) -> None:
++    tensor = Mock(device=torch.device("cuda:0"))
++    monkeypatch.setattr(
++        torch.cuda,
++        "get_device_properties",
++        lambda device: SimpleNamespace(
++            gcnArchName=device_arch,
++            multi_processor_count=104,
++        ),
++    )
++
++    assert gemm_op_a8w8._get_gpu_arch_and_cu(tensor.device) == (
++        device_arch.split(":", 1)[0],
++        104,
++    )
++    assert gemm_op_a8w8._ck_a8w8_supported(tensor) is expected
++
++
++def test_ck_a8w8_falls_back_to_runtime_detection(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    tensor = Mock(device=torch.device("cuda:0"))
++
++    def fail_device_query(device: torch.device) -> None:
++        raise RuntimeError("device query failed")
++
++    monkeypatch.setattr(torch.cuda, "get_device_properties", fail_device_query)
++    monkeypatch.setattr(gemm_op_a8w8, "get_gfx", lambda: "gfx90a")
++
++    assert gemm_op_a8w8._ck_a8w8_supported(tensor) is True
+--
+2.43.0

@@ -1,0 +1,235 @@
+From 9101aaeb17a7fc6af53b556bf2ea185534c67ff4 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Sat, 12 Sep 2026 22:27:08 -0700
+Subject: [PATCH] Add gfx90a and gfx1100 INT8 fallback
+
+- Add tuned Triton A8W8 defaults for both GPUs.
+- Fall back when gfx90a CK rejects a shape.
+- Preserve CK failures unrelated to kernel support.
+- Make the backend comparison architecture-aware.
+
+Tools used:
+- GPT-5.6 Sol: gpt-5.6-sol-high
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/ops/gemm_op_a8w8.py                     | 10 ++++-
+ .../triton/gemm/gemm_a8w8/DEFAULT.json        | 28 +++++++++++++
+ .../gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json    | 41 +++++++++++++++++++
+ .../gfx90a/triton/gemm/gemm_a8w8/DEFAULT.json | 41 +++++++++++++++++++
+ .../gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json    | 28 +++++++++++++
+ op_tests/test_gemm_a8w8_backends.py           |  7 +++-
+ 6 files changed, 152 insertions(+), 3 deletions(-)
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/DEFAULT.json
+ create mode 100644 aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+
+diff --git a/aiter/ops/gemm_op_a8w8.py b/aiter/ops/gemm_op_a8w8.py
+index a4e03457..ea633d20 100644
+--- a/aiter/ops/gemm_op_a8w8.py
++++ b/aiter/ops/gemm_op_a8w8.py
+@@ -720,7 +720,15 @@ def gemm_a8w8(
+         # so callers stay torch.compile- and graph-capture-safe.
+         ret = gemm_a8w8_Triton(XQ, WQ, x_scale, w_scale, bias, dtype)
+     else:
+-        ret = gemm_a8w8_CK(XQ, WQ, x_scale, w_scale, bias, dtype, splitK)
++        try:
++            ret = gemm_a8w8_CK(XQ, WQ, x_scale, w_scale, bias, dtype, splitK)
++        except RuntimeError as error:
++            if "This GEMM is not supported!" not in str(error):
++                raise
++            logger.info(
++                "CK INT8 A8W8 does not support this shape; falling back to Triton"
++            )
++            ret = gemm_a8w8_Triton(XQ, WQ, x_scale, w_scale, bias, dtype)
+     return ret
+
+
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/DEFAULT.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/DEFAULT.json
+new file mode 100644
+index 00000000..35ffed3c
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/DEFAULT.json
+@@ -0,0 +1,28 @@
++{
++    "M_LEQ_256": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+new file mode 100644
+index 00000000..afa75864
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx1100/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+@@ -0,0 +1,41 @@
++{
++    "M_LEQ_16": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 1,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/DEFAULT.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/DEFAULT.json
+new file mode 100644
+index 00000000..0537ead6
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/DEFAULT.json
+@@ -0,0 +1,41 @@
++{
++    "M_LEQ_64": {
++        "BLOCK_SIZE_M": 16,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "M_LEQ_128": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+new file mode 100644
+index 00000000..77a2aed2
+--- /dev/null
++++ b/aiter/ops/triton/configs/gfx90a/triton/gemm/gemm_a8w8/GEMM-A8W8-N=8192-K=1024.json
+@@ -0,0 +1,28 @@
++{
++    "M_LEQ_32": {
++        "BLOCK_SIZE_M": 32,
++        "BLOCK_SIZE_N": 128,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 1,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    },
++    "any": {
++        "BLOCK_SIZE_M": 64,
++        "BLOCK_SIZE_N": 64,
++        "BLOCK_SIZE_K": 128,
++        "GROUP_SIZE_M": 4,
++        "num_warps": 4,
++        "num_stages": 2,
++        "waves_per_eu": 1,
++        "matrix_instr_nonkdim": 16,
++        "kpack": 2,
++        "cache_modifier": null,
++        "NUM_KSPLIT": 1
++    }
++}
+diff --git a/op_tests/test_gemm_a8w8_backends.py b/op_tests/test_gemm_a8w8_backends.py
+index 1433c437..e99953e5 100644
+--- a/op_tests/test_gemm_a8w8_backends.py
++++ b/op_tests/test_gemm_a8w8_backends.py
+@@ -61,13 +61,16 @@ def main() -> None:
+
+     inputs = create_inputs(args.m, args.n, args.k)
+     reference = run_reference(*inputs)
++    arch = torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0]
+     backends = {
+         "default": lambda: aiter.gemm_a8w8(*inputs),
+-        "cktile": lambda: aiter.gemm_a8w8_CKTile(*inputs),
+         "triton": lambda: aiter.gemm_a8w8_Triton(*inputs),
+     }
++    if arch in {"gfx1100", "gfx1200", "gfx1201"}:
++        backends["cktile"] = lambda: aiter.gemm_a8w8_CKTile(*inputs)
++    else:
++        backends["ck"] = lambda: aiter.gemm_a8w8_CK(*inputs)
+
+-    arch = torch.cuda.get_device_properties(0).gcnArchName
+     print(f"arch={arch} shape=({args.m}, {args.n}, {args.k})")
+     for name, op in backends.items():
+         output = op()
+--
+2.43.0

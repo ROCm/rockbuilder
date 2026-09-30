@@ -1,0 +1,1598 @@
+From ba4334f6bf9d74649f7e0d10dadfe12b82658587 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 13:32:31 -0700
+Subject: [PATCH] Complete gfx11 dynamic INT8 MoE fallback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+INT8 MoE execution can use several activation
+functions. Route all supported combinations to
+Triton until CK offers a gfx11 Quant2 backend
+for wave32.
+
+Example INT8 MoE flow with CK's Quant2
+and SiLU activation function:
+
+1. Quantize expert input to INT8
+   - prepared Quant2 activation and scale.
+2. Perform the stage-one INT8 GEMM
+   - CK Quant2 previously executed this.
+3. Dequantize the scaled accumulation
+   - CK Quant2 epilogue handled this.
+4. Apply SiLU(gate) multiplied by up
+   - often fused into the stage-one kernel.
+5. Quantize the intermediate to INT8
+   - prepares stage-two input.
+6. Perform the stage-two INT8 GEMM
+   - CK Quant2 executed this too.
+7. Combine the routed expert outputs
+   - performed by its stage-two epilogue/reduction.
+
+The failure occurred when trying to use CK’s Quant2
+implementation with unsupported gfx11 gpus was
+around these Quant2 GEMMs, especially weight layout,
+memory access, and execution geometry
+
+Fix replaces that CK backend flow with Triton SmoothQuant
+kernels that perform equivalent INT8 GEMMs, scaling,
+activation, intermediate quantization
+and output combination.
+
+Reason summary:
+- Legacy CK stage one is unsafe on gfx11 wave32
+  devices such as gfx1100.
+- Unsupported combinations could fall through to
+  legacy wave64-oriented kernels.
+
+Fix:
+- Route every gfx11 per-token A8W8 MoE call
+  through the Triton smoothquant implementation.
+- Reuse AITER's preshuffled weights without copies.
+- Support separated and interleaved gate layouts.
+- Support SiLU, SwiGLU, GELU, GELU tanh, SiTUv2,
+  and no activation.
+- Support bias, EP, local-token bounds, nongated
+  experts, fixed scales, and stage-two scatter.
+- Cover raw and preshuffled weight layouts.
+- Reject unsupported contracts before legacy
+  dispatch can run.
+
+Testing
+- Passed 11 gfx1100 feature-matrix tests.
+- Passed 20 focused Triton regression tests.
+- Passed a model-sized strict MoE comparison.
+- Scatter runtime tests await Mori CCO availability.
+
+Tools used:
+- GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/fused_moe.py                            |  87 +++
+ .../ops/flydsl/kernels/moe_stage2_scatter.py  | 135 ++++
+ .../triton/_triton_kernels/moe/activations.py |  16 +
+ .../moe/moe_op_gemm_int8_smoothquant.py       | 166 ++++-
+ .../moe/moe_op_gemm_int8_smoothquant.py       | 237 ++++++-
+ op_tests/test_gfx11_dynamic_int8_moe.py       | 603 ++++++++++++++++++
+ .../moe/test_moe_gemm_int8_smoothquant.py     |  49 ++
+ 7 files changed, 1236 insertions(+), 57 deletions(-)
+ create mode 100644 aiter/ops/flydsl/kernels/moe_stage2_scatter.py
+ create mode 100644 op_tests/test_gfx11_dynamic_int8_moe.py
+
+diff --git a/aiter/fused_moe.py b/aiter/fused_moe.py
+index 09c6d36fe..22f242626 100644
+--- a/aiter/fused_moe.py
++++ b/aiter/fused_moe.py
+@@ -1012,6 +1012,93 @@ def _fused_moe_impl(
+                     f"a16w4 (bf16 A x MXFP4 W) SiTUv2 is not supported: {_why}."
+                 )
+
++    use_gfx11_int8_triton = (
++        get_gfx().startswith("gfx11")
++        and quant_type == QuantType.per_Token
++        and q_dtype_a == dtypes.i8
++        and q_dtype_w == dtypes.i8
++    )
++    if use_gfx11_int8_triton:
++        if w1_scale is None or w2_scale is None:
++            raise ValueError("gfx11 dynamic INT8 MoE requires weight scales")
++        if getattr(w1, "is_shuffled", False) != getattr(w2, "is_shuffled", False):
++            raise ValueError("gfx11 dynamic INT8 MoE weights must use the same layout")
++
++        preshuffled = getattr(w1, "is_shuffled", False)
++        if preshuffled:
++            if w1.shape[1] % 16 or model_dim % 16:
++                raise ValueError("preshuffled gfx11 stage-one dimensions must be divisible by 16")
++            if model_dim % 16 or inter_dim % 16:
++                raise ValueError("preshuffled gfx11 stage-two dimensions must be divisible by 16")
++            w1_triton = w1.view(E, w1.shape[1] // 16, model_dim * 16).transpose(-1, -2)
++            w2_triton = w2.view(E, model_dim // 16, inter_dim * 16).transpose(-1, -2)
++        else:
++            w1_triton = w1.transpose(-1, -2)
++            w2_triton = w2.transpose(-1, -2)
++
++        route_valid = None
++        local_topk_ids = topk_ids
++        if expert_mask is not None:
++            safe_topk_ids = topk_ids
++            active_rows = None
++            if num_local_tokens is not None:
++                active_rows = (
++                    torch.arange(M, device=topk_ids.device) < num_local_tokens
++                )
++                safe_topk_ids = torch.where(active_rows[:, None], topk_ids, 0)
++            local_expert_mask = expert_mask.to(dtype=torch.bool, device=topk_ids.device)
++            route_valid = local_expert_mask[safe_topk_ids]
++            if active_rows is not None:
++                route_valid = route_valid & active_rows[:, None]
++            local_expert_ids = torch.cumsum(local_expert_mask.to(dtypes.i32), dim=0) - 1
++            local_topk_ids = torch.where(
++                route_valid,
++                local_expert_ids[safe_topk_ids],
++                0,
++            )
++
++        from aiter.ops.triton.moe.moe_op_gemm_int8_smoothquant import (
++            fused_moe_int8_smoothquant_from_topk,
++        )
++
++        ret = fused_moe_int8_smoothquant_from_topk(
++            hidden_states,
++            w1_triton,
++            w2_triton,
++            w1_scale.view(E, -1),
++            w2_scale.view(E, -1),
++            topk_weight,
++            local_topk_ids,
++            dtype=dtype,
++            preshuffled=preshuffled,
++            gate_separated=gate_mode == GateMode.SEPARATED,
++            bias1=bias1,
++            bias2=bias2,
++            activation=activation,
++            is_gated=isG1U1,
++            doweight_stage1=doweight_stage1,
++            route_valid=route_valid,
++            num_local_tokens=num_local_tokens,
++            a1_scale=a1_scale,
++            a2_scale=a2_scale,
++            swiglu_limit=swiglu_limit,
++            situ_beta=1.0 if beta is None else float(beta),
++            situ_linear_beta=1.0 if linear_beta is None else float(linear_beta),
++            return_route_output=stage2_scatter is not None,
++        )
++        if stage2_scatter is not None:
++            from aiter.ops.flydsl.kernels.moe_stage2_scatter import (
++                scatter_stage2_output,
++            )
++
++            scatter_stage2_output(ret, stage2_scatter, topk)
++            ret = torch.empty(
++                (M, model_dim),
++                dtype=dtype,
++                device=hidden_states.device,
++            )
++        return _return_output(ret, output)
++
+     metadata = get_2stage_cfgs(
+         get_padded_M(M),  # consider token_num > 1024 as prefill
+         model_dim,
+diff --git a/aiter/ops/flydsl/kernels/moe_stage2_scatter.py b/aiter/ops/flydsl/kernels/moe_stage2_scatter.py
+new file mode 100644
+index 000000000..2e391385a
+--- /dev/null
++++ b/aiter/ops/flydsl/kernels/moe_stage2_scatter.py
+@@ -0,0 +1,135 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++from functools import lru_cache
++
++import flydsl.compiler as flyc
++import flydsl.expr as fx
++import torch
++from flydsl.expr import range_constexpr
++from flydsl.expr.typing import Int32, Int64, T
++
++from aiter.ops.flydsl.kernels import communication_ops_utils as comm_ops
++from aiter.ops.flydsl.kernels.buffer_ops import (
++    buffer_load,
++    create_buffer_resource_from_addr,
++)
++
++
++_BLOCK_SIZE = 256
++
++
++@lru_cache(maxsize=None)
++def _make_stage2_scatter(
++    hidden_dim,
++    combine_input_offset,
++    slot_stride_bytes,
++    max_tokens_per_rank,
++    topk,
++    world_size,
++):
++    import mori.cco.device.flydsl as cco
++
++    if hidden_dim % 2:
++        raise ValueError("stage-two scatter requires an even hidden dimension")
++    destination_stride = max_tokens_per_rank * topk
++    n_i32 = hidden_dim // 2
++
++    @flyc.kernel(known_block_size=[_BLOCK_SIZE, 1, 1])
++    def stage2_scatter(
++        arena: Int64,
++        addr_route_output: Int64,
++        addr_source_token_map: Int64,
++        num_routes: Int32,
++    ):
++        route = fx.Uint32(fx.block_idx.x)
++        tid = fx.Uint32(fx.thread_idx.x)
++        route_output = create_buffer_resource_from_addr(addr_route_output)
++        source_token_map = create_buffer_resource_from_addr(addr_source_token_map)
++        window = cco.Window(arena)
++
++        if route < fx.Uint32(num_routes):
++            destination = buffer_load(
++                source_token_map,
++                route,
++                vec_width=1,
++                dtype=T.i32,
++            )
++            peer = destination // fx.Int32(destination_stride)
++            slot = destination % fx.Int32(destination_stride)
++            valid = (
++                (destination >= fx.Int32(0))
++                & (peer < fx.Int32(world_size))
++                & (slot < fx.Int32(destination_stride))
++            )
++            if valid:
++                destination_base = fx.Int64(
++                    window.lsa_ptr(peer, combine_input_offset)
++                ) + fx.Int64(slot) * fx.Int64(slot_stride_bytes)
++                source_base = route * n_i32
++                for iteration in range_constexpr(
++                    (n_i32 + _BLOCK_SIZE - 1) // _BLOCK_SIZE
++                ):
++                    column = tid + iteration * _BLOCK_SIZE
++                    if column < fx.Uint32(n_i32):
++                        value = buffer_load(
++                            route_output,
++                            source_base + column,
++                            vec_width=1,
++                            dtype=T.i32,
++                        )
++                        comm_ops.store_i32_system(destination_base, column, value)
++
++    @flyc.jit
++    def run(
++        arena: Int64,
++        addr_route_output: Int64,
++        addr_source_token_map: Int64,
++        num_routes: Int32,
++        stream=fx.Stream(None),  # noqa: B008
++    ):
++        stage2_scatter(
++            arena,
++            addr_route_output,
++            addr_source_token_map,
++            num_routes,
++        ).launch(
++            grid=(fx.Int64(num_routes), 1, 1),
++            block=[_BLOCK_SIZE, 1, 1],
++            stream=stream,
++        )
++
++    return run
++
++
++def scatter_stage2_output(route_output, context, topk):
++    if route_output.dtype not in (torch.bfloat16, torch.float16):
++        raise ValueError(f"unsupported stage-two scatter dtype: {route_output.dtype}")
++    route_output = route_output.contiguous()
++    source_token_map = context.source_token_map.view(-1)
++    if source_token_map.numel() != route_output.shape[0]:
++        raise ValueError(
++            "stage-two scatter source map and route output sizes differ: "
++            f"{source_token_map.numel()} != {route_output.shape[0]}"
++        )
++    try:
++        run = _make_stage2_scatter(
++            route_output.shape[1],
++            int(context.combine_input_offset),
++            int(context.slot_stride_bytes),
++            int(context.max_tokens_per_rank),
++            int(topk),
++            int(context.world_size),
++        )
++    except ModuleNotFoundError as error:
++        missing_name = error.name or ""
++        if missing_name != "mori" and not missing_name.startswith("mori."):
++            raise
++        raise RuntimeError("stage-two peer scatter requires Mori CCO") from error
++    run(
++        int(context.arena_handle),
++        route_output.data_ptr(),
++        source_token_map.data_ptr(),
++        route_output.shape[0],
++        fx.Stream(torch.cuda.current_stream()),
++    )
+diff --git a/aiter/ops/triton/_triton_kernels/moe/activations.py b/aiter/ops/triton/_triton_kernels/moe/activations.py
+index fd2c30587..36596ac9e 100644
+--- a/aiter/ops/triton/_triton_kernels/moe/activations.py
++++ b/aiter/ops/triton/_triton_kernels/moe/activations.py
+@@ -31,3 +31,19 @@ def _swiglu(input, alpha, limit, ADD_RESIDUAL: tl.constexpr):
+         return tl.fma(s, linear, s)  # s * (linear + 1)
+     else:
+         return s * linear
++
++
++@triton.jit
++def _swiglu_separated(gelu, linear, alpha, limit, ADD_RESIDUAL: tl.constexpr):
++    gelu = gelu.to(tl.float32)
++    if limit is not None:
++        gelu = clip(gelu, limit, clip_lower=False)
++    linear = linear.to(tl.float32)
++    if limit is not None:
++        linear = clip(linear, limit, clip_lower=True)
++    s = fast_dividef(gelu, 1 + tl.exp2(-1.44269504089 * alpha * gelu))
++    if ADD_RESIDUAL:
++        ret = tl.fma(s, linear, s)
++    else:
++        ret = s * linear
++    return ret
+diff --git a/aiter/ops/triton/_triton_kernels/moe/moe_op_gemm_int8_smoothquant.py b/aiter/ops/triton/_triton_kernels/moe/moe_op_gemm_int8_smoothquant.py
+index e7ba3acce..cf8568418 100644
+--- a/aiter/ops/triton/_triton_kernels/moe/moe_op_gemm_int8_smoothquant.py
++++ b/aiter/ops/triton/_triton_kernels/moe/moe_op_gemm_int8_smoothquant.py
+@@ -5,7 +5,10 @@ import torch
+ import triton
+ import triton.language as tl
+
+-from aiter.ops.triton._triton_kernels.moe.activations import _swiglu
++from aiter.ops.triton._triton_kernels.moe.activations import (
++    _swiglu,
++    _swiglu_separated,
++)
+ from aiter.ops.triton.utils._triton.kernel_repr import make_kernel_repr
+ from aiter.ops.triton.utils._triton.pid_preprocessing import pid_grid
+
+@@ -93,6 +96,7 @@ _moe_gemm_int8_smoothquant_repr = make_kernel_repr(
+         "W_CACHE_MODIFIER",
+         "N_EXPTS_ACT",
+         "APPLY_ACTIVATION",
++        "GATE_SEPARATED",
+         "SWIGLU_ADD_RESIDUAL",
+     ],
+ )
+@@ -136,6 +140,7 @@ def _moe_gemm_int8_smoothquant(
+     limit,
+     ACTIVATION_REDUCTION_N: tl.constexpr,
+     APPLY_ACTIVATION: tl.constexpr,
++    GATE_SEPARATED: tl.constexpr,
+     SWIGLU_ADD_RESIDUAL: tl.constexpr,
+     # MoE config
+     N_EXPTS_ACT: tl.constexpr,
+@@ -240,11 +245,13 @@ def _moe_gemm_int8_smoothquant(
+
+     # B pointers
+     if PRESHUFFLED:
+-        PACKED_BLOCK_N: tl.constexpr = BLOCK_N // 16
++        PACKED_BLOCK_N: tl.constexpr = (
++            OUT_BLOCK_N // 16 if GATE_SEPARATED else BLOCK_N // 16
++        )
+         PACKED_BLOCK_K: tl.constexpr = BLOCK_K * 16
+         PACKED_N = N // 16
+     else:
+-        PACKED_BLOCK_N: tl.constexpr = BLOCK_N
++        PACKED_BLOCK_N: tl.constexpr = OUT_BLOCK_N if GATE_SEPARATED else BLOCK_N
+         PACKED_BLOCK_K: tl.constexpr = BLOCK_K
+         PACKED_N = N
+
+@@ -255,26 +262,47 @@ def _moe_gemm_int8_smoothquant(
+     )
+     offs_w_k = pid_k * PACKED_BLOCK_K + tl.arange(0, PACKED_BLOCK_K)
+     W += expt_id * stride_w_e
+-    WPtrs = W + (
++    WPtrsGate = W + (
+         offs_w_k.to(index_type)[:, None] * stride_w_k
+         + offs_w_n.to(index_type)[None, :] * stride_w_n
+     )
++    if GATE_SEPARATED:
++        up_offset = N // (32 if PRESHUFFLED else 2)
++        WPtrsUp = WPtrsGate + up_offset.to(index_type) * stride_w_n
++    else:
++        WPtrs = WPtrsGate
+
+     num_k_iter = tl.cdiv(K, BLOCK_K * SPLIT_K)
+     if not EVEN_K:
+         num_k_iter -= 1
+
+-    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
++    if GATE_SEPARATED:
++        acc_gate = tl.zeros((BLOCK_M, OUT_BLOCK_N), dtype=tl.int32)
++        acc_up = tl.zeros((BLOCK_M, OUT_BLOCK_N), dtype=tl.int32)
++    else:
++        acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.int32)
+     for k in range(num_k_iter):
+         x = tl.load(XPtrs)
+-        w = tl.load(WPtrs, cache_modifier=W_CACHE_MODIFIER)
+-        if PRESHUFFLED:
+-            w = unshuffle_weights(w, BLOCK_N, BLOCK_K)
+-
+-        acc += tl.dot(x, w)
++        if GATE_SEPARATED:
++            w_gate = tl.load(WPtrsGate, cache_modifier=W_CACHE_MODIFIER)
++            w_up = tl.load(WPtrsUp, cache_modifier=W_CACHE_MODIFIER)
++            if PRESHUFFLED:
++                w_gate = unshuffle_weights(w_gate, OUT_BLOCK_N, BLOCK_K)
++                w_up = unshuffle_weights(w_up, OUT_BLOCK_N, BLOCK_K)
++            acc_gate += tl.dot(x, w_gate)
++            acc_up += tl.dot(x, w_up)
++        else:
++            w = tl.load(WPtrs, cache_modifier=W_CACHE_MODIFIER)
++            if PRESHUFFLED:
++                w = unshuffle_weights(w, BLOCK_N, BLOCK_K)
++            acc += tl.dot(x, w)
+
+         XPtrs += (BLOCK_K * SPLIT_K) * stride_x_k
+-        WPtrs += (PACKED_BLOCK_K * SPLIT_K) * stride_w_k
++        if GATE_SEPARATED:
++            WPtrsGate += (PACKED_BLOCK_K * SPLIT_K) * stride_w_k
++            WPtrsUp += (PACKED_BLOCK_K * SPLIT_K) * stride_w_k
++        else:
++            WPtrs += (PACKED_BLOCK_K * SPLIT_K) * stride_w_k
+
+     if not EVEN_K:
+         mask_x_k = offs_x_k < MASK_K_LIMIT
+@@ -284,39 +312,107 @@ def _moe_gemm_int8_smoothquant(
+             mask_w_k = offs_w_k < MASK_K_LIMIT
+
+         x = tl.load(XPtrs, mask=mask_x_k[None, :], other=0)
+-        w = tl.load(
+-            WPtrs, mask=mask_w_k[:, None], other=0, cache_modifier=W_CACHE_MODIFIER
+-        )
+-        if PRESHUFFLED:
+-            w = unshuffle_weights(w, BLOCK_N, BLOCK_K)
+-
+-        acc += tl.dot(x, w)
++        if GATE_SEPARATED:
++            w_gate = tl.load(
++                WPtrsGate,
++                mask=mask_w_k[:, None],
++                other=0,
++                cache_modifier=W_CACHE_MODIFIER,
++            )
++            w_up = tl.load(
++                WPtrsUp,
++                mask=mask_w_k[:, None],
++                other=0,
++                cache_modifier=W_CACHE_MODIFIER,
++            )
++            if PRESHUFFLED:
++                w_gate = unshuffle_weights(w_gate, OUT_BLOCK_N, BLOCK_K)
++                w_up = unshuffle_weights(w_up, OUT_BLOCK_N, BLOCK_K)
++            acc_gate += tl.dot(x, w_gate)
++            acc_up += tl.dot(x, w_up)
++        else:
++            w = tl.load(
++                WPtrs,
++                mask=mask_w_k[:, None],
++                other=0,
++                cache_modifier=W_CACHE_MODIFIER,
++            )
++            if PRESHUFFLED:
++                w = unshuffle_weights(w, BLOCK_N, BLOCK_K)
++            acc += tl.dot(x, w)
+
+     # per-token activation scale
+     offs_m = BLOCK_M * block_id + tl.arange(0, BLOCK_M)
+     mask_m = offs_m < M
+     x_scale_ptrs = XScale + offs_x_m * stride_x_scale
+
+-    # per-channel weight scale (load using full BLOCK_N)
+-    offs_y_n = BLOCK_N * pid_n + tl.arange(0, BLOCK_N)
+-    mask_n = offs_y_n < N
+-    w_scale_ptrs = WScale + expt_id * stride_w_scale_e + offs_y_n * stride_w_scale_n
+-
+     x_scale = tl.load(x_scale_ptrs, mask=mask_m, other=1.0)
+-    w_scale = tl.load(w_scale_ptrs, mask=mask_n, other=1.0)
+-    acc = acc * x_scale[:, None] * w_scale[None, :]
+-
+-    # bias
+-    if B is not None:
+-        BPtrs = B + expt_id * stride_b_e + offs_y_n
+-        if pid_k == 0:
+-            bias = tl.load(BPtrs, mask=mask_n, other=0, cache_modifier=W_CACHE_MODIFIER)
+-        else:
+-            bias = tl.full([BLOCK_N], 0, dtype=tl.float32)
+-        acc = acc + bias[None, :]
++    if GATE_SEPARATED:
++        offs_gate_n = OUT_BLOCK_N * pid_n + tl.arange(0, OUT_BLOCK_N)
++        mask_gate_n = offs_gate_n < yN
++        w_scale_gate_ptrs = (
++            WScale
++            + expt_id * stride_w_scale_e
++            + offs_gate_n * stride_w_scale_n
++        )
++        w_scale_up_ptrs = w_scale_gate_ptrs + yN * stride_w_scale_n
++        w_scale_gate = tl.load(w_scale_gate_ptrs, mask=mask_gate_n, other=1.0)
++        w_scale_up = tl.load(w_scale_up_ptrs, mask=mask_gate_n, other=1.0)
++        acc_gate = acc_gate * x_scale[:, None] * w_scale_gate[None, :]
++        acc_up = acc_up * x_scale[:, None] * w_scale_up[None, :]
++        if B is not None:
++            bias_gate_ptrs = B + expt_id * stride_b_e + offs_gate_n
++            bias_up_ptrs = bias_gate_ptrs + yN
++            if pid_k == 0:
++                bias_gate = tl.load(
++                    bias_gate_ptrs,
++                    mask=mask_gate_n,
++                    other=0,
++                    cache_modifier=W_CACHE_MODIFIER,
++                ).to(tl.float32)
++                bias_up = tl.load(
++                    bias_up_ptrs,
++                    mask=mask_gate_n,
++                    other=0,
++                    cache_modifier=W_CACHE_MODIFIER,
++                ).to(tl.float32)
++            else:
++                bias_gate = tl.full([OUT_BLOCK_N], 0, dtype=tl.float32)
++                bias_up = tl.full([OUT_BLOCK_N], 0, dtype=tl.float32)
++            acc_gate += bias_gate[None, :]
++            acc_up += bias_up[None, :]
++    else:
++        # per-channel weight scale (load using full BLOCK_N)
++        offs_y_n = BLOCK_N * pid_n + tl.arange(0, BLOCK_N)
++        mask_n = offs_y_n < N
++        w_scale_ptrs = WScale + expt_id * stride_w_scale_e + offs_y_n * stride_w_scale_n
++        w_scale = tl.load(w_scale_ptrs, mask=mask_n, other=1.0)
++        acc = acc * x_scale[:, None] * w_scale[None, :]
++
++        if B is not None:
++            BPtrs = B + expt_id * stride_b_e + offs_y_n
++            if pid_k == 0:
++                bias = tl.load(
++                    BPtrs,
++                    mask=mask_n,
++                    other=0,
++                    cache_modifier=W_CACHE_MODIFIER,
++                ).to(tl.float32)
++            else:
++                bias = tl.full([BLOCK_N], 0, dtype=tl.float32)
++            acc += bias[None, :]
+
+     if APPLY_ACTIVATION and SPLIT_K == 1:
+-        out = _swiglu(acc, alpha, limit, ADD_RESIDUAL=SWIGLU_ADD_RESIDUAL)
++        if GATE_SEPARATED:
++            out = _swiglu_separated(
++                acc_gate,
++                acc_up,
++                alpha,
++                limit,
++                ADD_RESIDUAL=SWIGLU_ADD_RESIDUAL,
++            )
++        else:
++            out = _swiglu(acc, alpha, limit, ADD_RESIDUAL=SWIGLU_ADD_RESIDUAL)
+         tl.static_assert(
+             out.shape[1] == OUT_BLOCK_N,
+             f"Activation fn out.shape[1] ({out.shape[1]}) doesn't match computed OUT_BLOCK_N ({OUT_BLOCK_N})",
+diff --git a/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py b/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
+index 1f07580ed..18d3e7502 100644
+--- a/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
++++ b/aiter/ops/triton/moe/moe_op_gemm_int8_smoothquant.py
+@@ -6,6 +6,7 @@ import itertools
+ import torch
+ import triton
+
++from aiter.ops.enum import ActivationType
+ from aiter.ops.triton._gluon_kernels.gfx942.moe.moe_op_gemm_int8_smoothquant import (
+     _gluon_moe_gemm_int8_smoothquant,
+ )
+@@ -160,6 +161,7 @@ def moe_gemm_int8_smoothquant(
+     preshuffled: bool = False,
+     out_dtype: torch.dtype = torch.bfloat16,
+     apply_activation: bool = False,
++    gate_separated: bool = False,
+     swiglu_add_residual: bool = False,
+     alpha: float = 1.0,
+     limit: float = 1.0,
+@@ -192,6 +194,8 @@ def moe_gemm_int8_smoothquant(
+         N *= 16
+     # compute optimization flags
+     config = get_kernel_config(M, N, K, routing_data)
++    if apply_activation and gate_separated:
++        config["split_k"] = 1
+     if apply_activation:
+         if config["split_k"] > 1:
+             reduction_n_matmul = 1
+@@ -342,6 +346,7 @@ def moe_gemm_int8_smoothquant(
+             limit,
+             reduction_n_matmul,
+             (alpha != 0) and (config["split_k"] == 1),  # APPLY_ACTIVATION
++            gate_separated,
+             swiglu_add_residual,
+             routing_data.n_expts_act,
+             config["block_m"],
+@@ -402,6 +407,60 @@ def swiglu_torch(a, alpha, limit, add_residual=False):
+     return out
+
+
++def _apply_stage1_activation(
++    values: torch.Tensor,
++    activation: ActivationType,
++    is_gated: bool,
++    gate_separated: bool,
++    swiglu_limit: float | None,
++    situ_beta: float,
++    situ_linear_beta: float,
++) -> torch.Tensor:
++    activation = ActivationType(activation)
++    if is_gated:
++        if gate_separated:
++            gate, up = values.chunk(2, dim=-1)
++        else:
++            gate, up = values[..., ::2], values[..., 1::2]
++
++        if activation == ActivationType.Silu:
++            if swiglu_limit:
++                gate = gate.clamp(max=swiglu_limit)
++                up = up.clamp(min=-swiglu_limit, max=swiglu_limit)
++            ret = torch.nn.functional.silu(gate) * up
++        elif activation == ActivationType.Swiglu:
++            limit = 7.0 if swiglu_limit is None else swiglu_limit
++            gate = gate.clamp(max=limit)
++            up = up.clamp(min=-limit, max=limit)
++            ret = gate * torch.sigmoid(1.702 * gate) * (up + 1)
++        elif activation == ActivationType.Gelu:
++            ret = torch.nn.functional.gelu(gate) * up
++        elif activation == ActivationType.GeluTanh:
++            ret = torch.nn.functional.gelu(gate, approximate="tanh") * up
++        elif activation == ActivationType.Situv2:
++            situ_gate = situ_beta * torch.tanh(gate / situ_beta) * torch.sigmoid(gate)
++            up_scaled = situ_linear_beta * torch.tanh(up / situ_linear_beta)
++            ret = situ_gate * up_scaled
++        elif activation == ActivationType.No:
++            ret = gate * up
++        else:
++            raise ValueError(f"unsupported gated activation: {activation}")
++    else:
++        if activation == ActivationType.Silu:
++            ret = torch.nn.functional.silu(values)
++        elif activation == ActivationType.Gelu:
++            ret = torch.nn.functional.gelu(values)
++        elif activation == ActivationType.GeluTanh:
++            ret = torch.nn.functional.gelu(values, approximate="tanh")
++        elif activation == ActivationType.No:
++            ret = values
++        elif activation in (ActivationType.Swiglu, ActivationType.Situv2):
++            raise ValueError(f"{activation.name} requires gated MoE weights")
++        else:
++            raise ValueError(f"unsupported nongated activation: {activation}")
++    return ret
++
++
+ def moe_gemm_smoothquant_torch(
+     x: torch.Tensor,
+     x_scale: torch.Tensor,
+@@ -413,6 +472,7 @@ def moe_gemm_smoothquant_torch(
+     scatter_indx: torch.Tensor = None,
+     gammas: torch.Tensor = None,
+     apply_activation: bool = False,
++    gate_separated: bool = False,
+     add_residual: bool = False,
+     alpha: float = 1.0,
+     limit: float = 1.0,
+@@ -449,7 +509,15 @@ def moe_gemm_smoothquant_torch(
+         if bias is not None:
+             out = out + bias[i, :]
+         if apply_activation:
+-            out = swiglu_torch(out, alpha, limit, add_residual)
++            if gate_separated:
++                gate, linear = out.chunk(2, dim=-1)
++                if limit is not None:
++                    gate = torch.minimum(gate, torch.tensor(limit, device=gate.device))
++                    linear = torch.clamp(linear, min=-limit, max=limit)
++                activated = torch.nn.functional.silu(alpha * gate)
++                out = activated * (linear + 1 if add_residual else linear)
++            else:
++                out = swiglu_torch(out, alpha, limit, add_residual)
+         if gammas is not None:
+             out = out * gammas[lo:hi, None]
+         y[lo:hi, :] = out
+@@ -510,10 +578,38 @@ def fused_moe_int8_smoothquant_from_topk(
+     topk_weights: torch.Tensor,
+     topk_ids: torch.Tensor,
+     dtype: torch.dtype = torch.bfloat16,
++    preshuffled: bool = False,
++    gate_separated: bool = False,
++    bias1: torch.Tensor | None = None,
++    bias2: torch.Tensor | None = None,
++    activation: ActivationType = ActivationType.Silu,
++    is_gated: bool = True,
++    doweight_stage1: bool = False,
++    route_valid: torch.Tensor | None = None,
++    num_local_tokens: torch.Tensor | int | None = None,
++    a1_scale: torch.Tensor | None = None,
++    a2_scale: torch.Tensor | None = None,
++    swiglu_limit: float | None = None,
++    situ_beta: float = 1.0,
++    situ_linear_beta: float = 1.0,
++    return_route_output: bool = False,
+ ) -> torch.Tensor:
+     """Run dynamic INT8 MoE from precomputed top-k routing results."""
+     num_tokens, topk = topk_ids.shape
+     num_experts = w13.shape[0]
++    if route_valid is None:
++        route_valid = torch.ones_like(topk_ids, dtype=torch.bool)
++    else:
++        route_valid = route_valid.to(dtype=torch.bool, device=topk_ids.device)
++    if num_local_tokens is not None:
++        active_rows = torch.arange(num_tokens, device=topk_ids.device) < num_local_tokens
++        route_valid = route_valid & active_rows[:, None]
++        hidden_states = torch.where(active_rows[:, None], hidden_states, 0)
++        if a1_scale is not None:
++            a1_scale = torch.where(active_rows, a1_scale.view(-1), 1)
++    topk_weights = torch.where(route_valid, topk_weights, 0)
++    topk_ids = torch.where(route_valid, topk_ids, 0)
++
+     num_gates = num_tokens * topk
+     tokens_per_expert = max(1, num_gates // num_experts)
+     block_m = max(16, min(triton.next_power_of_2(tokens_per_expert), 128))
+@@ -563,6 +659,12 @@ def fused_moe_int8_smoothquant_from_topk(
+         topk,
+         expt_data,
+     )
++    flat_gather_idx = gather_idx.long()
++    sorted_expert_ids = topk_ids.flatten()[flat_gather_idx]
++    sorted_route_valid = route_valid.flatten()[flat_gather_idx]
++    sorted_a2_scale = (
++        None if a2_scale is None else a2_scale.view(-1)[flat_gather_idx]
++    )
+     return _fused_moe_int8_smoothquant_routed(
+         hidden_states,
+         w13,
+@@ -573,6 +675,21 @@ def fused_moe_int8_smoothquant_from_topk(
+         gather_idx,
+         scatter_idx,
+         dtype,
++        preshuffled,
++        gate_separated,
++        bias1,
++        bias2,
++        activation,
++        is_gated,
++        doweight_stage1,
++        sorted_expert_ids,
++        sorted_route_valid,
++        a1_scale,
++        sorted_a2_scale,
++        swiglu_limit,
++        situ_beta,
++        situ_linear_beta,
++        return_route_output,
+     )
+
+
+@@ -586,51 +703,127 @@ def _fused_moe_int8_smoothquant_routed(
+     gather_idx: torch.Tensor,
+     scatter_idx: torch.Tensor,
+     dtype: torch.dtype,
++    preshuffled: bool = False,
++    gate_separated: bool = False,
++    bias1: torch.Tensor | None = None,
++    bias2: torch.Tensor | None = None,
++    activation: ActivationType = ActivationType.Silu,
++    is_gated: bool = True,
++    doweight_stage1: bool = False,
++    sorted_expert_ids: torch.Tensor | None = None,
++    sorted_route_valid: torch.Tensor | None = None,
++    a1_scale: torch.Tensor | None = None,
++    a2_scale: torch.Tensor | None = None,
++    swiglu_limit: float | None = None,
++    situ_beta: float = 1.0,
++    situ_linear_beta: float = 1.0,
++    return_route_output: bool = False,
+ ) -> torch.Tensor:
+     from aiter.ops.triton.moe.quant_moe import smoothquant_quantize
+
+-    # GEMM1 gate/up projection: per-token int8 activations, no smoothing.
+-    _, H = hidden_states.shape
+-    no_smooth_h = torch.ones(H, device=hidden_states.device, dtype=torch.float32)
+-    x_int8, x_scale = smoothquant_quantize(hidden_states, no_smooth_h)
+-    # GEMM1 + fused gated SiLU: w13 columns are interleaved (g,u,g,u,...) at load
+-    # so the kernel's _swiglu computes silu(gate)*up directly (alpha=1, no clamp).
++    activation = ActivationType(activation)
++    if hidden_states.dtype == torch.int8:
++        if a1_scale is None:
++            raise ValueError("prequantized INT8 MoE input requires a1_scale")
++        x_int8 = hidden_states
++        x_scale = a1_scale.view(-1).to(torch.float32)
++    elif a1_scale is not None:
++        x_scale = a1_scale.view(-1).to(torch.float32)
++        x_int8 = torch.round(hidden_states.float() / x_scale[:, None]).to(torch.int8)
++    else:
++        # GEMM1 projection: per-token int8 activations, no smoothing.
++        _, hidden_dim = hidden_states.shape
++        no_smooth_h = torch.ones(
++            hidden_dim, device=hidden_states.device, dtype=torch.float32
++        )
++        x_int8, x_scale = smoothquant_quantize(hidden_states, no_smooth_h)
++
++    if bias1 is not None:
++        bias1 = bias1.view(w13.shape[0], -1).contiguous()
++    if bias2 is not None:
++        bias2 = bias2.view(w2.shape[0], -1).contiguous()
++
++    fused_gate_activation = (
++        is_gated
++        and not doweight_stage1
++        and activation in (ActivationType.Silu, ActivationType.Swiglu)
++    )
++    stage1_alpha = 1.702 if activation == ActivationType.Swiglu else 1.0
++    stage1_limit = swiglu_limit
++    stage1_add_residual = activation == ActivationType.Swiglu
++    if stage1_add_residual and stage1_limit is None:
++        stage1_limit = 7.0
++
+     intermediate = moe_gemm_int8_smoothquant(
+         x_int8,
+         w13,
+         x_scale,
+         w13_scale,
+-        None,
++        None if doweight_stage1 else bias1,
+         routing_data,
+         gather_idx,
+         None,
+         None,
+-        False,
+-        dtype,
+-        apply_activation=True,
+-        swiglu_add_residual=False,
+-        alpha=1.0,
+-        limit=None,
++        preshuffled,
++        dtype if fused_gate_activation else torch.float32,
++        apply_activation=fused_gate_activation,
++        gate_separated=gate_separated and fused_gate_activation,
++        swiglu_add_residual=stage1_add_residual,
++        alpha=stage1_alpha,
++        limit=stage1_limit,
+     )
++    if not fused_gate_activation:
++        if doweight_stage1:
++            if sorted_expert_ids is None:
++                raise ValueError("stage-one route weighting requires sorted expert ids")
++            intermediate = intermediate * routing_data.gate_scal[:, None]
++            if bias1 is not None:
++                intermediate = intermediate + bias1[sorted_expert_ids.long()]
++        intermediate = _apply_stage1_activation(
++            intermediate,
++            activation,
++            is_gated,
++            gate_separated,
++            swiglu_limit,
++            situ_beta,
++            situ_linear_beta,
++        ).to(dtype)
+     inter_dim = intermediate.shape[-1]
+
+     # GEMM2 down projection: per-token int8, scatter + combine via routing weights.
+-    no_smooth_i = torch.ones(
+-        inter_dim, device=hidden_states.device, dtype=torch.float32
+-    )
+-    i_int8, i_scale = smoothquant_quantize(intermediate, no_smooth_i)
++    if a2_scale is None:
++        no_smooth_i = torch.ones(
++            inter_dim, device=hidden_states.device, dtype=torch.float32
++        )
++        i_int8, i_scale = smoothquant_quantize(intermediate, no_smooth_i)
++    else:
++        i_scale = a2_scale.view(-1).to(torch.float32)
++        if i_scale.numel() != intermediate.shape[0]:
++            raise ValueError(
++                "a2_scale rows must match routed stage-one rows: "
++                f"{i_scale.numel()} != {intermediate.shape[0]}"
++            )
++        i_int8 = torch.round(intermediate.float() / i_scale[:, None]).to(torch.int8)
++    if doweight_stage1:
++        if sorted_route_valid is None:
++            raise ValueError("stage-one route weighting requires a route-valid mask")
++        stage2_gammas = sorted_route_valid.to(routing_data.gate_scal.dtype)
++    else:
++        stage2_gammas = routing_data.gate_scal
+     out = moe_gemm_int8_smoothquant(
+         i_int8,
+         w2,
+         i_scale,
+         w2_scale,
+-        None,
++        bias2,
+         routing_data,
+         None,
+-        scatter_idx,
+-        routing_data.gate_scal,
+-        False,
++        None if return_route_output else scatter_idx,
++        stage2_gammas,
++        preshuffled,
+         dtype,
+         apply_activation=False,
+     )
++    if return_route_output:
++        out = out[scatter_idx.long()]
+     return out
+diff --git a/op_tests/test_gfx11_dynamic_int8_moe.py b/op_tests/test_gfx11_dynamic_int8_moe.py
+new file mode 100644
+index 000000000..ba24508b0
+--- /dev/null
++++ b/op_tests/test_gfx11_dynamic_int8_moe.py
+@@ -0,0 +1,603 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import pytest
++import torch
++
++import aiter
++from aiter import dtypes
++from aiter.fused_moe import fused_moe, fused_topk
++from aiter.jit.utils.chip_info import get_gfx
++from aiter.ops.flydsl.moe_common import GateMode
++from aiter.ops.shuffle import shuffle_weight
++from aiter.ops.triton.moe.moe_op_gemm_int8_smoothquant import (
++    fused_moe_int8_smoothquant_from_topk,
++)
++from aiter.ops.triton.moe.quant_moe import smoothquant_quantize
++
++
++def _quantize_rows(tensor):
++    shape = tensor.shape
++    quantized, scale = aiter.pertoken_quant(
++        tensor.reshape(-1, shape[-1]),
++        quant_dtype=dtypes.i8,
++    )
++    return quantized.view(shape), scale.view(*shape[:-1], 1)
++
++
++def _activate(values, activation, is_gated, gate_mode):
++    if is_gated:
++        if gate_mode == GateMode.SEPARATED:
++            gate, up = values.chunk(2, dim=-1)
++        else:
++            gate, up = values[..., ::2], values[..., 1::2]
++        if activation == aiter.ActivationType.Silu:
++            ret = torch.nn.functional.silu(gate) * up
++        elif activation == aiter.ActivationType.Swiglu:
++            gate = gate.clamp(max=7.0)
++            up = up.clamp(min=-7.0, max=7.0)
++            ret = gate * torch.sigmoid(1.702 * gate) * (up + 1)
++        elif activation == aiter.ActivationType.Gelu:
++            ret = torch.nn.functional.gelu(gate) * up
++        elif activation == aiter.ActivationType.GeluTanh:
++            ret = torch.nn.functional.gelu(gate, approximate="tanh") * up
++        elif activation == aiter.ActivationType.Situv2:
++            ret = torch.tanh(gate) * torch.sigmoid(gate) * torch.tanh(up)
++        elif activation == aiter.ActivationType.No:
++            ret = gate * up
++        else:
++            raise ValueError(f"unsupported test activation: {activation}")
++    else:
++        if activation == aiter.ActivationType.Silu:
++            ret = torch.nn.functional.silu(values)
++        elif activation == aiter.ActivationType.Gelu:
++            ret = torch.nn.functional.gelu(values)
++        elif activation == aiter.ActivationType.GeluTanh:
++            ret = torch.nn.functional.gelu(values, approximate="tanh")
++        elif activation == aiter.ActivationType.No:
++            ret = values
++        else:
++            raise ValueError(f"unsupported test activation: {activation}")
++    return ret
++
++
++def _reference(
++    hidden_q,
++    hidden_scale,
++    w1_q,
++    w1_scale,
++    w2_q,
++    w2_scale,
++    topk_weights,
++    topk_ids,
++    activation,
++    gate_mode,
++    bias1,
++    bias2,
++    doweight_stage1,
++    expert_mask,
++    num_local_tokens,
++    a2_scale=None,
++    return_routes=False,
++):
++    token_count, topk = topk_ids.shape
++    is_gated = w1_q.shape[1] == 2 * w2_q.shape[2]
++    inter_dim = w2_q.shape[2]
++    model_dim = w2_q.shape[1]
++    stage1 = torch.zeros(
++        (token_count, topk, inter_dim),
++        device=hidden_q.device,
++        dtype=torch.float32,
++    )
++    valid = torch.zeros((token_count, topk), device=hidden_q.device, dtype=torch.bool)
++    if expert_mask is None:
++        local_expert_ids = torch.arange(w1_q.shape[0], device=hidden_q.device)
++    else:
++        local_expert_ids = torch.cumsum(expert_mask.to(torch.int32), dim=0) - 1
++
++    hidden = hidden_q.float() * hidden_scale.float()
++    w1 = w1_q.float() * w1_scale.float()
++    for token in range(num_local_tokens):
++        for slot in range(topk):
++            global_expert = int(topk_ids[token, slot])
++            if expert_mask is not None and not bool(expert_mask[global_expert]):
++                continue
++            local_expert = int(local_expert_ids[global_expert])
++            linear = hidden[token] @ w1[local_expert].transpose(0, 1)
++            if doweight_stage1:
++                linear = linear * topk_weights[token, slot]
++            if bias1 is not None:
++                linear = linear + bias1[local_expert]
++            stage1[token, slot] = _activate(
++                linear,
++                activation,
++                is_gated,
++                gate_mode,
++            )
++            valid[token, slot] = True
++
++    if a2_scale is None:
++        stage1_q, stage1_scale = _quantize_rows(stage1.to(torch.bfloat16))
++    else:
++        stage1_scale = a2_scale
++        stage1_q = torch.round(stage1 / stage1_scale).to(torch.int8)
++    stage1 = stage1_q.float() * stage1_scale.float()
++    w2 = w2_q.float() * w2_scale.float()
++    ret = torch.zeros(
++        (token_count, model_dim),
++        device=hidden_q.device,
++        dtype=torch.float32,
++    )
++    routes = torch.zeros(
++        (token_count, topk, model_dim),
++        device=hidden_q.device,
++        dtype=torch.float32,
++    )
++    for token in range(num_local_tokens):
++        for slot in range(topk):
++            if not bool(valid[token, slot]):
++                continue
++            global_expert = int(topk_ids[token, slot])
++            local_expert = int(local_expert_ids[global_expert])
++            route = stage1[token, slot] @ w2[local_expert].transpose(0, 1)
++            if bias2 is not None:
++                route = route + bias2[local_expert]
++            if not doweight_stage1:
++                route = route * topk_weights[token, slot]
++            routes[token, slot] = route
++            ret[token] += route
++    ret = ret.to(torch.bfloat16)
++    if return_routes:
++        ret = (ret, routes.to(torch.bfloat16))
++    return ret
++
++
++def _make_case(is_gated, gate_mode, with_bias, expert_parallel):
++    torch.manual_seed(7)
++    token_count, model_dim, inter_dim = 8, 64, 32
++    global_experts = 6 if expert_parallel else 4
++    expert_mask = None
++    if expert_parallel:
++        expert_mask = torch.tensor(
++            [0, 1, 0, 1, 1, 0],
++            device="cuda",
++            dtype=torch.int32,
++        )
++        local_experts = 3
++    else:
++        local_experts = global_experts
++
++    hidden = torch.randn(
++        (token_count, model_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    stage1_dim = inter_dim * 2 if is_gated else inter_dim
++    w1 = torch.randn(
++        (local_experts, stage1_dim, model_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    bias1 = torch.randn(
++        (local_experts, stage1_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    if is_gated and gate_mode == GateMode.INTERLEAVE:
++        w1 = torch.stack(
++            (w1[:, :inter_dim], w1[:, inter_dim:]),
++            dim=2,
++        ).flatten(1, 2)
++        bias1 = torch.stack(
++            (bias1[:, :inter_dim], bias1[:, inter_dim:]),
++            dim=2,
++        ).flatten(1, 2)
++    w2 = torch.randn(
++        (local_experts, model_dim, inter_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    bias2 = torch.randn(
++        (local_experts, model_dim),
++        device="cuda",
++        dtype=torch.bfloat16,
++    )
++    if not with_bias:
++        bias1 = bias2 = None
++
++    w1_q, w1_scale = _quantize_rows(w1)
++    w2_q, w2_scale = _quantize_rows(w2)
++    hidden_q, hidden_scale = smoothquant_quantize(
++        hidden,
++        torch.ones(model_dim, device="cuda", dtype=torch.float32),
++    )
++    hidden_scale = hidden_scale.view(-1, 1)
++    scores = torch.randn(
++        (token_count, global_experts),
++        device="cuda",
++        dtype=torch.float32,
++    )
++    topk_weights, topk_ids = fused_topk(hidden, scores, 2, True)
++    return {
++        "hidden": hidden,
++        "hidden_q": hidden_q,
++        "hidden_scale": hidden_scale,
++        "w1_q": w1_q,
++        "w1_scale": w1_scale,
++        "w2_q": w2_q,
++        "w2_scale": w2_scale,
++        "topk_weights": topk_weights,
++        "topk_ids": topk_ids,
++        "bias1": bias1,
++        "bias2": bias2,
++        "expert_mask": expert_mask,
++    }
++
++
++@pytest.mark.parametrize(
++    (
++        "is_gated,gate_mode,activation,with_bias,doweight_stage1,"
++        "expert_parallel,preshuffled"
++    ),
++    [
++        (True, GateMode.SEPARATED, aiter.ActivationType.Silu, True, False, False, True),
++        (True, GateMode.INTERLEAVE, aiter.ActivationType.Swiglu, True, True, False, True),
++        (False, GateMode.SEPARATED, aiter.ActivationType.GeluTanh, True, False, False, True),
++        (True, GateMode.SEPARATED, aiter.ActivationType.Silu, True, True, True, True),
++        (True, GateMode.SEPARATED, aiter.ActivationType.Gelu, True, False, False, False),
++        (True, GateMode.INTERLEAVE, aiter.ActivationType.Situv2, False, False, False, False),
++        (True, GateMode.INTERLEAVE, aiter.ActivationType.Silu, True, False, False, True),
++        (False, GateMode.SEPARATED, aiter.ActivationType.Silu, False, True, False, False),
++    ],
++)
++def test_gfx11_dynamic_int8_feature_fallback(
++    is_gated,
++    gate_mode,
++    activation,
++    with_bias,
++    doweight_stage1,
++    expert_parallel,
++    preshuffled,
++):
++    if not get_gfx().startswith("gfx11"):
++        pytest.skip("gfx11-only dynamic INT8 MoE fallback")
++
++    case = _make_case(is_gated, gate_mode, with_bias, expert_parallel)
++    num_local_tokens = 5 if expert_parallel else 8
++    if expert_parallel:
++        case["topk_ids"][num_local_tokens:] = case["expert_mask"].numel() + 17
++    if preshuffled:
++        w1 = shuffle_weight(case["w1_q"], layout=(16, 16))
++        w2 = shuffle_weight(case["w2_q"], layout=(16, 16))
++    else:
++        w1, w2 = case["w1_q"], case["w2_q"]
++    actual = fused_moe(
++        case["hidden"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        expert_mask=case["expert_mask"],
++        activation=activation,
++        quant_type=aiter.QuantType.per_Token,
++        doweight_stage1=doweight_stage1,
++        w1_scale=case["w1_scale"],
++        w2_scale=case["w2_scale"],
++        num_local_tokens=torch.tensor(
++            [num_local_tokens],
++            device="cuda",
++            dtype=torch.int32,
++        ),
++        bias1=case["bias1"],
++        bias2=case["bias2"],
++        gate_mode=gate_mode.value,
++    )
++    expected = _reference(
++        case["hidden_q"],
++        case["hidden_scale"],
++        case["w1_q"],
++        case["w1_scale"],
++        case["w2_q"],
++        case["w2_scale"],
++        case["topk_weights"],
++        case["topk_ids"],
++        activation,
++        gate_mode,
++        case["bias1"],
++        case["bias2"],
++        doweight_stage1,
++        case["expert_mask"],
++        num_local_tokens,
++    )
++    torch.testing.assert_close(actual, expected, rtol=0.08, atol=24)
++
++
++def test_gfx11_dynamic_int8_prequantized_input():
++    if not get_gfx().startswith("gfx11"):
++        pytest.skip("gfx11-only dynamic INT8 MoE fallback")
++
++    case = _make_case(True, GateMode.SEPARATED, False, False)
++    w1 = shuffle_weight(case["w1_q"], layout=(16, 16))
++    w2 = shuffle_weight(case["w2_q"], layout=(16, 16))
++    common = {
++        "w1_scale": case["w1_scale"],
++        "w2_scale": case["w2_scale"],
++        "quant_type": aiter.QuantType.per_Token,
++        "gate_mode": GateMode.SEPARATED.value,
++    }
++    expected = fused_moe(
++        case["hidden"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        **common,
++    )
++    actual = fused_moe(
++        case["hidden_q"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        a1_scale=case["hidden_scale"],
++        dtype=torch.bfloat16,
++        **common,
++    )
++    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
++    repeated = fused_moe(
++        case["hidden_q"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        a1_scale=case["hidden_scale"],
++        dtype=torch.bfloat16,
++        **common,
++    )
++    torch.testing.assert_close(repeated, actual, rtol=0, atol=0)
++    fixed_scale = fused_moe(
++        case["hidden"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        a1_scale=case["hidden_scale"],
++        **common,
++    )
++    torch.testing.assert_close(fixed_scale, actual, rtol=0, atol=0)
++    output = torch.empty_like(expected)
++    returned = fused_moe(
++        case["hidden_q"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        a1_scale=case["hidden_scale"],
++        dtype=torch.bfloat16,
++        output=output,
++        **common,
++    )
++    assert returned is output
++    torch.testing.assert_close(output, expected, rtol=0, atol=0)
++
++    a2_scale = torch.linspace(
++        64,
++        128,
++        case["topk_ids"].numel(),
++        device="cuda",
++        dtype=torch.float32,
++    ).view(*case["topk_ids"].shape, 1)
++    fixed_intermediate_scale = fused_moe(
++        case["hidden_q"],
++        w1,
++        w2,
++        case["topk_weights"],
++        case["topk_ids"],
++        a1_scale=case["hidden_scale"],
++        a2_scale=a2_scale,
++        dtype=torch.bfloat16,
++        **common,
++    )
++    fixed_intermediate_ref = _reference(
++        case["hidden_q"],
++        case["hidden_scale"],
++        case["w1_q"],
++        case["w1_scale"],
++        case["w2_q"],
++        case["w2_scale"],
++        case["topk_weights"],
++        case["topk_ids"],
++        aiter.ActivationType.Silu,
++        GateMode.SEPARATED,
++        None,
++        None,
++        False,
++        None,
++        case["hidden"].shape[0],
++        a2_scale=a2_scale,
++    )
++    torch.testing.assert_close(
++        fixed_intermediate_scale,
++        fixed_intermediate_ref,
++        rtol=0.08,
++        atol=24,
++    )
++
++
++def test_gfx11_dynamic_int8_route_output_order():
++    if not get_gfx().startswith("gfx11"):
++        pytest.skip("gfx11-only dynamic INT8 MoE fallback")
++
++    case = _make_case(True, GateMode.SEPARATED, True, False)
++    expert_count, stage1_dim, model_dim = case["w1_q"].shape
++    inter_dim = case["w2_q"].shape[2]
++    w1 = shuffle_weight(case["w1_q"], layout=(16, 16))
++    w2 = shuffle_weight(case["w2_q"], layout=(16, 16))
++    w1 = w1.view(expert_count, stage1_dim // 16, model_dim * 16).transpose(-1, -2)
++    w2 = w2.view(expert_count, model_dim // 16, inter_dim * 16).transpose(-1, -2)
++    actual_routes = fused_moe_int8_smoothquant_from_topk(
++        case["hidden"],
++        w1,
++        w2,
++        case["w1_scale"].view(expert_count, -1),
++        case["w2_scale"].view(expert_count, -1),
++        case["topk_weights"],
++        case["topk_ids"],
++        preshuffled=True,
++        gate_separated=True,
++        bias1=case["bias1"],
++        bias2=case["bias2"],
++        return_route_output=True,
++    )
++    _, expected_routes = _reference(
++        case["hidden_q"],
++        case["hidden_scale"],
++        case["w1_q"],
++        case["w1_scale"],
++        case["w2_q"],
++        case["w2_scale"],
++        case["topk_weights"],
++        case["topk_ids"],
++        aiter.ActivationType.Silu,
++        GateMode.SEPARATED,
++        case["bias1"],
++        case["bias2"],
++        False,
++        None,
++        case["hidden"].shape[0],
++        return_routes=True,
++    )
++    torch.testing.assert_close(
++        actual_routes,
++        expected_routes.view_as(actual_routes),
++        rtol=0.08,
++        atol=24,
++    )
++
++
++def test_gfx11_dynamic_int8_fails_closed():
++    if not get_gfx().startswith("gfx11"):
++        pytest.skip("gfx11-only dynamic INT8 MoE fallback")
++
++    case = _make_case(False, GateMode.SEPARATED, False, False)
++    with pytest.raises(ValueError, match="requires weight scales"):
++        fused_moe(
++            case["hidden"],
++            case["w1_q"],
++            case["w2_q"],
++            case["topk_weights"],
++            case["topk_ids"],
++            activation=aiter.ActivationType.Silu,
++            quant_type=aiter.QuantType.per_Token,
++        )
++
++    with pytest.raises(ValueError, match="requires gated MoE weights"):
++        fused_moe(
++            case["hidden"],
++            case["w1_q"],
++            case["w2_q"],
++            case["topk_weights"],
++            case["topk_ids"],
++            activation=aiter.ActivationType.Swiglu,
++            quant_type=aiter.QuantType.per_Token,
++            w1_scale=case["w1_scale"],
++            w2_scale=case["w2_scale"],
++        )
++
++
++def test_gfx11_dynamic_int8_stage2_scatter():
++    if not get_gfx().startswith("gfx11"):
++        pytest.skip("gfx11-only dynamic INT8 MoE fallback")
++    try:
++        from mori.cco import Communicator
++    except ImportError:
++        pytest.skip("Mori communicator is unavailable")
++
++    from aiter.ops.flydsl.kernels.mega_moe_gfx1250.mega_moe import SymmetricArena
++    from aiter.ops.flydsl.kernels.mega_moe_gfx1250.types import (
++        Stage2ScatterContext,
++        _from_gpu_ptr,
++    )
++
++    case = _make_case(True, GateMode.SEPARATED, True, False)
++    w1 = shuffle_weight(case["w1_q"], layout=(16, 16))
++    w2 = shuffle_weight(case["w2_q"], layout=(16, 16))
++    _, expected_routes = _reference(
++        case["hidden_q"],
++        case["hidden_scale"],
++        case["w1_q"],
++        case["w1_scale"],
++        case["w2_q"],
++        case["w2_scale"],
++        case["topk_weights"],
++        case["topk_ids"],
++        aiter.ActivationType.Silu,
++        GateMode.SEPARATED,
++        case["bias1"],
++        case["bias2"],
++        False,
++        None,
++        case["hidden"].shape[0],
++        return_routes=True,
++    )
++    route_count = case["topk_ids"].numel()
++    hidden_dim = case["hidden"].shape[1]
++    slot_stride_bytes = hidden_dim * 2
++    uid = Communicator.get_unique_id()
++    communicator = Communicator.init(1, 0, uid, per_rank_vmm=1024**3)
++    arena = SymmetricArena(
++        communicator,
++        [("combine", route_count * slot_stride_bytes)],
++    )
++    try:
++        source_token_map = torch.arange(
++            route_count,
++            device="cuda",
++            dtype=torch.int32,
++        ).view_as(case["topk_ids"])
++        context = Stage2ScatterContext(
++            arena_handle=arena.handle,
++            combine_input_offset=arena.offset("combine"),
++            slot_stride_bytes=slot_stride_bytes,
++            max_tokens_per_rank=case["hidden"].shape[0],
++            world_size=1,
++            source_token_map=source_token_map,
++        )
++        fused_moe(
++            case["hidden"],
++            w1,
++            w2,
++            case["topk_weights"],
++            case["topk_ids"],
++            activation=aiter.ActivationType.Silu,
++            quant_type=aiter.QuantType.per_Token,
++            w1_scale=case["w1_scale"],
++            w2_scale=case["w2_scale"],
++            bias1=case["bias1"],
++            bias2=case["bias2"],
++            gate_mode=GateMode.SEPARATED.value,
++            stage2_scatter=context,
++        )
++        torch.cuda.synchronize()
++        actual_routes = _from_gpu_ptr(
++            arena.local_ptr("combine"),
++            (route_count, hidden_dim),
++            torch.bfloat16,
++        )
++        torch.testing.assert_close(
++            actual_routes,
++            expected_routes.view(route_count, hidden_dim),
++            rtol=0.08,
++            atol=24,
++        )
++    finally:
++        arena.close()
++        communicator.destroy()
++
++
++def test_gfx11_dynamic_int8_stage2_scatter_factory():
++    pytest.importorskip("mori.cco.device.flydsl")
++    from aiter.ops.flydsl.kernels.moe_stage2_scatter import _make_stage2_scatter
++
++    run = _make_stage2_scatter(64, 0, 128, 8, 2, 1)
++    assert callable(run)
+diff --git a/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py b/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
+index 868c2d6ce..2a681ade4 100644
+--- a/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
++++ b/op_tests/triton_tests/moe/test_moe_gemm_int8_smoothquant.py
+@@ -285,6 +285,55 @@ def test_op(
+     assert_close(ref_y, tri_y, maxtol=maxtol, rmstol=rmstol)
+
+
++@pytest.mark.parametrize("preshuffled", [False, True])
++def test_op_separated_gate_layout(preshuffled, device="cuda"):
++    torch.manual_seed(0)
++    m, n, k = 16, 512, 256
++    m, rdata, gindx, sindx = init_routing_data(m, 4, 2, True, True, device=device)
++    x, w, _, smooth_scale, _ = init_compute_data(
++        m,
++        n,
++        k,
++        gindx,
++        sindx,
++        4,
++        2,
++        torch.bfloat16,
++        torch.bfloat16,
++        False,
++        device=device,
++    )
++    x_int8, x_scale = smoothquant_quantize(x, smooth_scale)
++    w_int8, w_scale = quantize_weights_int8(w)
++    w_triton = preshuffle_weights(w_int8) if preshuffled else w_int8
++    ref_y = moe_gemm_smoothquant_torch(
++        x_int8,
++        x_scale,
++        w_int8,
++        w_scale,
++        routing_data=rdata,
++        gather_indx=gindx,
++        scatter_indx=sindx,
++        apply_activation=True,
++        gate_separated=True,
++        limit=None,
++    )
++    tri_y = moe_gemm_int8_smoothquant(
++        x_int8,
++        w_triton,
++        x_scale,
++        w_scale,
++        routing_data=rdata,
++        gather_indx=gindx,
++        scatter_indx=sindx,
++        preshuffled=preshuffled,
++        apply_activation=True,
++        gate_separated=True,
++        limit=None,
++    )
++    assert_close(ref_y, tri_y, maxtol=4e-2)
++
++
+ @pytest.mark.parametrize(
+     "num_tokens,hidden_dim,intermediate_dim",
+     [(16, 256, 512), (2049, 64, 128)],
+--
+2.43.0

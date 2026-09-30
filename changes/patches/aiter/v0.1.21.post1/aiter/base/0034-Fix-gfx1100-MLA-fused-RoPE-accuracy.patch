@@ -1,0 +1,118 @@
+From 4fbf5bef04dba603d15e3260a5c9555dd2acb94e Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 09:18:38 -0700
+Subject: [PATCH] Fix gfx1100 MLA fused RoPE accuracy
+
+- Round fused RoPE arithmetic to BF16 exactly.
+- Match reference dot-product accumulation order.
+- Keep other architectures on the fast path.
+- Avoid measurable stage-one latency overhead.
+- Leave gfx1100 enablement to the defaults patch.
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ .../attention/mla_decode_rope.py              | 47 ++++++++++++++++---
+ 1 file changed, 40 insertions(+), 7 deletions(-)
+
+diff --git a/aiter/ops/triton/_triton_kernels/attention/mla_decode_rope.py b/aiter/ops/triton/_triton_kernels/attention/mla_decode_rope.py
+index 725aae8b8..4f145b471 100644
+--- a/aiter/ops/triton/_triton_kernels/attention/mla_decode_rope.py
++++ b/aiter/ops/triton/_triton_kernels/attention/mla_decode_rope.py
+@@ -50,10 +50,20 @@ _fwd_grouped_kernel_stage1_rope_repr = make_kernel_repr(
+         "logit_cap",
+         "USE_ROPE",
+         "IS_NEOX_STYLE",
++        "FORCE_BF16_ROPE_ROUNDING",
+     ],
+ )
+
+
++@triton.jit
++def _round_fp32_to_bf16(value):
++    value = value.to(tl.float32)
++    bits = value.to(tl.uint32, bitcast=True)
++    rounding_bias = 0x7FFF + ((bits >> 16) & 1)
++    bits = ((bits + rounding_bias) >> 16).to(tl.uint16)
++    return bits.to(tl.bfloat16, bitcast=True)
++
++
+ @triton.jit(repr=_fwd_grouped_kernel_stage1_rope_repr)
+ def _fwd_grouped_kernel_stage1_rope(
+     Q,  # Holds [Q_NOPE; Q_PE], b x h x (d+r)
+@@ -90,6 +100,7 @@ def _fwd_grouped_kernel_stage1_rope(
+     logit_cap: tl.constexpr,
+     USE_ROPE: tl.constexpr,
+     IS_NEOX_STYLE: tl.constexpr,
++    FORCE_BF16_ROPE_ROUNDING: tl.constexpr = False,
+ ):
+     pid = tl.program_id(0)
+     num_q_head_blk = tl.cdiv(q_head_num, BLOCK_H)
+@@ -199,7 +210,18 @@ def _fwd_grouped_kernel_stage1_rope(
+         )
+         q_pe_rot = tl.where(mask_rotate[None, :], -q_pe_rot, q_pe_rot)
+
+-        q_pe = q_pe * cos + q_pe_rot * sin
++        if FORCE_BF16_ROPE_ROUNDING:
++            q_cos = _round_fp32_to_bf16(
++                q_pe.to(tl.float32) * cos.to(tl.float32)
++            )
++            q_rot_sin = _round_fp32_to_bf16(
++                q_pe_rot.to(tl.float32) * sin.to(tl.float32)
++            )
++            q_pe = _round_fp32_to_bf16(
++                q_cos.to(tl.float32) + q_rot_sin.to(tl.float32)
++            )
++        else:
++            q_pe = q_pe * cos + q_pe_rot * sin
+
+         # we only apply to the last token in the K_PE
+         if LAST_SPLIT:
+@@ -221,7 +243,18 @@ def _fwd_grouped_kernel_stage1_rope(
+                 mask_rotate, -k_pe_rot_last_token, k_pe_rot_last_token
+             )
+
+-            k_pe_last_token = k_pe_last_token * cos + k_pe_rot_last_token * sin
++            if FORCE_BF16_ROPE_ROUNDING:
++                k_cos = _round_fp32_to_bf16(
++                    k_pe_last_token.to(tl.float32) * cos.to(tl.float32)
++                )
++                k_rot_sin = _round_fp32_to_bf16(
++                    k_pe_rot_last_token.to(tl.float32) * sin.to(tl.float32)
++                )
++                k_pe_last_token = _round_fp32_to_bf16(
++                    k_cos.to(tl.float32) + k_rot_sin.to(tl.float32)
++                )
++            else:
++                k_pe_last_token = k_pe_last_token * cos + k_pe_rot_last_token * sin
+
+     e_max = tl.zeros([BLOCK_H], dtype=tl.float32) - float("inf")
+     e_sum = tl.zeros([BLOCK_H], dtype=tl.float32)
+@@ -252,10 +285,6 @@ def _fwd_grouped_kernel_stage1_rope(
+                     k_pe_last_token[:, None],
+                 )
+
+-            # (16, 64) x (64, 32)
+-            # dot product of rope parts
+-            qk = tl.dot(q_pe, k_pe.to(q_pe.dtype))
+-
+             kv = tl.load(
+                 K_Buffer + offs_buf_kv,
+                 mask=(offs_n[None, :] < split_kv_end) & (mask_c[:, None]),
+@@ -264,7 +293,11 @@ def _fwd_grouped_kernel_stage1_rope(
+
+             # (16, 512) x (512, 32)
+             # dot product of nope parts
+-            qk = tl.dot(q, kv, acc=qk)
++            qk = tl.dot(q, kv)
++
++            # (16, 64) x (64, 32)
++            # dot product of rope parts
++            qk += tl.dot(q_pe, k_pe.to(q_pe.dtype))
+
+             qk *= sm_scale
+
+--
+2.43.0

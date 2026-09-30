@@ -1,0 +1,589 @@
+From cc2468e4abb51aef4cb6b95093095a2ab1f21414 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Thu, 17 Sep 2026 01:24:27 -0700
+Subject: [PATCH] Expose AITER dynamic INT8 MoE in vLLM
+
+- Add explicit AITER INT8 backend selection.
+- Route gfx90a and gfx1201 through Quant2 CK.
+- Route gfx1100 through AITER Triton MoE.
+- Convert weights and scales per architecture.
+- Preserve Triton as the automatic default.
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/quantization/test_int8_moe_oracle.py    | 224 ++++++++++++++++++
+ vllm/_aiter_ops.py                            |   8 +
+ .../fused_moe/experts/rocm_aiter_moe.py       | 103 +++++++-
+ .../layers/fused_moe/oracle/int8.py           |  74 ++++++
+ vllm/platforms/rocm.py                        |   5 +
+ 5 files changed, 413 insertions(+), 1 deletion(-)
+
+diff --git a/tests/quantization/test_int8_moe_oracle.py b/tests/quantization/test_int8_moe_oracle.py
+index 2eb6fa9..2e3dbd9 100644
+--- a/tests/quantization/test_int8_moe_oracle.py
++++ b/tests/quantization/test_int8_moe_oracle.py
+@@ -11,6 +11,7 @@ they run on any platform where the Triton INT8 MoE kernel is available — CUDA
+ import pytest
+ import torch
+
++from vllm.model_executor.layers.fused_moe.oracle import int8 as int8_oracle
+ from vllm.model_executor.layers.fused_moe.config import (
+     FusedMoEConfig,
+     FusedMoEParallelConfig,
+@@ -18,6 +19,8 @@ from vllm.model_executor.layers.fused_moe.config import (
+ )
+ from vllm.model_executor.layers.fused_moe.oracle.int8 import (
+     Int8MoeBackend,
++    convert_to_int8_moe_kernel_format,
++    make_int8_moe_quant_config,
+     select_int8_moe_backend,
+ )
+ from vllm.model_executor.layers.quantization.utils.quant_utils import (
+@@ -27,6 +30,7 @@ from vllm.model_executor.layers.quantization.utils.quant_utils import (
+     kInt8StaticTensorSym,
+ )
+ from vllm.platforms import current_platform
++from vllm.platforms.rocm import on_gfx1100, on_gfx1201, on_gfx90a
+
+ # The Triton int8_w8a8 fused-MoE kernel is available on CUDA (Turing+) and on
+ # ROCm CDNA GPUs. Gate on that rather than on a specific arch.
+@@ -39,6 +43,12 @@ requires_int8_moe = pytest.mark.skipif(
+     reason="Requires a GPU with Triton INT8 MoE support (CUDA SM>=7.5 or ROCm)",
+ )
+
++requires_aiter_int8_target = pytest.mark.skipif(
++    not current_platform.is_rocm()
++    or not (on_gfx90a() or on_gfx1100() or on_gfx1201()),
++    reason="Requires gfx90a, gfx1100, or gfx1201",
++)
++
+
+ def _make_int8_moe_config(moe_backend: str = "auto") -> FusedMoEConfig:
+     from vllm.model_executor.layers.fused_moe.activation import MoEActivation
+@@ -93,6 +103,220 @@ def test_int8_explicit_moe_backend_triton():
+     assert experts_cls is not None
+
+
++def test_int8_explicit_moe_backend_aiter(monkeypatch):
++    """An explicit --moe-backend aiter selects the AITER INT8 backend."""
++
++    class SupportedAiterExperts:
++        @staticmethod
++        def is_supported_config(*_args):
++            return True, None
++
++    monkeypatch.setattr(
++        int8_oracle,
++        "backend_to_kernel_cls",
++        lambda _backend: [SupportedAiterExperts],
++    )
++
++    config = _make_int8_moe_config(moe_backend="aiter")
++    backend, experts_cls = select_int8_moe_backend(
++        config,
++        weight_key=kInt8StaticChannelSym,
++        activation_key=kInt8DynamicTokenSym,
++    )
++
++    assert backend == Int8MoeBackend.AITER
++    assert experts_cls is SupportedAiterExperts
++
++
++@requires_aiter_int8_target
++def test_int8_explicit_aiter_supported_on_target(monkeypatch):
++    from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++        AiterInt8Experts,
++    )
++
++    monkeypatch.setattr(
++        AiterInt8Experts,
++        "_supports_current_device",
++        staticmethod(lambda: True),
++    )
++    config = _make_int8_moe_config(moe_backend="aiter")
++    backend, experts_cls = select_int8_moe_backend(
++        config,
++        weight_key=kInt8StaticChannelSym,
++        activation_key=kInt8DynamicTokenSym,
++    )
++
++    assert backend == Int8MoeBackend.AITER
++    assert experts_cls is AiterInt8Experts
++
++
++def test_aiter_int8_experts_support_dynamic_int8():
++    from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++        AiterInt8Experts,
++    )
++
++    assert AiterInt8Experts._supports_quant_scheme(
++        kInt8StaticChannelSym,
++        kInt8DynamicTokenSym,
++    )
++
++
++def test_aiter_ck_int8_weights_are_shuffled(monkeypatch):
++    from vllm._aiter_ops import rocm_aiter_ops
++    from vllm.platforms import rocm
++
++    w13 = torch.ones((2, 4, 8), dtype=torch.int8)
++    w2 = torch.ones((2, 8, 2), dtype=torch.int8)
++    shuffled_w13 = w13.clone()
++    shuffled_w2 = w2.clone()
++    monkeypatch.setattr(rocm, "on_gfx1100", lambda: False)
++    monkeypatch.setattr(
++        rocm_aiter_ops,
++        "shuffle_weights",
++        lambda *_args: (shuffled_w13, shuffled_w2),
++    )
++
++    actual_w13, actual_w2 = convert_to_int8_moe_kernel_format(
++        Int8MoeBackend.AITER,
++        w13,
++        w2,
++    )
++
++    assert actual_w13 is shuffled_w13
++    assert actual_w2 is shuffled_w2
++    assert actual_w13.is_shuffled
++    assert actual_w2.is_shuffled
++
++
++def test_aiter_gfx1100_int8_weights_use_triton_layout(monkeypatch):
++    from vllm.platforms import rocm
++
++    layer = torch.nn.Module()
++    w13 = torch.arange(12, dtype=torch.int8).view(1, 4, 3)
++    w2 = torch.arange(6, dtype=torch.int8).view(1, 3, 2)
++    layer.register_parameter(
++        "w13_scale",
++        torch.nn.Parameter(
++            torch.arange(4, dtype=torch.float32).view(1, 4),
++            requires_grad=False,
++        ),
++    )
++    layer.register_parameter(
++        "w2_scale",
++        torch.nn.Parameter(
++            torch.arange(3, dtype=torch.float32).view(1, 3),
++            requires_grad=False,
++        ),
++    )
++    monkeypatch.setattr(rocm, "on_gfx1100", lambda: True)
++
++    actual_w13, actual_w2 = convert_to_int8_moe_kernel_format(
++        Int8MoeBackend.AITER,
++        w13,
++        w2,
++        layer=layer,
++    )
++
++    expected_w13 = w13[:, [0, 2, 1, 3], :].transpose(1, 2).contiguous()
++    expected_w2 = w2.transpose(1, 2).contiguous()
++    torch.testing.assert_close(actual_w13, expected_w13)
++    torch.testing.assert_close(actual_w2, expected_w2)
++    torch.testing.assert_close(
++        layer.w13_scale,
++        torch.tensor([[0.0, 2.0, 1.0, 3.0]]),
++    )
++    torch.testing.assert_close(
++        layer.w2_scale,
++        torch.tensor([[0.0, 1.0, 2.0]]),
++    )
++    assert actual_w13.aiter_int8_triton
++    assert actual_w2.aiter_int8_triton
++
++
++def test_aiter_dynamic_int8_uses_ck_quant2(monkeypatch):
++    from vllm._aiter_ops import rocm_aiter_ops
++    from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++        QuantMethod,
++        rocm_aiter_fused_experts,
++    )
++    from vllm.platforms import rocm
++
++    captured = {}
++    expected = torch.zeros((2, 8), dtype=torch.bfloat16)
++
++    def fake_fused_moe(*_args, **kwargs):
++        captured.update(kwargs)
++        return expected
++
++    monkeypatch.setattr(rocm, "on_gfx1100", lambda: False)
++    monkeypatch.setattr(rocm_aiter_ops, "fused_moe", fake_fused_moe)
++    quant_config = make_int8_moe_quant_config(
++        Int8MoeBackend.AITER,
++        w1_scale=torch.ones((2, 8, 1)),
++        w2_scale=torch.ones((2, 8, 1)),
++        per_act_token_quant=True,
++    )
++
++    actual = rocm_aiter_fused_experts(
++        hidden_states=torch.zeros((2, 8), dtype=torch.bfloat16),
++        w1=torch.ones((2, 16, 8), dtype=torch.int8),
++        w2=torch.ones((2, 8, 8), dtype=torch.int8),
++        topk_weights=torch.ones((2, 1)),
++        topk_ids=torch.zeros((2, 1), dtype=torch.int32),
++        moe_config=_make_int8_moe_config(moe_backend="aiter"),
++        quant_config=quant_config,
++    )
++
++    assert actual is expected
++    assert captured["quant_method"] == QuantMethod.PER_TOKEN
++
++
++def test_aiter_dynamic_int8_uses_gfx1100_triton(monkeypatch):
++    from vllm.model_executor.layers.fused_moe.experts import rocm_aiter_moe
++    from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++        rocm_aiter_fused_experts,
++    )
++    from vllm.platforms import rocm
++
++    expected = torch.zeros((2, 8), dtype=torch.bfloat16)
++    captured = {}
++
++    def fake_int8_moe(*args):
++        captured["args"] = args
++        return expected
++
++    monkeypatch.setattr(rocm, "on_gfx1100", lambda: True)
++    monkeypatch.setattr(
++        rocm_aiter_moe,
++        "rocm_aiter_int8_moe_from_topk",
++        fake_int8_moe,
++    )
++    quant_config = make_int8_moe_quant_config(
++        Int8MoeBackend.AITER,
++        w1_scale=torch.ones((2, 16)),
++        w2_scale=torch.ones((2, 8)),
++        per_act_token_quant=True,
++    )
++    w1 = torch.ones((2, 8, 16), dtype=torch.int8)
++    w2 = torch.ones((2, 8, 8), dtype=torch.int8)
++    w1.aiter_int8_triton = True
++    w2.aiter_int8_triton = True
++
++    actual = rocm_aiter_fused_experts(
++        hidden_states=torch.zeros((2, 8), dtype=torch.bfloat16),
++        w1=w1,
++        w2=w2,
++        topk_weights=torch.ones((2, 1)),
++        topk_ids=torch.zeros((2, 1), dtype=torch.int32),
++        moe_config=_make_int8_moe_config(moe_backend="aiter"),
++        quant_config=quant_config,
++    )
++
++    assert actual is expected
++    assert captured["args"][1] is w1
++    assert captured["args"][2] is w2
++
++
+ @requires_int8_moe
+ def test_int8_unsupported_moe_backend_raises():
+     """An unsupported --moe-backend for INT8 MoE raises a clear error."""
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 9ccbb89..72f3218 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -1912,6 +1912,14 @@ class rocm_aiter_ops:
+     def is_fused_moe_enabled(cls) -> bool:
+         return cls._AITER_ENABLED and cls._FMOE_ENABLED
+
++    @classmethod
++    def is_int8_fused_moe_enabled(cls) -> bool:
++        return (
++            is_aiter_found_and_supported()
++            or is_aiter_found_and_supported_on_cdna2()
++            or is_aiter_found_and_supported_on_wave32_int8()
++        ) and cls._AITER_ENABLED and cls._FMOE_ENABLED
++
+     @classmethod
+     @if_aiter_supported
+     def is_fusion_moe_shared_experts_enabled(cls) -> bool:
+diff --git a/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py b/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
+index a433b18..bd04d06 100644
+--- a/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
++++ b/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py
+@@ -25,6 +25,8 @@ from vllm.model_executor.layers.quantization.utils.quant_utils import (
+     kFp8Static128BlockSym,
+     kFp8StaticChannelSym,
+     kFp8StaticTensorSym,
++    kInt8DynamicTokenSym,
++    kInt8StaticChannelSym,
+     kMxfp4Dynamic,
+     kMxfp4Static,
+ )
+@@ -231,6 +233,33 @@ def rocm_aiter_grouped_topk(
+     return topk_weights, topk_ids
+
+
++def rocm_aiter_int8_moe_from_topk(
++    hidden_states: torch.Tensor,
++    w1: torch.Tensor,
++    w2: torch.Tensor,
++    w1_scale: torch.Tensor,
++    w2_scale: torch.Tensor,
++    topk_weights: torch.Tensor,
++    topk_ids: torch.Tensor,
++    output_dtype: torch.dtype,
++) -> torch.Tensor:
++    from aiter.ops.triton.moe.moe_op_gemm_int8_smoothquant import (
++        fused_moe_int8_smoothquant_from_topk,
++    )
++
++    ret = fused_moe_int8_smoothquant_from_topk(
++        hidden_states,
++        w1,
++        w2,
++        w1_scale,
++        w2_scale,
++        topk_weights,
++        topk_ids,
++        output_dtype,
++    )
++    return ret
++
++
+ def rocm_aiter_fused_experts(
+     hidden_states: torch.Tensor,
+     w1: torch.Tensor,
+@@ -271,6 +300,31 @@ def rocm_aiter_fused_experts(
+     topk_weights = topk_weights.to(torch.float32)
+     topk_ids = topk_ids.to(torch.int32)
+
++    if quant_config.use_int8_w8a8:
++        from vllm.platforms.rocm import on_gfx1100
++
++        if on_gfx1100():
++            assert quant_config.per_act_token_quant
++            assert activation == MoEActivation.SILU
++            assert not apply_router_weight_on_input
++            assert expert_mask is None
++            assert num_local_tokens is None
++            assert a1q_scale is None
++            assert quant_config.w1_scale is not None
++            assert quant_config.w2_scale is not None
++            assert getattr(w1, "aiter_int8_triton", False)
++            assert getattr(w2, "aiter_int8_triton", False)
++            return rocm_aiter_int8_moe_from_topk(
++                hidden_states,
++                w1,
++                w2,
++                quant_config.w1_scale,
++                quant_config.w2_scale,
++                topk_weights,
++                topk_ids,
++                output_dtype or hidden_states.dtype,
++            )
++
+     # w8a8 per-channel quantization
+     if (
+         quant_config.per_act_token_quant
+@@ -325,6 +379,11 @@ def rocm_aiter_fused_experts(
+         elif quant_config.use_fp8_w8a8:
+             # Currently only per tensor quantization method is enabled.
+             quant_method = QuantMethod.PER_TENSOR.value
++        elif quant_config.use_int8_w8a8:
++            assert quant_config.per_act_token_quant
++            assert quant_config.w1_scale is not None
++            assert quant_config.w2_scale is not None
++            quant_method = QuantMethod.PER_TOKEN.value
+
+         if apply_router_weight_on_input:
+             assert topk_weights.dim() == 2, (
+@@ -440,7 +499,29 @@ class AiterExperts(mk.FusedMoEExpertsModular):
+         is_supported, reason = super().is_supported_config(
+             cls, moe_config, weight_key, activation_key, activation_format
+         )
+-        if not is_supported and not rocm_aiter_ops.is_fused_moe_enabled():
++        is_dynamic_int8 = (
++            weight_key == kInt8StaticChannelSym
++            and activation_key == kInt8DynamicTokenSym
++        )
++        if is_supported and is_dynamic_int8:
++            from vllm.platforms.rocm import on_gfx1100, on_gfx1201, on_gfx90a
++
++            if not (on_gfx90a() or on_gfx1100() or on_gfx1201()):
++                is_supported = False
++                reason = "AITER dynamic INT8 MoE requires gfx90a, gfx1100, or gfx1201"
++            elif moe_config.activation != MoEActivation.SILU:
++                is_supported = False
++                reason = "AITER dynamic INT8 MoE requires SiLU activation"
++            elif on_gfx1100() and (
++                moe_config.moe_parallel_config.use_ep
++                or moe_config.moe_parallel_config.enable_eplb
++            ):
++                is_supported = False
++                reason = (
++                    "AITER gfx1100 dynamic INT8 MoE does not support expert "
++                    "parallelism or expert remapping"
++                )
++        if not is_supported and not cls._supports_current_device():
+             reason = (
+                 f"{reason}. AITER MoE is not enabled — "
+                 "set VLLM_ROCM_USE_AITER=1 and VLLM_ROCM_USE_AITER_MOE=1 "
+@@ -571,3 +652,23 @@ class AiterExperts(mk.FusedMoEExpertsModular):
+             output.set_(result)
+         else:
+             output.copy_(result)
++
++
++class AiterInt8Experts(AiterExperts):
++    @staticmethod
++    def _supports_current_device() -> bool:
++        return rocm_aiter_ops.is_int8_fused_moe_enabled()
++
++    @staticmethod
++    def _supports_quant_scheme(
++        weight_key: QuantKey | None,
++        activation_key: QuantKey | None,
++    ) -> bool:
++        return (
++            weight_key == kInt8StaticChannelSym
++            and activation_key == kInt8DynamicTokenSym
++        )
++
++    @staticmethod
++    def _supports_activation(activation: MoEActivation) -> bool:
++        return activation == MoEActivation.SILU
+diff --git a/vllm/model_executor/layers/fused_moe/oracle/int8.py b/vllm/model_executor/layers/fused_moe/oracle/int8.py
+index 2d6e5b1..0e5dd6f 100644
+--- a/vllm/model_executor/layers/fused_moe/oracle/int8.py
++++ b/vllm/model_executor/layers/fused_moe/oracle/int8.py
+@@ -30,6 +30,7 @@ logger = init_logger(__name__)
+
+ class Int8MoeBackend(Enum):
+     TRITON = "TRITON"
++    AITER = "AITER"
+     HUMMING = "HUMMING"
+     CPU = "CPU"
+
+@@ -57,6 +58,13 @@ def backend_to_kernel_cls(
+
+         return [TritonExperts]
+
++    elif backend == Int8MoeBackend.AITER:
++        from vllm.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
++            AiterInt8Experts,
++        )
++
++        return [AiterInt8Experts]
++
+     elif backend == Int8MoeBackend.HUMMING:
+         from vllm.model_executor.layers.fused_moe.experts.fused_humming_moe import (
+             BatchedHummingGroupedExperts,
+@@ -84,6 +92,7 @@ def map_int8_backend(runner_backend: MoEBackend) -> Int8MoeBackend:
+     """Map user's MoEBackend to Int8MoeBackend."""
+     mapping = {
+         "triton": Int8MoeBackend.TRITON,
++        "aiter": Int8MoeBackend.AITER,
+         "humming": Int8MoeBackend.HUMMING,
+     }
+     if backend := mapping.get(runner_backend):
+@@ -242,6 +251,60 @@ def _humming_int8_weight_schema(
+     return config
+
+
++def _get_int8_scale_parameter_name(layer: torch.nn.Module, sub: str) -> str:
++    ret = ""
++    for candidate in (f"{sub}_scale", f"{sub}_weight_scale"):
++        if hasattr(layer, candidate):
++            ret = candidate
++            break
++    if not ret:
++        raise ValueError(f"Missing {sub} INT8 weight scale parameter")
++    return ret
++
++
++def _prepare_aiter_triton_int8_weights(
++    layer: torch.nn.Module,
++    w13: torch.Tensor,
++    w2: torch.Tensor,
++) -> tuple[torch.Tensor, torch.Tensor]:
++    """Convert separated vLLM weights to AITER's Triton MoE layout."""
++    num_experts, gate_up_dim, hidden_dim = w13.shape
++    assert gate_up_dim % 2 == 0
++    intermediate_dim = gate_up_dim // 2
++
++    w13 = (
++        w13.view(num_experts, 2, intermediate_dim, hidden_dim)
++        .transpose(1, 2)
++        .reshape(num_experts, gate_up_dim, hidden_dim)
++        .transpose(1, 2)
++        .contiguous()
++    )
++    w2 = w2.transpose(1, 2).contiguous()
++
++    w13_scale_name = _get_int8_scale_parameter_name(layer, "w13")
++    w2_scale_name = _get_int8_scale_parameter_name(layer, "w2")
++    w13_scale = getattr(layer, w13_scale_name).data
++    w2_scale = getattr(layer, w2_scale_name).data
++    if w13_scale.dim() == 3:
++        assert w13_scale.shape[-1] == 1
++        w13_scale = w13_scale.squeeze(-1)
++    if w2_scale.dim() == 3:
++        assert w2_scale.shape[-1] == 1
++        w2_scale = w2_scale.squeeze(-1)
++    w13_scale = (
++        w13_scale.view(num_experts, 2, intermediate_dim)
++        .transpose(1, 2)
++        .reshape(num_experts, gate_up_dim)
++        .contiguous()
++    )
++    w2_scale = w2_scale.contiguous()
++    replace_parameter(layer, w13_scale_name, w13_scale)
++    replace_parameter(layer, w2_scale_name, w2_scale)
++    w13.aiter_int8_triton = True
++    w2.aiter_int8_triton = True
++    return w13, w2
++
++
+ def convert_to_int8_moe_kernel_format(
+     int8_backend: Int8MoeBackend,
+     w13: torch.Tensor,
+@@ -272,6 +335,17 @@ def convert_to_int8_moe_kernel_format(
+             quant_config=_humming_int8_weight_schema(w13, layer.w13_weight_scale),
+         )
+         return layer.w13_weight, layer.w2_weight
++    elif int8_backend == Int8MoeBackend.AITER:
++        from vllm._aiter_ops import rocm_aiter_ops
++        from vllm.platforms.rocm import on_gfx1100
++
++        if on_gfx1100():
++            assert layer is not None
++            w13, w2 = _prepare_aiter_triton_int8_weights(layer, w13, w2)
++        else:
++            w13, w2 = rocm_aiter_ops.shuffle_weights(w13, w2)
++            w13.is_shuffled = True
++            w2.is_shuffled = True
+     elif int8_backend not in (Int8MoeBackend.TRITON, Int8MoeBackend.CPU):
+         raise ValueError(f"Unsupported Int8 MoE backend: {int8_backend.value}")
+
+diff --git a/vllm/platforms/rocm.py b/vllm/platforms/rocm.py
+index 5205b0b..6af4808 100644
+--- a/vllm/platforms/rocm.py
++++ b/vllm/platforms/rocm.py
+@@ -237,6 +237,7 @@ _ON_GFX11 = "gfx11" in _GCN_ARCH
+ _ON_GFX1100 = "gfx1100" in _GCN_ARCH
+ _ON_GFX1151 = "gfx1151" in _GCN_ARCH
+ _ON_GFX12X = any(arch in _GCN_ARCH for arch in ["gfx12"])
++_ON_GFX1201 = "gfx1201" in _GCN_ARCH
+ _ON_MI3XX = any(arch in _GCN_ARCH for arch in ["gfx942", "gfx950"])
+ _ON_GFX9 = any(arch in _GCN_ARCH for arch in ["gfx90a", "gfx942", "gfx950"])
+ _ON_GFX90A = "gfx90a" in _GCN_ARCH
+@@ -337,6 +338,10 @@ def on_gfx1151() -> bool:
+     return _ON_GFX1151
+
+
++def on_gfx1201() -> bool:
++    return _ON_GFX1201
++
++
+ def on_gfx12x() -> bool:
+     return _ON_GFX12X and not _ON_CDNA
+
+--
+2.43.0

@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Tue, 15 Sep 2026 07:46:26 -0700
+Subject: [PATCH] Honor HIP visibility in rocminfo probes
+
+- Mirror HIP or CUDA visibility into rocminfo.
+- Keep explicit ROCR visibility authoritative.
+- Share mapping between arch and CU probes.
+- Cover precedence and environment propagation.
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/utils/chip_info.py          |   19 +++++++++
+ op_tests/test_chip_info_visibility.py |   68 +++++++++++++++++++++++++++++++++
+ 2 files changed, 86 insertions(+), 1 deletion(-)
+
+diff --git a/aiter/jit/utils/chip_info.py b/aiter/jit/utils/chip_info.py
+index 455e929500..73fb9bbd37 100644
+--- a/aiter/jit/utils/chip_info.py
++++ b/aiter/jit/utils/chip_info.py
+@@ -16,6 +16,18 @@
+ from torch_guard import torch_compile_guard
+
+ logger = logging.getLogger("aiter")
++
++
++def _get_rocminfo_env() -> dict[str, str] | None:
++    """Make rocminfo follow the HIP runtime's device visibility."""
++    ret = None
++    if "ROCR_VISIBLE_DEVICES" not in os.environ:
++        for variable in ("HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
++            if variable in os.environ:
++                ret = os.environ.copy()
++                ret["ROCR_VISIBLE_DEVICES"] = os.environ[variable]
++                break
++    return ret
+
+
+ @functools.lru_cache(maxsize=1)
+@@ -27,6 +39,7 @@
+             capture_output=True,
+             text=True,
+             check=True,
++            env=_get_rocminfo_env(),
+         )
+         for line in result.stdout.splitlines():
+             match = re.search(r"\b(gfx\w+)\b", line, re.IGNORECASE)
+@@ -142,7 +155,11 @@
+         try:
+             rocminfo = executable_path("rocminfo")
+             result = subprocess.run(
+-                [rocminfo], capture_output=True, text=True, check=False
++                [rocminfo],
++                capture_output=True,
++                text=True,
++                check=False,
++                env=_get_rocminfo_env(),
+             )
+             output = result.stdout
+             devices = re.split(r"Agent\s*\d+", output)
+diff --git a/op_tests/test_chip_info_visibility.py b/op_tests/test_chip_info_visibility.py
+new file mode 100644
+index 0000000000..42a53dbe41
+--- /dev/null
++++ b/op_tests/test_chip_info_visibility.py
+@@ -0,0 +1,68 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++from types import SimpleNamespace
++from unittest.mock import Mock
++
++import pytest
++
++from aiter.jit.utils import chip_info
++
++
++VISIBILITY_VARIABLES = (
++    "ROCR_VISIBLE_DEVICES",
++    "HIP_VISIBLE_DEVICES",
++    "CUDA_VISIBLE_DEVICES",
++)
++
++
++@pytest.fixture(autouse=True)
++def clear_visibility(monkeypatch):
++    for variable in VISIBILITY_VARIABLES:
++        monkeypatch.delenv(variable, raising=False)
++    chip_info._detect_native.cache_clear()
++    yield
++    chip_info._detect_native.cache_clear()
++
++
++@pytest.mark.parametrize(
++    ("variables", "expected_rocr"),
++    [
++        ({}, None),
++        ({"ROCR_VISIBLE_DEVICES": "2"}, None),
++        ({"HIP_VISIBLE_DEVICES": "1"}, "1"),
++        ({"CUDA_VISIBLE_DEVICES": "3"}, "3"),
++        (
++            {
++                "HIP_VISIBLE_DEVICES": "1",
++                "CUDA_VISIBLE_DEVICES": "3",
++            },
++            "1",
++        ),
++    ],
++)
++def test_get_rocminfo_env(monkeypatch, variables, expected_rocr):
++    for variable, value in variables.items():
++        monkeypatch.setenv(variable, value)
++
++    result = chip_info._get_rocminfo_env()
++
++    if expected_rocr is None:
++        assert result is None
++    else:
++        assert result is not None
++        assert result["ROCR_VISIBLE_DEVICES"] == expected_rocr
++
++
++def test_detect_native_remaps_hip_visibility(monkeypatch):
++    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "1")
++    run = Mock(
++        return_value=SimpleNamespace(
++            stdout="  Name: gfx90a\n",
++        )
++    )
++    monkeypatch.setattr(chip_info, "executable_path", lambda _: "rocminfo")
++    monkeypatch.setattr(chip_info.subprocess, "run", run)
++
++    assert chip_info._detect_native() == ["gfx90a"]
++    assert run.call_args.kwargs["env"]["ROCR_VISIBLE_DEVICES"] == "1"
+--
+2.43.0

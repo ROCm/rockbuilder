@@ -1,0 +1,156 @@
+From f778b9328b7b8770d2471033673631a9458a9bb2 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Mon, 14 Sep 2026 17:34:37 -0700
+Subject: [PATCH] Enable AITER block FP8 on gfx90a
+
+- Add a block-FP8-specific linear gate for
+  CDNA2 without enabling other AITER FP8 paths.
+- Let gfx90a use AITER's Triton fallback.
+- Cover CDNA2 and wave32 gate behavior.
+- Register gfx90a AITER block FP8 op
+
+Tools used:
+- GPT-5.6 Sol: GPT-5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ tests/rocm/aiter/test_gfx90a_int8_linear.py   | 34 ++++++++++++++++---
+ vllm/_aiter_ops.py                            | 17 ++++++++--
+ .../kernels/linear/scaled_mm/aiter.py         |  2 +-
+ 3 files changed, 46 insertions(+), 7 deletions(-)
+
+diff --git a/tests/rocm/aiter/test_gfx90a_int8_linear.py b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+index 6b747b2640..7856786bd2 100644
+--- a/tests/rocm/aiter/test_gfx90a_int8_linear.py
++++ b/tests/rocm/aiter/test_gfx90a_int8_linear.py
+@@ -55,7 +55,7 @@ def test_aiter_wave32_int8_support(device_arch: str, expected: bool) -> None:
+         assert is_aiter_found_and_supported_on_wave32_int8() is expected
+
+
+-def test_cdna2_enables_only_int8_linear_gate() -> None:
++def test_cdna2_enables_int8_and_block_fp8_gates() -> None:
+     from vllm._aiter_ops import rocm_aiter_ops
+
+     with (
+@@ -68,6 +68,7 @@ def test_cdna2_enables_only_int8_linear_gate() -> None:
+         patch.object(rocm_aiter_ops, "_LINEAR_ENABLED", True),
+     ):
+         assert rocm_aiter_ops.is_int8_linear_enabled() is True
++        assert rocm_aiter_ops.is_block_fp8_linear_enabled() is True
+         assert rocm_aiter_ops.is_linear_enabled() is None
+         assert rocm_aiter_ops.is_linear_fp8_enabled() is None
+
+@@ -89,10 +90,32 @@ def test_wave32_enables_only_int8_linear_gate() -> None:
+         patch.object(rocm_aiter_ops, "_LINEAR_ENABLED", True),
+     ):
+         assert rocm_aiter_ops.is_int8_linear_enabled() is True
++        assert rocm_aiter_ops.is_block_fp8_linear_enabled() is False
+         assert rocm_aiter_ops.is_linear_enabled() is None
+         assert rocm_aiter_ops.is_linear_fp8_enabled() is None
+
+
++def test_block_fp8_kernel_uses_specific_aiter_gate() -> None:
++    from vllm._aiter_ops import rocm_aiter_ops
++    from vllm.model_executor.kernels.linear.scaled_mm.aiter import (
++        AiterFp8BlockScaledMMKernel,
++    )
++
++    with (
++        patch.object(
++            rocm_aiter_ops,
++            "is_block_fp8_linear_enabled",
++            return_value=True,
++        ),
++        patch.object(
++            rocm_aiter_ops,
++            "is_rdna_linear_enabled",
++            return_value=False,
++        ),
++    ):
++        assert AiterFp8BlockScaledMMKernel.is_supported() == (True, None)
++
++
+ @pytest.mark.parametrize(
+     ("m", "n", "k", "expected"),
+     [
+@@ -176,7 +199,7 @@ def test_int8_routes_by_tensor_device(
+     gemm.assert_called_once_with(*inputs, None, torch.bfloat16)
+
+
+-def test_cdna2_registers_only_w8a8_gemm() -> None:
++def test_cdna2_registers_int8_and_block_fp8_gemm_ops() -> None:
+     import vllm._aiter_ops as aiter_ops
+     from vllm._aiter_ops import rocm_aiter_ops
+
+@@ -206,8 +229,11 @@ def test_cdna2_registers_only_w8a8_gemm() -> None:
+         ):
+             rocm_aiter_ops.register_ops_once()
+
+-        register.assert_called_once()
+-        assert register.call_args.kwargs["op_name"] == "rocm_aiter_w8a8_gemm"
++        registered_ops = [call.kwargs["op_name"] for call in register.call_args_list]
++        assert registered_ops == [
++            "rocm_aiter_w8a8_gemm",
++            "rocm_aiter_gemm_a8w8_blockscale",
++        ]
+         assert aiter_ops._OPS_REGISTERED is True
+     finally:
+         aiter_ops._OPS_REGISTERED = original_registered
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+index 87db0cdacd..e7aac7029e 100644
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -1895,6 +1895,13 @@ class rocm_aiter_ops:
+             or is_aiter_found_and_supported_on_wave32_int8()
+         ) and cls._AITER_ENABLED and cls._LINEAR_ENABLED
+
++    @classmethod
++    def is_block_fp8_linear_enabled(cls) -> bool:
++        return (
++            is_aiter_found_and_supported()
++            or is_aiter_found_and_supported_on_cdna2()
++        ) and cls._AITER_ENABLED and cls._LINEAR_ENABLED
++
+     @classmethod
+     @if_aiter_supported
+     def is_linear_fp8_enabled(cls) -> bool:
+@@ -2106,9 +2113,9 @@ class rocm_aiter_ops:
+             if not current_platform.is_rocm():
+                 return
+
++            cdna2_supported = is_aiter_found_and_supported_on_cdna2()
+             if (
+-                is_aiter_found_and_supported_on_cdna2()
+-                or is_aiter_found_and_supported_on_wave32_int8()
++                cdna2_supported or is_aiter_found_and_supported_on_wave32_int8()
+             ):
+                 if not _OPS_REGISTERED:
+                     direct_register_custom_op(
+@@ -2116,6 +2123,12 @@ class rocm_aiter_ops:
+                         op_func=_rocm_aiter_w8a8_gemm_impl,
+                         fake_impl=_rocm_aiter_w8a8_gemm_fake,
+                     )
++                    if cdna2_supported:
++                        direct_register_custom_op(
++                            op_name="rocm_aiter_gemm_a8w8_blockscale",
++                            op_func=_rocm_aiter_gemm_a8w8_blockscale_impl,
++                            fake_impl=_rocm_aiter_gemm_a8w8_blockscale_fake,
++                        )
+                     from vllm.platforms.rocm import on_gfx11
+
+                     if on_gfx11():
+diff --git a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+index 438bc50979..2c388191ae 100644
+--- a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
++++ b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+@@ -398,7 +398,7 @@ class AiterFp8BlockScaledMMKernel(Fp8BlockScaledMMLinearKernel):
+     @classmethod
+     def is_supported(cls, compute_capability=None):
+         if (
+-            rocm_aiter_ops.is_linear_enabled()
++            rocm_aiter_ops.is_block_fp8_linear_enabled()
+             or rocm_aiter_ops.is_rdna_linear_enabled()
+         ):
+             return True, None
+--
+2.52.0

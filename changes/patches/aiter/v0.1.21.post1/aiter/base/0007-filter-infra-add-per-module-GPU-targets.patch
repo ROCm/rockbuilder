@@ -1,0 +1,303 @@
+From a2f4c02d361be72750be22390ce3aa35281e4f14 Mon Sep 17 00:00:00 2001
+From: Mika Laitio <mika.laitio@amd.com>
+Date: Fri, 4 Sep 2026 00:54:12 -0700
+Subject: [PATCH 07/22] add per-module GPU targets
+
+- Limit modules to requested supported targets
+- Keep codegen and compile targets thread-local
+- Reject unsupported direct JIT module requests
+
+Tools used:
+- GPT: 5.6 Sol
+
+Signed-off-by: Mika Laitio <mika.laitio@amd.com>
+---
+ aiter/jit/core.py                 | 86 ++++++++++++++++++++++++++++---
+ op_tests/test_jit_module_archs.py | 65 +++++++++++++++++++++++
+ setup.py                          |  3 ++
+ 3 files changed, 147 insertions(+), 7 deletions(-)
+ create mode 100644 op_tests/test_jit_module_archs.py
+
+diff --git a/aiter/jit/core.py b/aiter/jit/core.py
+index 708c228a..32afc738 100644
+--- a/aiter/jit/core.py
++++ b/aiter/jit/core.py
+@@ -10,6 +10,7 @@ import os
+ import re
+ import shlex
+ import shutil
++import subprocess
+ import sys
+ import time
+ import traceback
+@@ -549,8 +550,9 @@ if multiprocessing.current_process().name == "MainProcess":
+ # CK_DIR = f"{bd_dir}/ck"
+
+
+-def validate_and_update_archs():
+-    archs = os.getenv("GPU_ARCHS", "native").split(";")
++def validate_and_update_archs(archs=None):
++    if archs is None:
++        archs = os.getenv("GPU_ARCHS", "native").split(";")
+     archs = [arch.strip() for arch in archs]
+     # List of allowed architectures
+     allowed_archs = [
+@@ -581,6 +583,34 @@ def validate_and_update_archs():
+     return archs
+
+
++def _get_module_gpu_archs(
++    supported_gpu_archs: list[str] | None,
++    requested_gpu_archs: list[str] | None = None,
++) -> list[str]:
++    """Return requested GPU targets supported by one JIT module."""
++    requested = (
++        get_gfx_list() if requested_gpu_archs is None else requested_gpu_archs
++    )
++    requested = list(dict.fromkeys(requested))
++    ret_arr = requested
++    if supported_gpu_archs is not None:
++        supported = set(supported_gpu_archs)
++        ret_arr = [arch for arch in requested if arch in supported]
++    return ret_arr
++
++
++def _unsupported_module_error(
++    md_name: str,
++    requested_gpu_archs: list[str],
++    supported_gpu_archs: list[str],
++) -> RuntimeError:
++    ret = RuntimeError(
++        f"[aiter] {md_name} does not support requested GPU architectures "
++        f"{requested_gpu_archs}; supported architectures: {supported_gpu_archs}"
++    )
++    return ret
++
++
+ @functools.lru_cache
+ def hip_flag_checker(flag_hip: str) -> bool:
+     import subprocess
+@@ -903,6 +933,7 @@ def build_module(
+     third_party,
+     hipify=False,
+     flags_extra_hip_per_source=None,
++    gpu_archs=None,
+ ):
+     os.makedirs(bd_dir, exist_ok=True)
+     lock_path = f"{bd_dir}/lock_{md_name}"
+@@ -1015,9 +1046,9 @@ def build_module(
+
+         flags_cc += flags_extra_cc
+         flags_hip += flags_extra_hip
+-        archs = validate_and_update_archs()
++        archs = validate_and_update_archs(gpu_archs)
+         flags_hip += [f"--offload-arch={arch}" for arch in archs]
+-        flags_hip = sorted(set(flags_hip))  # remove same flags
++        flags_hip = list(dict.fromkeys(flags_hip))
+         flags_hip = [el for el in flags_hip if hip_flag_checker(el)]
+         check_and_set_ninja_worker()
+
+@@ -1027,7 +1058,15 @@ def build_module(
+                 os.makedirs(blob_dir, exist_ok=True)
+                 if AITER_LOG_MORE:
+                     logger.info(f"exec_blob ---> {PY} {blob_gen_cmd.format(blob_dir)}")
+-                os.system(f"{PY} {blob_gen_cmd.format(blob_dir)}")
++                blob_env = os.environ.copy()
++                blob_env["GPU_ARCHS"] = ";".join(archs)
++                blob_env["AITER_GPU_ARCHS"] = ";".join(archs)
++                subprocess.run(
++                    f"{PY} {blob_gen_cmd.format(blob_dir)}",
++                    shell=True,
++                    check=True,
++                    env=blob_env,
++                )
+                 sources += rename_cpp_to_cu([blob_dir], src_dir, hipify, recursive=True)
+             return sources
+
+@@ -1228,6 +1267,10 @@ def get_args_of_build(ops_name: str, exclude=None):
+         # by opus_gemm to apply -D__HIPCC_RTC__ to kernel-only TUs while
+         # leaving dispatcher / pybind TUs untouched.
+         "flags_extra_hip_per_source": {},
++        # Optional literal list of architectures supported by this module.
++        "supported_gpu_archs": None,
++        # Resolved intersection of requested and supported architectures.
++        "gpu_archs": None,
+     }
+
+     def convert(d_ops: dict):
+@@ -1235,7 +1278,7 @@ def get_args_of_build(ops_name: str, exclude=None):
+             # `flags_extra_hip_per_source` is a dict-valued field
+             # whose string elements are plain compile flags (no env-var
+             # interpolation, no `eval`). Pass it through unchanged.
+-            if k == "flags_extra_hip_per_source":
++            if k in ("flags_extra_hip_per_source", "supported_gpu_archs"):
+                 continue
+             if isinstance(val, list):
+                 for idx, el in enumerate(val):
+@@ -1286,6 +1329,19 @@ def get_args_of_build(ops_name: str, exclude=None):
+                     if op_name in exclude:
+                         continue
+                     single_ops = convert(d_ops)
++                    requested_gpu_archs = get_gfx_list()
++                    module_gpu_archs = _get_module_gpu_archs(
++                        single_ops["supported_gpu_archs"],
++                        requested_gpu_archs,
++                    )
++                    if not module_gpu_archs:
++                        logger.info(
++                            f"[GPU targets] Excluding {op_name}: requested "
++                            f"{requested_gpu_archs}, supported "
++                            f"{single_ops['supported_gpu_archs']}"
++                        )
++                        continue
++                    single_ops["gpu_archs"] = module_gpu_archs
+                     # exclude experimental ops if AITER_ENABLE_EXPERIMENTAL is not set
+                     if not is_experimental_enabled() and single_ops.get(
+                         "is_experimental", False
+@@ -1300,6 +1356,7 @@ def get_args_of_build(ops_name: str, exclude=None):
+                         "extra_include": single_ops["extra_include"],
+                         "blob_gen_cmd": single_ops["blob_gen_cmd"],
+                         "third_party": single_ops["third_party"],
++                        "gpu_archs": single_ops["gpu_archs"],
+                     }
+                     for (  # noqa: PLC0206  loop mutates d_all_ops[k] by key while reading single_ops[k]; .items() does not help
+                         k
+@@ -1322,7 +1379,20 @@ def get_args_of_build(ops_name: str, exclude=None):
+             # parser single opt
+             else:
+                 compile_ops_ = data.get(ops_name)
+-                return convert(compile_ops_)
++                single_ops = convert(compile_ops_)
++                requested_gpu_archs = get_gfx_list()
++                module_gpu_archs = _get_module_gpu_archs(
++                    single_ops["supported_gpu_archs"],
++                    requested_gpu_archs,
++                )
++                if not module_gpu_archs:
++                    raise _unsupported_module_error(
++                        ops_name,
++                        requested_gpu_archs,
++                        single_ops["supported_gpu_archs"],
++                    )
++                single_ops["gpu_archs"] = module_gpu_archs
++                return single_ops
+         else:
+             logger.warning(
+                 "ERROR: pls use dict_format to write 'optCompilerConfig.json'! "
+@@ -1412,6 +1482,7 @@ def _ctypes_call(func, fc_name, md_name):
+                 d_args["torch_exclude"],
+                 d_args.get("third_party", []),
+                 flags_extra_hip_per_source=d_args.get("flags_extra_hip_per_source", {}),
++                gpu_archs=d_args["gpu_archs"],
+             )
+         lib = ctypes.CDLL(so_path)
+         c_func = getattr(lib, fc_name)
+@@ -1786,6 +1857,7 @@ def compile_ops(
+                         third_party,
+                         hipify,
+                         flags_extra_hip_per_source=flags_extra_hip_per_source,
++                        gpu_archs=d_args["gpu_archs"],
+                     )
+
+                     if hip_clang_path is not None:
+diff --git a/op_tests/test_jit_module_archs.py b/op_tests/test_jit_module_archs.py
+new file mode 100644
+index 00000000..c56d73a3
+--- /dev/null
++++ b/op_tests/test_jit_module_archs.py
+@@ -0,0 +1,65 @@
++# SPDX-License-Identifier: MIT
++# Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
++
++import json
++
++import pytest
++
++from aiter.jit import core
++
++
++def test_get_module_gpu_archs_preserves_requested_order():
++    ret_arr = core._get_module_gpu_archs(
++        ["gfx90a", "gfx942"],
++        ["gfx1100", "gfx942", "gfx90a", "gfx942"],
++    )
++
++    assert ret_arr == ["gfx942", "gfx90a"]
++
++
++def test_get_args_of_build_filters_unsupported_module(tmp_path, monkeypatch):
++    config = {
++        "module_supported": {
++            "srcs": [],
++            "supported_gpu_archs": ["gfx90a"],
++        },
++        "module_generic": {
++            "srcs": [],
++        },
++    }
++    (tmp_path / "optCompilerConfig.json").write_text(
++        json.dumps(config),
++        encoding="utf-8",
++    )
++    monkeypatch.setattr(core, "this_dir", str(tmp_path))
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100", "gfx90a"])
++
++    modules, _ = core.get_args_of_build("all")
++
++    assert [module["md_name"] for module in modules] == [
++        "module_supported",
++        "module_generic",
++    ]
++    assert modules[0]["gpu_archs"] == ["gfx90a"]
++    assert modules[1]["gpu_archs"] == ["gfx1100", "gfx90a"]
++
++
++def test_get_args_of_build_rejects_unsupported_direct_jit(tmp_path, monkeypatch):
++    config = {
++        "module_supported": {
++            "srcs": [],
++            "supported_gpu_archs": ["gfx90a"],
++        },
++    }
++    (tmp_path / "optCompilerConfig.json").write_text(
++        json.dumps(config),
++        encoding="utf-8",
++    )
++    monkeypatch.setattr(core, "this_dir", str(tmp_path))
++    monkeypatch.setattr(core, "get_gfx_list", lambda: ["gfx1100"])
++
++    with pytest.raises(
++        RuntimeError,
++        match=r"module_supported.*gfx1100.*gfx90a",
++    ):
++        core.get_args_of_build("module_supported")
+diff --git a/setup.py b/setup.py
+index 4b0691e2..66b5fb96 100644
+--- a/setup.py
++++ b/setup.py
+@@ -322,6 +322,7 @@ if PREBUILD_KERNELS != 0:
+                         "extra_include": moe_base_args["extra_include"],
+                         "blob_gen_cmd": v["blob_gen_cmd"],
+                         "third_party": moe_base_args["third_party"],
++                        "gpu_archs": moe_base_args["gpu_archs"],
+                     }
+                 )
+
+@@ -349,6 +350,7 @@ if PREBUILD_KERNELS != 0:
+                         "extra_include": base_args["extra_include"],
+                         "blob_gen_cmd": v["blob_gen_cmd"],
+                         "third_party": base_args["third_party"],
++                        "gpu_archs": base_args["gpu_archs"],
+                     }
+                 )
+             all_opts_args_build.extend(extra_args_build)
+@@ -383,6 +385,7 @@ if PREBUILD_KERNELS != 0:
+                 is_standalone=False,
+                 torch_exclude=False,
+                 third_party=one_opt_args["third_party"],
++                gpu_archs=one_opt_args["gpu_archs"],
+             )
+
+         prebuid_thread_num = 5
+--
+2.43.0
