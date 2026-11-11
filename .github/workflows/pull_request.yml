@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout_code
-        uses: actions/checkout@v4 # action to check out the repository
+        uses: actions/checkout@v7 # action to check out the repository
       - name: chmod_exec_bit
         run: chmod +x ./tests/test1_check_build_steps.sh # Replace with your script path
       - name: exec_test1
